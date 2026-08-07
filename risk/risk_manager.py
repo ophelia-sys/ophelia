@@ -24,6 +24,10 @@ class RiskManager:
     LONG = "LONG"
     SHORT = "SHORT"
 
+    def __init__(self, position_manager=None):
+
+        self.position_manager = position_manager
+
     # =====================================================
     # PROFIT %
     # =====================================================

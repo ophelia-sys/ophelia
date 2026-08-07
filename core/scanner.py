@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
+from exchange.bingx_client import BingXClient
 from exchange.market_data import MarketData
 from indicators.ema import EMAIndicator
 from strategies.strategy_factory import StrategyFactory
@@ -8,9 +9,11 @@ from utils.logger import logger
 
 class Scanner:
 
-    def __init__(self):
+    def __init__(self, client: BingXClient | None = None):
 
-        self.market = MarketData()
+        self.client = client or BingXClient()
+
+        self.market = MarketData(self.client)
 
         self.strategy = StrategyFactory.create()
 

@@ -1,8 +1,9 @@
+import config
 from brokers.paper_broker import PaperBroker
-from config import WATCHLIST
 from core.candle_scheduler import CandleScheduler
 from core.position_manager import PositionManager
 from core.scanner import Scanner
+from paper.trade_journal import TradeJournal
 from risk.risk_manager import RiskManager
 from utils.logger import logger
 
@@ -22,14 +23,27 @@ class TradingEngine:
         # Scanner
         self.scanner = Scanner()
 
+        self.watchlist = list(
+            getattr(
+                config,
+                "WATCHLIST",
+                config.SUPPORTED_SYMBOLS,
+            )
+        )
+
+        self.trade_journal = TradeJournal()
+
         # Broker
-        self.broker = PaperBroker(self.position_manager)
+        self.broker = PaperBroker(
+            self.position_manager,
+            self.trade_journal,
+        )
 
         # Candle Scheduler
         self.scheduler = CandleScheduler(5)
 
         logger.info("Initialization Complete")
-        logger.info(f"Watching {len(WATCHLIST)} Coins")
+        logger.info(f"Watching {len(self.watchlist)} Coins")
         logger.info("Trading Engine Ready")
 
     def process_market(self):
@@ -39,7 +53,7 @@ class TradingEngine:
 
         try:
 
-            signals = self.scanner.scan(WATCHLIST)
+            signals = self.scanner.scan(self.watchlist)
 
             logger.info(f"Signals Received: {len(signals)}")
 
