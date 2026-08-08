@@ -188,3 +188,23 @@ class PaperBroker(Broker):
     def get_open_positions(self):
 
         return self.position_manager.get_all_positions()
+
+    def get_protected_symbols(self, watchlist):
+        symbols = set(watchlist)
+        symbols.update(self.position_manager.get_all_positions().keys())
+        symbols.update(self.stop_prices.keys())
+        return list(symbols)
+
+    def emergency_close_all(self):
+        closed_symbols = list(self.position_manager.get_all_positions().keys())
+        for symbol in closed_symbols:
+            position = self.position_manager.get_position(symbol)
+            if position is None:
+                continue
+            self._close_and_record_trade(
+                symbol=symbol,
+                exit_price=position.current_price,
+                exit_time=position.entry_time,
+                status="EMERGENCY_CLOSE",
+            )
+        return {"closed": closed_symbols}

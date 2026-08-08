@@ -94,7 +94,7 @@ class OrderManager:
     # OPEN LONG
     # =====================================================
 
-    def open_long(self, symbol):
+    def open_long(self, symbol, client_order_id=None):
 
         self.ensure_leverage(symbol, "LONG")
 
@@ -113,6 +113,7 @@ class OrderManager:
             position_side=PositionSide.LONG,
             order_type=OrderType.MARKET,
             quantity=quantity,
+            client_order_id=client_order_id,
         )
         return self.client.place_order(request)
 
@@ -120,7 +121,7 @@ class OrderManager:
     # OPEN SHORT
     # =====================================================
 
-    def open_short(self, symbol):
+    def open_short(self, symbol, client_order_id=None):
 
         self.ensure_leverage(symbol, "SHORT")
 
@@ -139,6 +140,7 @@ class OrderManager:
             position_side=PositionSide.SHORT,
             order_type=OrderType.MARKET,
             quantity=quantity,
+            client_order_id=client_order_id,
         )
         return self.client.place_order(request)
 
