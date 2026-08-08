@@ -87,8 +87,8 @@ class BingXClient:
 
             allowed_methods=[
                 "GET",
-                "POST",
-                "DELETE",
+                "HEAD",
+                "OPTIONS",
             ],
 
             raise_on_status=False,

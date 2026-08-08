@@ -46,12 +46,13 @@ def main():
 
             last_processed_candle = closed_candle
 
-            signal = strategy.get_signal(candles)
+            signal_data = strategy.get_signal(candles)
+            signal = signal_data["signal"]
 
             strategy.print_status(candles)
 
             print(f"Candle : {closed_candle}")
-            print(f"Signal : {signal}")
+            print(f"Signal : {signal_data}")
 
             position = position_manager.get_position(DEFAULT_SYMBOL)
 
@@ -76,7 +77,7 @@ def main():
 
             else:
 
-                side = position["positionSide"]
+                side = position.side.value
 
                 if side == "LONG" and signal == "SELL":
 

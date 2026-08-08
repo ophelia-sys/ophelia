@@ -1,4 +1,6 @@
 from config import LEVERAGE, MARGIN_USDT
+from core.enums import OrderSide, OrderType, PositionSide
+from models.order_request import OrderRequest
 
 
 class OrderManager:
@@ -17,18 +19,17 @@ class OrderManager:
         if symbol in self._symbol_cache:
             return self._symbol_cache[symbol]
 
-        response = self.client.get_symbols()
+        contract = self.client.get_contract(symbol)
+        if contract is None:
+            raise Exception(f"{symbol} not found.")
 
-        if response["code"] != 0:
-            raise Exception(response)
-
-        for item in response["data"]:
-
-            if item["symbol"] == symbol:
-                self._symbol_cache[symbol] = item
-                return item
-
-        raise Exception(f"{symbol} not found.")
+        info = {
+            "symbol": contract.symbol,
+            "quantityPrecision": contract.quantity_precision,
+            "tradeMinQuantity": contract.min_quantity,
+        }
+        self._symbol_cache[symbol] = info
+        return info
 
     # =====================================================
     # PRICE
@@ -36,12 +37,7 @@ class OrderManager:
 
     def get_current_price(self, symbol):
 
-        response = self.client.get_latest_price(symbol)
-
-        if response["code"] != 0:
-            raise Exception(response)
-
-        return float(response["data"]["price"])
+        return float(self.client.get_latest_price(symbol))
 
     # =====================================================
     # LEVERAGE
@@ -111,12 +107,14 @@ class OrderManager:
         print(f"Quantity  : {quantity}")
         print(f"Leverage  : {LEVERAGE}x")
 
-        return self.client.place_market_order(
+        request = OrderRequest(
             symbol=symbol,
-            side="BUY",
-            position_side="LONG",
-            quantity=quantity
+            side=OrderSide.BUY,
+            position_side=PositionSide.LONG,
+            order_type=OrderType.MARKET,
+            quantity=quantity,
         )
+        return self.client.place_order(request)
 
     # =====================================================
     # OPEN SHORT
@@ -135,12 +133,14 @@ class OrderManager:
         print(f"Quantity  : {quantity}")
         print(f"Leverage  : {LEVERAGE}x")
 
-        return self.client.place_market_order(
+        request = OrderRequest(
             symbol=symbol,
-            side="SELL",
-            position_side="SHORT",
-            quantity=quantity
+            side=OrderSide.SELL,
+            position_side=PositionSide.SHORT,
+            order_type=OrderType.MARKET,
+            quantity=quantity,
         )
+        return self.client.place_order(request)
 
     # =====================================================
     # CLOSE
@@ -148,19 +148,16 @@ class OrderManager:
 
     def close_position(self, symbol, position_side):
 
-        response = self.client.get_positions(symbol)
+        positions = self.client.get_positions(symbol)
 
-        if response["code"] != 0:
-            raise Exception(response)
-
-        for position in response["data"]:
+        for position in positions:
 
             if (
-                position["symbol"] == symbol
-                and position["positionSide"] == position_side
+                position.symbol == symbol
+                and position.side.value == position_side
             ):
 
-                quantity = abs(float(position["positionAmt"]))
+                quantity = position.quantity
 
                 if quantity <= 0:
                     continue
@@ -170,10 +167,11 @@ class OrderManager:
                 print("=" * 60)
                 print(f"Quantity : {quantity}")
 
+                if position.position_id is None:
+                    raise Exception("Position ID is required to close position.")
+
                 return self.client.close_position(
-                    symbol=symbol,
-                    position_side=position_side,
-                    quantity=quantity
+                    position.position_id
                 )
 
         print("No open position found.")

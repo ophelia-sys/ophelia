@@ -1,3 +1,5 @@
+# TEMP COPILOT TEST
+
 import pandas as pd
 
 
@@ -11,21 +13,26 @@ class MarketData:
 
         if symbol not in self._symbol_cache:
 
-            response = self.client.get_symbols()
+            contract = self.client.get_contract(symbol)
 
-            if response["code"] != 0:
-                raise Exception(response)
+            if contract is None:
+                raise ValueError(f"{symbol} not found.")
 
-            for item in response["data"]:
-                self._symbol_cache[item["symbol"]] = item
+            self._symbol_cache[symbol] = {
+                "symbol": contract.symbol,
+                "quantityPrecision": contract.quantity_precision,
+                "pricePrecision": contract.price_precision,
+                "tradeMinQuantity": contract.min_quantity,
+                "tradeMinUSDT": contract.min_notional,
+            }
 
         if symbol not in self._symbol_cache:
-            raise Exception(f"{symbol} not found.")
+            raise ValueError(f"{symbol} not found.")
 
         return self._symbol_cache[symbol]
 
     def get_current_price(self, symbol):
-        return float(self.client.get_latest_price(symbol)["data"]["price"])
+        return float(self.client.get_latest_price(symbol))
 
     def get_quantity_precision(self, symbol):
         return int(self.get_symbol_info(symbol)["quantityPrecision"])
@@ -37,22 +44,58 @@ class MarketData:
         return float(self.get_symbol_info(symbol)["tradeMinQuantity"])
 
     def get_min_notional(self, symbol):
-        return float(self.get_symbol_info(symbol)["tradeMinUSDT"])
+        min_notional = self.get_symbol_info(symbol)["tradeMinUSDT"]
+        if min_notional is None:
+            raise ValueError(
+                f"Minimum notional unavailable for {symbol}."
+            )
+        return float(min_notional)
 
     def get_klines(self, symbol, interval="1m", limit=200):
 
-        response = self.client.get_klines(
+        rows = self.client.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit
         )
 
-        df = pd.DataFrame(response["data"])
+        if not isinstance(rows, list):
+            raise ValueError(
+                "Kline payload must be a list of rows."
+            )
+
+        df = pd.DataFrame(rows)
 
         df.rename(columns={"time": "timestamp"}, inplace=True)
 
-        for c in ["timestamp", "open", "high", "low", "close", "volume"]:
-            df[c] = pd.to_numeric(df[c])
+        required_columns = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+        ]
+
+        if df.empty:
+            return pd.DataFrame(columns=required_columns)
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if column not in df.columns
+        ]
+        if missing_columns:
+            missing = ", ".join(missing_columns)
+            raise ValueError(
+                f"Kline payload missing columns: {missing}"
+            )
+
+        for column in required_columns:
+            df[column] = pd.to_numeric(
+                df[column],
+                errors="coerce",
+            )
 
         df["timestamp"] = pd.to_datetime(
             df["timestamp"],
@@ -62,6 +105,4 @@ class MarketData:
 
         df = df.sort_values("timestamp").reset_index(drop=True)
 
-        return df[
-            ["timestamp", "open", "high", "low", "close", "volume"]
-        ]
+        return df[required_columns]

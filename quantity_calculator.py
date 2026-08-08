@@ -7,11 +7,7 @@ client = BingXClient()
 # Get Current Price
 # ---------------------------------------
 
-price_data = client.get_latest_price(DEFAULT_SYMBOL)
-
-ticker = price_data["data"][0]
-
-price = float(ticker["lastPrice"])
+price = float(client.get_latest_price(DEFAULT_SYMBOL))
 
 # ---------------------------------------
 # Calculate Position

@@ -1,8 +1,11 @@
+import time
+
+import config
 from brokers.paper_broker import PaperBroker
-from config import WATCHLIST
 from core.candle_scheduler import CandleScheduler
 from core.position_manager import PositionManager
 from core.scanner import Scanner
+from paper.trade_journal import TradeJournal
 from risk.risk_manager import RiskManager
 from utils.logger import logger
 
@@ -22,14 +25,27 @@ class TradingEngine:
         # Scanner
         self.scanner = Scanner()
 
+        self.watchlist = list(
+            getattr(
+                config,
+                "WATCHLIST",
+                config.SUPPORTED_SYMBOLS,
+            )
+        )
+
+        self.trade_journal = TradeJournal()
+
         # Broker
-        self.broker = PaperBroker(self.position_manager)
+        self.broker = PaperBroker(
+            self.position_manager,
+            self.trade_journal,
+        )
 
         # Candle Scheduler
         self.scheduler = CandleScheduler(5)
 
         logger.info("Initialization Complete")
-        logger.info(f"Watching {len(WATCHLIST)} Coins")
+        logger.info(f"Watching {len(self.watchlist)} Coins")
         logger.info("Trading Engine Ready")
 
     def process_market(self):
@@ -39,14 +55,38 @@ class TradingEngine:
 
         try:
 
-            signals = self.scanner.scan(WATCHLIST)
+            signals = self.scanner.scan(self.watchlist)
+            if self.scanner.last_failed_symbols:
+                failed = ", ".join(self.scanner.last_failed_symbols)
+                logger.error(f"Scanner failed symbols this cycle: {failed}")
 
             logger.info(f"Signals Received: {len(signals)}")
 
+            now = int(time.time())
+            for symbol in list(self.position_manager.get_all_positions().keys()):
+                try:
+                    price = self.scanner.market.get_current_price(symbol)
+                    self.broker.process_signal(
+                        {
+                            "symbol": symbol,
+                            "signal": "HOLD",
+                            "price": price,
+                            "timestamp": now,
+                        },
+                        self.risk_manager,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Protection update failed for {symbol}: {e}"
+                    )
+
             for signal in signals:
 
+                symbol = signal.get("symbol", "UNKNOWN")
+                signal_type = signal.get("signal", "HOLD")
+
                 logger.info(
-                    f"{signal.symbol} | {signal.signal}"
+                    f"{symbol} | {signal_type}"
                 )
 
                 self.broker.process_signal(
