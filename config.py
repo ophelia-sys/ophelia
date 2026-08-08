@@ -129,10 +129,21 @@ PRINT_API_RESPONSES = False
 PRINT_DEBUG = False
 
 # =====================================================
-# TELEGRAM (Future)
+# TELEGRAM
 # =====================================================
 
-ENABLE_TELEGRAM = False
+import os
+from dotenv import load_dotenv
 
-TELEGRAM_TOKEN = ""
-TELEGRAM_CHAT_ID = ""
+load_dotenv()
+
+ENABLE_TELEGRAM = os.getenv("ENABLE_TELEGRAM", "False").lower() in ("true", "1", "yes")
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+_allowed_ids_raw = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+TELEGRAM_ALLOWED_USER_IDS = [
+    int(uid.strip())
+    for uid in _allowed_ids_raw.split(",")
+    if uid.strip().isdigit()
+]

@@ -99,3 +99,10 @@ class ExitReason(str, Enum):
 class Environment(str, Enum):
     LIVE = "LIVE"
     PAPER = "PAPER"
+
+
+class EngineState(str, Enum):
+    NORMAL = "NORMAL"
+    PAUSED = "PAUSED"
+    STOPPED = "STOPPED"
+    PROTECTION_ONLY = "PROTECTION_ONLY"
