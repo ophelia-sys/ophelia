@@ -1,13 +1,12 @@
 from config import DEFAULT_SYMBOL, LEVERAGE, MARGIN_USDT
+from core.enums import OrderSide, OrderType, PositionSide
 from exchange.bingx_client import BingXClient
-from exchange.order_manager import OrderManager
+from models.order_request import OrderRequest
 
 
 def main():
 
     client = BingXClient()
-
-    order_manager = OrderManager(client)
 
     print("\n" + "=" * 60)
     print("      MANUAL USDT-M FUTURES TRADE")
@@ -22,24 +21,7 @@ def main():
     # ============================================
 
     balance = client.get_balance()
-
-    if balance["code"] != 0:
-        print(balance)
-        return
-
-    usdt = None
-
-    for asset in balance["data"]:
-
-        if asset["asset"] == "USDT":
-            usdt = asset
-            break
-
-    if usdt is None:
-        print("USDT wallet not found.")
-        return
-
-    available_balance = float(usdt["availableMargin"])
+    available_balance = float(balance.available_margin)
 
     print(f"Available Margin : {available_balance:.4f} USDT")
 
@@ -66,9 +48,15 @@ def main():
     # CALCULATE QUANTITY
     # ============================================
 
-    quantity = order_manager.calculate_quantity(
-        DEFAULT_SYMBOL
-    )
+    contract = client.get_contract(DEFAULT_SYMBOL)
+    if contract is None:
+        print("Contract not found.")
+        return
+
+    price = float(client.get_latest_price(DEFAULT_SYMBOL))
+    quantity = (MARGIN_USDT * LEVERAGE) / price
+    quantity = max(quantity, contract.min_quantity)
+    quantity = round(quantity, contract.quantity_precision)
 
     print(f"\nCalculated Quantity : {quantity}")
 
@@ -90,9 +78,14 @@ def main():
     # PLACE ORDER
     # ============================================
 
-    result = order_manager.buy(
-        DEFAULT_SYMBOL
+    request = OrderRequest(
+        symbol=DEFAULT_SYMBOL,
+        side=OrderSide.BUY,
+        position_side=PositionSide.LONG,
+        order_type=OrderType.MARKET,
+        quantity=quantity,
     )
+    result = client.place_order(request)
 
     print("\n" + "=" * 60)
     print("ORDER RESPONSE")

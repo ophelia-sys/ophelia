@@ -64,6 +64,10 @@ class MarketData:
             if isinstance(payload, dict)
             else payload
         )
+        if not isinstance(rows, list):
+            raise ValueError(
+                "Kline payload must be a list of rows."
+            )
 
         df = pd.DataFrame(rows)
 

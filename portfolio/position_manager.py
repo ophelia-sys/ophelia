@@ -10,21 +10,13 @@ class PositionManager:
 
     def get_positions(self, symbol=None):
 
-        response = self.client.get_positions(symbol)
+        positions = self.client.get_positions(symbol)
 
-        if response["code"] != 0:
-            raise Exception(response)
-
-        positions = []
-
-        for position in response["data"]:
-
-            if float(position["positionAmt"]) == 0:
-                continue
-
-            positions.append(position)
-
-        return positions
+        return [
+            position
+            for position in positions
+            if position.quantity > 0
+        ]
 
     # =====================================================
     # GET ACTIVE POSITION
@@ -58,7 +50,7 @@ class PositionManager:
         if position is None:
             return False
 
-        return position["positionSide"] == "LONG"
+        return position.is_long
 
     # =====================================================
     # IS SHORT
@@ -71,7 +63,7 @@ class PositionManager:
         if position is None:
             return False
 
-        return position["positionSide"] == "SHORT"
+        return position.is_short
 
     # =====================================================
     # PRINT POSITION
@@ -89,11 +81,11 @@ class PositionManager:
             print("No Open Position")
             return
 
-        print(f"Symbol       : {position['symbol']}")
-        print(f"Side         : {position['positionSide']}")
-        print(f"Quantity     : {position['positionAmt']}")
-        print(f"Entry Price  : {position['avgPrice']}")
-        print(f"Mark Price   : {position.get('markPrice', 'N/A')}")
-        print(f"PnL          : {position['unrealizedProfit']}")
-        print(f"Leverage     : {position['leverage']}x")
-        print(f"Liquidation  : {position['liquidationPrice']}")
+        print(f"Symbol       : {position.symbol}")
+        print(f"Side         : {position.side.value}")
+        print(f"Quantity     : {position.quantity}")
+        print(f"Entry Price  : {position.entry_price}")
+        print(f"Mark Price   : {position.mark_price}")
+        print(f"PnL          : {position.unrealized_pnl}")
+        print(f"Leverage     : {position.leverage}x")
+        print(f"Liquidation  : {position.liquidation_price}")
