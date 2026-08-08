@@ -8,12 +8,15 @@ class EMAStrategy(Strategy):
     def __init__(self):
         self.name = "EMA Crossover"
 
-    def get_signal(self, candles):
+    def get_signal(self, candles, ema_fast=None, ema_slow=None):
+
+        fast_period = int(ema_fast) if ema_fast is not None else EMA_FAST
+        slow_period = int(ema_slow) if ema_slow is not None else EMA_SLOW
 
         df = candles.copy()
 
-        df["ema_fast"] = EMA.calculate(df, EMA_FAST)
-        df["ema_slow"] = EMA.calculate(df, EMA_SLOW)
+        df["ema_fast"] = EMA.calculate(df, fast_period)
+        df["ema_slow"] = EMA.calculate(df, slow_period)
 
         if TRADE_ON_CLOSED_CANDLE:
             previous = df.iloc[-3]
@@ -41,6 +44,7 @@ class EMAStrategy(Strategy):
             "ema_fast": float(current["ema_fast"]),
             "ema_slow": float(current["ema_slow"]),
         }
+
 
     def print_status(self, candles):
 

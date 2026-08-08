@@ -9,6 +9,7 @@ from core.candle_scheduler import CandleScheduler
 from core.enums import EngineState
 from core.position_manager import PositionManager
 from core.scanner import Scanner
+from core.settings import TradingSettings
 from exchange.bingx_client import BingXClient
 from exchange.public_bingx_client import PublicBingXClient
 from paper.trade_journal import TradeJournal
@@ -42,6 +43,8 @@ class TradingEngine:
             )
         )
 
+        self.settings = TradingSettings.load()
+
         if self.live_trading:
             self.client = BingXClient()
             market_client = self.client
@@ -50,13 +53,7 @@ class TradingEngine:
 
         # Scanner
         self.scanner = Scanner(market_client)
-        self.watchlist = list(
-            getattr(
-                config,
-                "WATCHLIST",
-                config.SUPPORTED_SYMBOLS,
-            )
-        )
+        self.watchlist = list(self.settings.symbols)
 
         self.trade_journal = TradeJournal()
 
@@ -82,7 +79,7 @@ class TradingEngine:
         self.scheduler = CandleScheduler(5)
 
         logger.info("Initialization Complete")
-        logger.info(f"Watching {len(self.watchlist)} Coins")
+        logger.info(f"Watching {len(self.settings.symbols)} Coins")
         logger.info("Trading Engine Ready")
 
         # Start Telegram Adapter if enabled
@@ -122,8 +119,13 @@ class TradingEngine:
         logger.info("Scanning Market...")
 
         try:
-
-            signals = self.scanner.scan(self.watchlist)
+            active_symbols = list(self.settings.symbols)
+            signals = self.scanner.scan(
+                active_symbols,
+                timeframe=self.settings.timeframe,
+                ema_fast=self.settings.ema_fast,
+                ema_slow=self.settings.ema_slow,
+            )
             if self.scanner.last_failed_symbols:
                 failed = ", ".join(self.scanner.last_failed_symbols)
                 logger.error(f"Scanner failed symbols this cycle: {failed}")
@@ -133,7 +135,7 @@ class TradingEngine:
             now = int(time.time())
             stale_symbols = []
             protection_price_failures = []
-            protection_symbols = self.broker.get_protected_symbols(self.watchlist)
+            protection_symbols = self.broker.get_protected_symbols(active_symbols)
             for symbol in protection_symbols:
                 try:
                     price = self.scanner.market.get_current_price(symbol)
@@ -147,6 +149,9 @@ class TradingEngine:
                             "timestamp": now,
                         },
                         self.risk_manager,
+                        margin=self.settings.margin_usdt,
+                        leverage=self.settings.leverage,
+                        risk_config=self.settings.get_risk_config(symbol),
                     )
                 except Exception as e:
                     logger.error(
@@ -172,6 +177,9 @@ class TradingEngine:
                                 "timestamp": now,
                             },
                             self.risk_manager,
+                            margin=self.settings.margin_usdt,
+                            leverage=self.settings.leverage,
+                            risk_config=self.settings.get_risk_config(symbol),
                         )
                     except Exception as fallback_error:
                         logger.error(
@@ -239,10 +247,40 @@ class TradingEngine:
                         f"{symbol} | {signal_type}"
                     )
 
+                    if signal_type in ("BUY", "SELL"):
+                        if (
+                            self.settings.trade_limit is not None
+                            and self.settings.new_trades_count >= self.settings.trade_limit
+                        ):
+                            logger.warning(
+                                f"Trade limit reached ({self.settings.new_trades_count}/{self.settings.trade_limit}). "
+                                f"Skipping new entry for {symbol}."
+                            )
+                            continue
+
+                    pos_before = self.position_manager.get_position(symbol)
+
                     self.broker.process_signal(
                         signal,
-                        self.risk_manager
+                        self.risk_manager,
+                        margin=self.settings.margin_usdt,
+                        leverage=self.settings.leverage,
+                        risk_config=self.settings.get_risk_config(symbol),
                     )
+
+                    pos_after = self.position_manager.get_position(symbol)
+
+                    # Increment trade limit count if a new position was opened
+                    if pos_before is None and pos_after is not None:
+                        with self._lock:
+                            self.settings.new_trades_count += 1
+                            self.settings.save()
+                        logger.info(
+                            f"New trade opened for {symbol}. Session trade count: "
+                            f"{self.settings.new_trades_count}"
+                            f"{'/' + str(self.settings.trade_limit) if self.settings.trade_limit else ''}"
+                        )
+
             else:
                 logger.warning(
                     f"New signal entries blocked. "
@@ -319,6 +357,262 @@ class TradingEngine:
 
     def resume_trading(self) -> tuple[bool, str]:
         return self.start_trading()
+
+    # =====================================================
+    # SAFE RUNTIME SETTINGS APIS FOR TELEGRAM ADAPTER
+    # =====================================================
+
+    def get_settings_summary(self) -> dict:
+        with self._lock:
+            limit_str = (
+                str(self.settings.trade_limit)
+                if self.settings.trade_limit is not None
+                else "unlimited"
+            )
+            rem_str = (
+                str(max(0, self.settings.trade_limit - self.settings.new_trades_count))
+                if self.settings.trade_limit is not None
+                else "unlimited"
+            )
+            return {
+                "ema_fast": self.settings.ema_fast,
+                "ema_slow": self.settings.ema_slow,
+                "timeframe": self.settings.timeframe,
+                "margin_usdt": self.settings.margin_usdt,
+                "leverage": self.settings.leverage,
+                "symbols": list(self.settings.symbols),
+                "trade_limit": limit_str,
+                "new_trades_count": self.settings.new_trades_count,
+                "trades_remaining": rem_str,
+                "engine_state": self.engine_state.value,
+                "sl_mode": self.settings.sl_mode,
+                "sl_value": self.settings.sl_value,
+                "tp_mode": self.settings.tp_mode,
+                "tp_value": self.settings.tp_value,
+                "trailing_activation": self.settings.trailing_activation,
+                "trailing_buffer": self.settings.trailing_buffer,
+                "exit_plan": list(self.settings.exit_plan),
+                "symbol_risk": dict(self.settings.symbol_risk),
+            }
+
+    def update_ema_settings(self, fast: int, slow: int) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_ema(fast, slow)
+            if not valid:
+                return False, err
+            old_val = f"{self.settings.ema_fast}/{self.settings.ema_slow}"
+            self.settings.ema_fast = int(fast)
+            self.settings.ema_slow = int(slow)
+            self.settings.save()
+            logger.info(f"EMA settings updated: {old_val} -> {fast}/{slow}")
+            return True, f"EMA settings updated from {old_val} to {fast}/{slow}."
+
+    def update_timeframe(self, tf: str) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_timeframe(tf)
+            if not valid:
+                return False, err
+            old_val = self.settings.timeframe
+            self.settings.timeframe = str(tf).lower()
+            self.settings.save()
+            logger.info(f"Timeframe updated: {old_val} -> {self.settings.timeframe}")
+            return True, f"Timeframe updated from {old_val} to {self.settings.timeframe}."
+
+    def update_margin(self, margin: float) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_margin(margin)
+            if not valid:
+                return False, err
+            old_val = self.settings.margin_usdt
+            self.settings.margin_usdt = float(margin)
+            self.settings.save()
+            logger.info(f"Margin updated: {old_val} -> {self.settings.margin_usdt} USDT")
+            return True, f"Margin updated from {old_val} USDT to {self.settings.margin_usdt} USDT."
+
+    def update_leverage(self, leverage: int) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_leverage(leverage)
+            if not valid:
+                return False, err
+            old_val = self.settings.leverage
+            self.settings.leverage = int(leverage)
+            self.settings.save()
+            logger.info(f"Leverage updated: {old_val}x -> {self.settings.leverage}x")
+            return True, f"Leverage updated from {old_val}x to {self.settings.leverage}x."
+
+    def add_symbol(self, symbol: str) -> tuple[bool, str]:
+        with self._lock:
+            sym = str(symbol).upper().strip()
+            valid, err = TradingSettings.validate_symbol(sym)
+            if not valid:
+                return False, err
+            if sym in self.settings.symbols:
+                return False, f"Symbol '{sym}' is already in the watchlist."
+            self.settings.symbols.append(sym)
+            self.settings.save()
+            logger.info(f"Symbol '{sym}' added to watchlist.")
+            return True, f"Symbol '{sym}' added to watchlist."
+
+    def remove_symbol(self, symbol: str) -> tuple[bool, str]:
+        with self._lock:
+            sym = str(symbol).upper().strip()
+            if sym not in self.settings.symbols:
+                return False, f"Symbol '{sym}' is not in the watchlist."
+            self.settings.symbols.remove(sym)
+            self.settings.save()
+            msg = f"Symbol '{sym}' removed from watchlist."
+            if self.position_manager.get_position(sym) is not None:
+                msg += " (Note: Open position exists; protection remains active)."
+            logger.info(msg)
+            return True, msg
+
+    def set_trade_limit(self, limit_val: Any) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_trade_limit(limit_val)
+            if not valid:
+                return False, err
+            old_val = (
+                str(self.settings.trade_limit)
+                if self.settings.trade_limit is not None
+                else "unlimited"
+            )
+            if limit_val is None or str(limit_val).lower() in ("unlimited", "none", "0"):
+                self.settings.trade_limit = None
+                new_str = "unlimited"
+            else:
+                self.settings.trade_limit = int(limit_val)
+                new_str = str(self.settings.trade_limit)
+            self.settings.save()
+            logger.info(f"Trade limit updated: {old_val} -> {new_str}")
+            return True, f"Trade limit updated from {old_val} to {new_str}."
+
+    # =====================================================
+    # SAFE RUNTIME RISK SETTINGS APIS FOR TELEGRAM ADAPTER
+    # =====================================================
+
+    def get_risk_settings_summary(self, symbol: str | None = None) -> dict:
+        with self._lock:
+            global_cfg = self.settings.get_risk_config(None)
+            target_cfg = self.settings.get_risk_config(symbol)
+            return {
+                "symbol": symbol.upper() if symbol else "GLOBAL",
+                "sl_mode": target_cfg["sl_mode"],
+                "sl_value": target_cfg["sl_value"],
+                "tp_mode": target_cfg["tp_mode"],
+                "tp_value": target_cfg["tp_value"],
+                "trailing_activation": target_cfg["trailing_activation"],
+                "trailing_buffer": target_cfg["trailing_buffer"],
+                "exit_plan": target_cfg["exit_plan"],
+                "global_defaults": global_cfg,
+                "symbol_overrides": dict(self.settings.symbol_risk),
+            }
+
+    def update_sl_setting(self, mode: str, value: float, symbol: str | None = None) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_sl(mode, value)
+            if not valid:
+                return False, err
+            mode_norm = "PRICE_PERCENT" if str(mode).upper() in ("PERCENT", "PRICE_PERCENT", "%") else "FIXED_LOSS"
+            val = float(value)
+            if symbol:
+                sym = str(symbol).upper().strip()
+                if sym not in self.settings.symbol_risk:
+                    self.settings.symbol_risk[sym] = {}
+                self.settings.symbol_risk[sym]["sl_mode"] = mode_norm
+                self.settings.symbol_risk[sym]["sl_value"] = val
+                target_str = f"Symbol '{sym}'"
+            else:
+                self.settings.sl_mode = mode_norm
+                self.settings.sl_value = val
+                target_str = "Global"
+            self.settings.save()
+            msg = f"{target_str} Stop-Loss updated to {mode_norm} ({val}{'%' if mode_norm=='PRICE_PERCENT' else ' USDT'})."
+            logger.info(msg)
+            return True, msg
+
+    def update_tp_setting(self, mode: str, value: float, symbol: str | None = None) -> tuple[bool, str]:
+        with self._lock:
+            valid, err = TradingSettings.validate_tp(mode, value)
+            if not valid:
+                return False, err
+            mode_norm = "PRICE_PERCENT" if str(mode).upper() in ("PERCENT", "PRICE_PERCENT", "%") else "FIXED_PROFIT"
+            val = float(value)
+            if symbol:
+                sym = str(symbol).upper().strip()
+                if sym not in self.settings.symbol_risk:
+                    self.settings.symbol_risk[sym] = {}
+                self.settings.symbol_risk[sym]["tp_mode"] = mode_norm
+                self.settings.symbol_risk[sym]["tp_value"] = val
+                target_str = f"Symbol '{sym}'"
+            else:
+                self.settings.tp_mode = mode_norm
+                self.settings.tp_value = val
+                target_str = "Global"
+            self.settings.save()
+            msg = f"{target_str} Take-Profit updated to {mode_norm} ({val}{'%' if mode_norm=='PRICE_PERCENT' else ' USDT'})."
+            logger.info(msg)
+            return True, msg
+
+    def update_trailing_setting(self, buffer_pct: float, symbol: str | None = None) -> tuple[bool, str]:
+        with self._lock:
+            act = self.settings.get_risk_config(symbol)["trailing_activation"]
+            valid, err = TradingSettings.validate_trailing(buffer_pct, act)
+            if not valid:
+                return False, err
+            val = float(buffer_pct)
+            if symbol:
+                sym = str(symbol).upper().strip()
+                if sym not in self.settings.symbol_risk:
+                    self.settings.symbol_risk[sym] = {}
+                self.settings.symbol_risk[sym]["trailing_buffer"] = val
+                target_str = f"Symbol '{sym}'"
+            else:
+                self.settings.trailing_buffer = val
+                target_str = "Global"
+            self.settings.save()
+            msg = f"{target_str} Trailing Buffer updated to {val}%."
+            logger.info(msg)
+            return True, msg
+
+    def update_trailing_activation_setting(self, activation_pct: float, symbol: str | None = None) -> tuple[bool, str]:
+        with self._lock:
+            buf = self.settings.get_risk_config(symbol)["trailing_buffer"]
+            valid, err = TradingSettings.validate_trailing(buf, activation_pct)
+            if not valid:
+                return False, err
+            val = float(activation_pct)
+            if symbol:
+                sym = str(symbol).upper().strip()
+                if sym not in self.settings.symbol_risk:
+                    self.settings.symbol_risk[sym] = {}
+                self.settings.symbol_risk[sym]["trailing_activation"] = val
+                target_str = f"Symbol '{sym}'"
+            else:
+                self.settings.trailing_activation = val
+                target_str = "Global"
+            self.settings.save()
+            msg = f"{target_str} Trailing Activation updated to {val}%."
+            logger.info(msg)
+            return True, msg
+
+    def update_exit_plan_setting(self, tokens: list[str], symbol: str | None = None) -> tuple[bool, str]:
+        with self._lock:
+            valid, err, legs = TradingSettings.parse_exit_plan(tokens)
+            if not valid:
+                return False, err
+            if symbol:
+                sym = str(symbol).upper().strip()
+                if sym not in self.settings.symbol_risk:
+                    self.settings.symbol_risk[sym] = {}
+                self.settings.symbol_risk[sym]["exit_plan"] = legs
+                target_str = f"Symbol '{sym}'"
+            else:
+                self.settings.exit_plan = legs
+                target_str = "Global"
+            self.settings.save()
+            msg = f"{target_str} Exit Plan updated with {len(legs)} legs."
+            logger.info(msg)
+            return True, msg
 
     # =====================================================
     # SAFE POSITION ACTIONS FOR TELEGRAM ADAPTER
@@ -409,16 +703,40 @@ class TradingEngine:
         with self._lock:
             open_positions = self.broker.get_open_positions()
             count = len(open_positions) if isinstance(open_positions, list) else len(open_positions.keys())
-            protected_symbols = self.broker.get_protected_symbols(self.watchlist)
+            protected_symbols = self.broker.get_protected_symbols(self.settings.symbols)
+            limit_str = (
+                str(self.settings.trade_limit)
+                if self.settings.trade_limit is not None
+                else "unlimited"
+            )
+            rem_str = (
+                str(max(0, self.settings.trade_limit - self.settings.new_trades_count))
+                if self.settings.trade_limit is not None
+                else "unlimited"
+            )
             return {
                 "mode": "LIVE" if self.live_trading else "PAPER",
                 "engine_state": self.engine_state.value,
                 "protection_only": self.protection_only_mode,
                 "open_positions_count": count,
                 "protected_symbols": protected_symbols,
-                "watchlist": self.watchlist,
+                "watchlist": list(self.settings.symbols),
                 "scanner_failures": dict(self.scanner.failure_counts),
                 "pending_intents_count": len(getattr(self.broker, "pending_intents", {})),
+                "ema_fast": self.settings.ema_fast,
+                "ema_slow": self.settings.ema_slow,
+                "timeframe": self.settings.timeframe,
+                "margin_usdt": self.settings.margin_usdt,
+                "leverage": self.settings.leverage,
+                "trade_limit": limit_str,
+                "trades_used": self.settings.new_trades_count,
+                "trades_remaining": rem_str,
+                "sl_mode": self.settings.sl_mode,
+                "sl_value": self.settings.sl_value,
+                "tp_mode": self.settings.tp_mode,
+                "tp_value": self.settings.tp_value,
+                "trailing_activation": self.settings.trailing_activation,
+                "trailing_buffer": self.settings.trailing_buffer,
             }
 
     def get_health_summary(self) -> dict:
@@ -447,12 +765,12 @@ class TradingEngine:
         else:
             return (
                 f"• Paper Mode Balance: `${config.PAPER_STARTING_BALANCE:.2f}` USDT\n"
-                f"• Initial Margin per trade: `${config.MARGIN_USDT:.2f}` USDT ({config.LEVERAGE}x)"
+                f"• Configured Margin per trade: `${self.settings.margin_usdt:.2f}` USDT ({self.settings.leverage}x)"
             )
 
     def get_positions_summary(self) -> list[dict]:
         with self._lock:
-            symbols = list(self.watchlist)
+            symbols = list(self.settings.symbols)
             protected = self.broker.get_protected_symbols(symbols)
             result = []
             for s in protected:
@@ -495,6 +813,7 @@ class TradingEngine:
                         "side": row.get("Side"),
                         "entry_price": row.get("Entry Price"),
                         "exit_price": row.get("Exit Price"),
+                        "quantity": row.get("Quantity"),
                         "status": row.get("Status"),
                         "pnl_percent": row.get("PnL %"),
                         "pnl_amount": row.get("PnL Amount"),

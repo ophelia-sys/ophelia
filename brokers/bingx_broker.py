@@ -201,6 +201,8 @@ class BingXBroker(Broker):
         target_side,
         event_timestamp,
         risk_manager=None,
+        margin=None,
+        leverage=None,
     ):
         client_order_id = self._intent_id(
             symbol=symbol,
@@ -213,6 +215,8 @@ class BingXBroker(Broker):
                 lambda: self.order_manager.open_long(
                     symbol,
                     client_order_id=client_order_id,
+                    margin=margin,
+                    leverage=leverage,
                 ),
                 "LONG",
                 client_order_id,
@@ -223,6 +227,8 @@ class BingXBroker(Broker):
                 lambda: self.order_manager.open_short(
                     symbol,
                     client_order_id=client_order_id,
+                    margin=margin,
+                    leverage=leverage,
                 ),
                 "SHORT",
                 client_order_id,
@@ -341,7 +347,68 @@ class BingXBroker(Broker):
         self.stop_prices.pop(symbol, None)
         self.locked_profits.pop(symbol, None)
 
-    def process_signal(self, signal, risk_manager=None):
+    def _partial_close_position(
+        self,
+        symbol,
+        current_side,
+        close_quantity,
+        status="PARTIAL_EXIT",
+    ):
+        timestamp = int(time.time())
+        client_order_id = self._intent_id(
+            symbol=symbol,
+            side=f"PARTIAL_{current_side}",
+            timestamp=timestamp,
+        )
+        if current_side == "LONG":
+            response = self._safe_order_call(
+                symbol,
+                lambda: self.order_manager.close_long(
+                    symbol,
+                    quantity=close_quantity,
+                    client_order_id=client_order_id,
+                ),
+                "LONG",
+                client_order_id,
+            )
+        else:
+            response = self._safe_order_call(
+                symbol,
+                lambda: self.order_manager.close_short(
+                    symbol,
+                    quantity=close_quantity,
+                    client_order_id=client_order_id,
+                ),
+                "SHORT",
+                client_order_id,
+            )
+
+        pos = self.position_manager.get_position(symbol)
+        if pos:
+            entry_price = pos.entry_price
+            exit_price = getattr(pos, "mark_price", entry_price)
+            if current_side == "LONG":
+                pnl_percent = ((exit_price - entry_price) / entry_price) * 100.0
+            else:
+                pnl_percent = ((entry_price - exit_price) / entry_price) * 100.0
+            pnl_amount = (pnl_percent / 100.0) * entry_price * close_quantity
+            self.trade_journal.save_trade(
+                Trade(
+                    symbol=symbol,
+                    side=current_side,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    quantity=round(close_quantity, 6),
+                    leverage=pos.leverage,
+                    entry_time=timestamp,
+                    exit_time=timestamp,
+                    pnl_percent=round(pnl_percent, 4),
+                    pnl_amount=round(pnl_amount, 4),
+                    status=status,
+                )
+            )
+
+    def process_signal(self, signal, risk_manager=None, margin=None, leverage=None, risk_config=None):
         symbol = signal.get("symbol", "UNKNOWN")
         signal_type = signal.get("signal", "HOLD")
         price = float(signal.get("price", 0.0))
@@ -367,6 +434,34 @@ class BingXBroker(Broker):
             return
 
         current = self._refresh_position(symbol)
+
+        # Apply advanced risk management if position exists
+        if current is not None:
+            cfg = risk_config
+            if cfg is None and hasattr(risk_manager, "get_risk_config"):
+                cfg = risk_manager.get_risk_config(symbol)
+            if cfg is None:
+                cfg = {
+                    "sl_mode": "PRICE_PERCENT",
+                    "sl_value": 1.0,
+                    "tp_mode": "PRICE_PERCENT",
+                    "tp_value": 2.0,
+                    "trailing_activation": 1.0,
+                    "trailing_buffer": 0.8,
+                    "exit_plan": [{"pct": 100.0, "type": "trailing"}],
+                }
+
+            cur_side = current.side.value if hasattr(current.side, "value") else str(current.side)
+            if symbol not in self.stop_prices:
+                sl_price = RiskManager.calculate_sl_price(
+                    current.entry_price,
+                    cur_side,
+                    cfg.get("sl_mode", "PRICE_PERCENT"),
+                    cfg.get("sl_value", 1.0),
+                    quantity=current.quantity,
+                )
+                self.stop_prices[symbol] = sl_price
+
         self._ensure_initial_stop(symbol, current, risk_manager)
         self._update_trailing_stop(symbol, current, price, risk_manager)
         if self._close_if_stop_hit(symbol, current, price, side):
@@ -400,6 +495,8 @@ class BingXBroker(Broker):
             target_side,
             timestamp,
             risk_manager,
+            margin=margin,
+            leverage=leverage,
         )
 
     def get_open_positions(self):

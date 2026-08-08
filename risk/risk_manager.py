@@ -87,6 +87,97 @@ class RiskManager:
         raise ValueError(f"Invalid side: {side}")
 
     # =====================================================
+    # ADVANCED SL / TP / TRAILING CALCULATIONS
+    # =====================================================
+
+    @staticmethod
+    def calculate_sl_price(
+        entry_price: float,
+        side: str,
+        sl_mode: str = "PRICE_PERCENT",
+        sl_value: float = 1.0,
+        quantity: float | None = None,
+    ) -> float:
+        if entry_price <= 0:
+            raise ValueError("Invalid entry price.")
+        side = side.upper()
+        mode = sl_mode.upper()
+
+        if mode in ("PRICE_PERCENT", "PERCENT"):
+            if side == RiskManager.LONG:
+                return entry_price * (1.0 - sl_value / 100.0)
+            elif side == RiskManager.SHORT:
+                return entry_price * (1.0 + sl_value / 100.0)
+        elif mode in ("FIXED_LOSS", "FIXED"):
+            if quantity is None or quantity <= 0:
+                raise ValueError("Quantity required for FIXED_LOSS stop-loss mode.")
+            price_delta = sl_value / quantity
+            if side == RiskManager.LONG:
+                return max(0.00000001, entry_price - price_delta)
+            elif side == RiskManager.SHORT:
+                return entry_price + price_delta
+
+        raise ValueError(f"Unsupported SL mode: {sl_mode}")
+
+    @staticmethod
+    def calculate_tp_price(
+        entry_price: float,
+        side: str,
+        tp_mode: str = "PRICE_PERCENT",
+        tp_value: float = 2.0,
+        quantity: float | None = None,
+    ) -> float:
+        if entry_price <= 0:
+            raise ValueError("Invalid entry price.")
+        side = side.upper()
+        mode = tp_mode.upper()
+
+        if mode in ("PRICE_PERCENT", "PERCENT"):
+            if side == RiskManager.LONG:
+                return entry_price * (1.0 + tp_value / 100.0)
+            elif side == RiskManager.SHORT:
+                return entry_price * (1.0 - tp_value / 100.0)
+        elif mode in ("FIXED_PROFIT", "FIXED"):
+            if quantity is None or quantity <= 0:
+                raise ValueError("Quantity required for FIXED_PROFIT take-profit mode.")
+            price_delta = tp_value / quantity
+            if side == RiskManager.LONG:
+                return entry_price + price_delta
+            elif side == RiskManager.SHORT:
+                return max(0.00000001, entry_price - price_delta)
+
+        raise ValueError(f"Unsupported TP mode: {tp_mode}")
+
+    @staticmethod
+    def calculate_trailing_stop(
+        entry_price: float,
+        favorable_price: float,
+        side: str,
+        trailing_activation: float = 1.0,
+        trailing_buffer: float = 0.8,
+        current_stop: float | None = None,
+    ) -> float | None:
+        if entry_price <= 0 or favorable_price <= 0:
+            return current_stop
+        side = side.upper()
+        profit_pct = RiskManager.calculate_profit_percent(entry_price, favorable_price, side)
+        if profit_pct < trailing_activation:
+            return current_stop
+
+        if side == RiskManager.LONG:
+            candidate = favorable_price * (1.0 - trailing_buffer / 100.0)
+            if current_stop is None:
+                return candidate
+            return max(current_stop, candidate)
+        elif side == RiskManager.SHORT:
+            candidate = favorable_price * (1.0 + trailing_buffer / 100.0)
+            if current_stop is None:
+                return candidate
+            return min(current_stop, candidate)
+
+        return current_stop
+
+    # =====================================================
     # TRAILING ACTIVE
     # =====================================================
 

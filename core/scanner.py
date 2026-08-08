@@ -19,15 +19,15 @@ class Scanner:
         self.failure_counts = {}
         self.last_failed_symbols = []
 
-    def scan_symbol(self, symbol):
+    def scan_symbol(self, symbol, timeframe="1m", ema_fast=None, ema_slow=None):
 
         try:
 
-            df = self.market.get_klines(symbol=symbol)
+            df = self.market.get_klines(symbol=symbol, interval=timeframe)
 
             df = EMAIndicator.calculate(df)
 
-            signal = self.strategy.get_signal(df)
+            signal = self.strategy.get_signal(df, ema_fast=ema_fast, ema_slow=ema_slow)
             if isinstance(signal, dict):
                 signal["symbol"] = symbol
             self.failure_counts[symbol] = 0
@@ -47,7 +47,7 @@ class Scanner:
 
             return None
 
-    def scan(self, watchlist):
+    def scan(self, watchlist, timeframe="1m", ema_fast=None, ema_slow=None):
 
         signals = []
         failed_symbols = []
@@ -55,7 +55,7 @@ class Scanner:
         with ThreadPoolExecutor(max_workers=10) as executor:
 
             results = executor.map(
-                self.scan_symbol,
+                lambda s: self.scan_symbol(s, timeframe=timeframe, ema_fast=ema_fast, ema_slow=ema_slow),
                 watchlist
             )
 
@@ -69,4 +69,4 @@ class Scanner:
 
         self.last_failed_symbols = failed_symbols
 
-        return signals
+        return signals

@@ -4,6 +4,7 @@ from typing import Any
 
 import requests
 import config
+from core.settings import TradingSettings
 from utils.logger import logger
 
 
@@ -39,7 +40,6 @@ class TelegramAdapter:
         if user_id is None:
             return False
         if not self.allowed_user_ids:
-            # If no user IDs configured, reject all by default for safety
             return False
         return int(user_id) in self.allowed_user_ids
 
@@ -69,7 +69,6 @@ class TelegramAdapter:
                     self.send_message(uid, text)
         except Exception as e:
             logger.error(f"Error sending Telegram notification: {e}")
-
 
     def handle_engine_event(self, event_type: str, details: dict) -> None:
         if event_type == "POSITION_OPENED":
@@ -159,7 +158,6 @@ class TelegramAdapter:
             logger.warning(
                 f"Unauthorized Telegram access attempt from user_id={user_id}"
             )
-            # Silent reject or generic rejection without exposing system details
             self.send_message(
                 chat_id,
                 "🚫 *Access Denied*: Unauthorized User ID."
@@ -206,14 +204,46 @@ class TelegramAdapter:
             self._cmd_emergency(chat_id, user_id)
         elif cmd == "/confirm_emergency":
             self._cmd_confirm_emergency(chat_id, user_id)
+        elif cmd == "/settings":
+            self._cmd_settings(chat_id)
+        elif cmd == "/symbols":
+            self._cmd_symbols(chat_id)
+        elif cmd == "/set_ema":
+            self._cmd_set_ema(chat_id, user_id, args)
+        elif cmd == "/set_timeframe":
+            self._cmd_set_timeframe(chat_id, user_id, args)
+        elif cmd == "/set_margin":
+            self._cmd_set_margin(chat_id, user_id, args)
+        elif cmd == "/set_leverage":
+            self._cmd_set_leverage(chat_id, user_id, args)
+        elif cmd == "/add_symbol":
+            self._cmd_add_symbol(chat_id, user_id, args)
+        elif cmd == "/remove_symbol":
+            self._cmd_remove_symbol(chat_id, user_id, args)
+        elif cmd == "/set_trade_limit":
+            self._cmd_set_trade_limit(chat_id, user_id, args)
+        elif cmd == "/risk_settings":
+            self._cmd_risk_settings(chat_id, args)
+        elif cmd == "/set_sl":
+            self._cmd_set_sl(chat_id, user_id, args)
+        elif cmd == "/set_tp":
+            self._cmd_set_tp(chat_id, user_id, args)
+        elif cmd == "/set_trailing":
+            self._cmd_set_trailing(chat_id, user_id, args)
+        elif cmd == "/set_trailing_activation":
+            self._cmd_set_trailing_activation(chat_id, user_id, args)
+        elif cmd == "/set_exit_plan":
+            self._cmd_set_exit_plan(chat_id, user_id, args)
+        elif cmd == "/confirm_settings":
+            self._cmd_confirm_settings(chat_id, user_id)
         else:
             self.send_message(
                 chat_id,
-                "❓ Unknown command. Type /status for system overview."
+                "❓ Unknown command. Type /status or /settings for system overview."
             )
 
     # =====================================================
-    # COMMAND HANDLERS
+    # STATUS & READ-ONLY COMMAND HANDLERS
     # =====================================================
 
     def _cmd_mode(self, chat_id: int) -> None:
@@ -230,7 +260,13 @@ class TelegramAdapter:
             f"• *Open Positions*: `{status_info['open_positions_count']}`\n"
             f"• *Protected Symbols*: `{', '.join(status_info['protected_symbols']) or 'None'}`\n"
             f"• *Active Symbols*: `{', '.join(status_info['watchlist'])}`\n"
-            f"• *Scanner Failures*: `{status_info['scanner_failures']}`\n"
+            f"• *EMA Fast/Slow*: `{status_info['ema_fast']} / {status_info['ema_slow']}`\n"
+            f"• *Timeframe*: `{status_info['timeframe']}`\n"
+            f"• *Margin*: `{status_info['margin_usdt']} USDT` | *Leverage*: `{status_info['leverage']}x`\n"
+            f"• *Trade Limit*: `{status_info['trade_limit']}` (Used: `{status_info['trades_used']}`, Rem: `{status_info['trades_remaining']}`)\n"
+            f"• *Stop-Loss*: `{status_info['sl_mode']}` (`{status_info['sl_value']}`)\n"
+            f"• *Take-Profit*: `{status_info['tp_mode']}` (`{status_info['tp_value']}`)\n"
+            f"• *Trailing*: Activation `{status_info['trailing_activation']}%` | Buffer `{status_info['trailing_buffer']}%`\n"
             f"• *Pending Intents*: `{status_info['pending_intents_count']}`"
         )
         self.send_message(chat_id, msg)
@@ -289,6 +325,10 @@ class TelegramAdapter:
             )
         self.send_message(chat_id, "\n\n".join(lines))
 
+    # =====================================================
+    # ENGINE STATE CONTROL COMMAND HANDLERS
+    # =====================================================
+
     def _cmd_start(self, chat_id: int) -> None:
         success, msg = self.engine.start_trading()
         prefix = "✅" if success else "⚠️"
@@ -306,6 +346,10 @@ class TelegramAdapter:
         success, msg = self.engine.resume_trading()
         prefix = "▶️" if success else "⚠️"
         self.send_message(chat_id, f"{prefix} {msg}")
+
+    # =====================================================
+    # POSITION COMMAND HANDLERS
+    # =====================================================
 
     def _cmd_close(self, chat_id: int, user_id: int, args: list) -> None:
         if not args:
@@ -386,4 +430,426 @@ class TelegramAdapter:
 
         success, msg = self.engine.emergency_close_safe()
         prefix = "🚨" if success else "❌"
+        self.send_message(chat_id, f"{prefix} {msg}")
+
+    # =====================================================
+    # STRATEGY & RISK SETTINGS COMMAND HANDLERS
+    # =====================================================
+
+    def _cmd_settings(self, chat_id: int) -> None:
+        s = self.engine.get_settings_summary()
+        msg = (
+            f"⚙️ *OPHELIA STRATEGY SETTINGS*\n\n"
+            f"• *EMA Fast / Slow*: `{s['ema_fast']} / {s['ema_slow']}`\n"
+            f"• *Timeframe*: `{s['timeframe']}`\n"
+            f"• *Margin*: `{s['margin_usdt']} USDT` | *Leverage*: `{s['leverage']}x`\n"
+            f"• *Symbols*: `{', '.join(s['symbols'])}`\n"
+            f"• *Trade Limit*: `{s['trade_limit']}` (Used: `{s['trades_used']}`, Rem: `{s['trades_remaining']}`)\n"
+            f"• *SL Mode*: `{s['sl_mode']}` (`{s['sl_value']}`)\n"
+            f"• *TP Mode*: `{s['tp_mode']}` (`{s['tp_value']}`)\n"
+            f"• *Trailing*: Activation `{s['trailing_activation']}%` | Buffer `{s['trailing_buffer']}%`\n"
+            f"• *Engine State*: `{s['engine_state']}`\n\n"
+            f"Use `/risk_settings` for detailed per-symbol risk management."
+        )
+        self.send_message(chat_id, msg)
+
+    def _cmd_risk_settings(self, chat_id: int, args: list) -> None:
+        symbol = args[0].upper().strip() if args else None
+        r = self.engine.get_risk_settings_summary(symbol)
+
+        exit_legs_str = ", ".join(
+            f"{leg['pct']}% @ {'trailing' if leg['type']=='trailing' else str(leg.get('target_pct'))+'%'}"
+            for leg in r["exit_plan"]
+        )
+
+        msg = (
+            f"🛡️ *RISK MANAGEMENT CONFIGURATION ({r['symbol']})*\n\n"
+            f"• *Stop-Loss (SL)*: Mode `{r['sl_mode']}` | Value `{r['sl_value']}`\n"
+            f"• *Take-Profit (TP)*: Mode `{r['tp_mode']}` | Value `{r['tp_value']}`\n"
+            f"• *Trailing Stop*: Activation `{r['trailing_activation']}%` | Buffer `{r['trailing_buffer']}%`\n"
+            f"• *Exit Plan Legs*: `{exit_legs_str}`\n\n"
+            f"*Available Commands:*\n"
+            f"`/set_sl <percent|fixed> <val> [symbol]`\n"
+            f"`/set_tp <percent|fixed> <val> [symbol]`\n"
+            f"`/set_trailing <buffer_pct> [symbol]`\n"
+            f"`/set_trailing_activation <activation_pct> [symbol]`\n"
+            f"`/set_exit_plan <global|symbol> <leg1> <leg2> ...`"
+        )
+        self.send_message(chat_id, msg)
+
+    def _cmd_symbols(self, chat_id: int) -> None:
+        s = self.engine.get_settings_summary()
+        supported = getattr(config, "SUPPORTED_SYMBOLS", ("BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT"))
+        msg = (
+            f"🔤 *CONFIGURED WATCHLIST*\n"
+            f"• *Active Symbols*: `{', '.join(s['symbols'])}` \n\n"
+            f"• *Supported Contracts*: `{', '.join(supported)}`\n\n"
+            f"Use `/add_symbol <sym>` or `/remove_symbol <sym>` to modify."
+        )
+        self.send_message(chat_id, msg)
+
+    def _request_settings_confirm(
+        self,
+        chat_id: int,
+        user_id: int,
+        method_name: str,
+        args: tuple,
+        desc: str,
+        old_val: str,
+        new_val: str,
+    ) -> None:
+        with self._lock:
+            key = (user_id, "settings")
+            self._pending_confirmations[key] = {
+                "expires_at": time.time() + 60,
+                "method_name": method_name,
+                "args": args,
+                "desc": desc,
+            }
+        msg = (
+            f"⚙️ *SETTINGS CHANGE CONFIRMATION REQUIRED*\n\n"
+            f"Setting: *{desc}*\n"
+            f"Current: `{old_val}`\n"
+            f"Requested: `{new_val}`\n\n"
+            f"Reply with `/confirm_settings` within 60 seconds to apply."
+        )
+        self.send_message(chat_id, msg)
+
+    def _cmd_set_ema(self, chat_id: int, user_id: int, args: list) -> None:
+        if len(args) < 2:
+            self.send_message(chat_id, "⚠️ Usage: `/set_ema <fast> <slow>` (e.g. `/set_ema 9 21`)")
+            return
+        try:
+            fast = int(args[0])
+            slow = int(args[1])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: EMA periods must be integers.")
+            return
+
+        valid, err = TradingSettings.validate_ema(fast, slow)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_ema_settings",
+            args=(fast, slow),
+            desc="EMA Fast / Slow",
+            old_val=f"{s['ema_fast']} / {s['ema_slow']}",
+            new_val=f"{fast} / {slow}",
+        )
+
+    def _cmd_set_timeframe(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/set_timeframe <tf>` (e.g. `/set_timeframe 5m`)")
+            return
+        tf = args[0].lower().strip()
+        valid, err = TradingSettings.validate_timeframe(tf)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_timeframe",
+            args=(tf,),
+            desc="Strategy Timeframe",
+            old_val=s["timeframe"],
+            new_val=tf,
+        )
+
+    def _cmd_set_margin(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/set_margin <usdt>` (e.g. `/set_margin 15.0`)")
+            return
+        try:
+            margin = float(args[0])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: Margin must be a numeric value.")
+            return
+
+        valid, err = TradingSettings.validate_margin(margin)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_margin",
+            args=(margin,),
+            desc="Trade Margin (USDT)",
+            old_val=f"{s['margin_usdt']} USDT",
+            new_val=f"{margin} USDT",
+        )
+
+    def _cmd_set_leverage(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/set_leverage <val>` (e.g. `/set_leverage 10`)")
+            return
+        try:
+            leverage = int(args[0])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: Leverage must be an integer.")
+            return
+
+        valid, err = TradingSettings.validate_leverage(leverage)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_leverage",
+            args=(leverage,),
+            desc="Trade Leverage",
+            old_val=f"{s['leverage']}x",
+            new_val=f"{leverage}x",
+        )
+
+    def _cmd_add_symbol(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/add_symbol <sym>` (e.g. `/add_symbol BTC-USDT`)")
+            return
+        sym = args[0].upper().strip()
+        valid, err = TradingSettings.validate_symbol(sym)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        if sym in s["symbols"]:
+            self.send_message(chat_id, f"ℹ️ Symbol `{sym}` is already in the watchlist.")
+            return
+
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="add_symbol",
+            args=(sym,),
+            desc="Add Symbol to Watchlist",
+            old_val=", ".join(s["symbols"]),
+            new_val=f"{', '.join(s['symbols'])}, {sym}",
+        )
+
+    def _cmd_remove_symbol(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/remove_symbol <sym>` (e.g. `/remove_symbol XRP-USDT`)")
+            return
+        sym = args[0].upper().strip()
+        s = self.engine.get_settings_summary()
+        if sym not in s["symbols"]:
+            self.send_message(chat_id, f"❌ Error: Symbol `{sym}` is not in the watchlist.")
+            return
+
+        remaining = [x for x in s["symbols"] if x != sym]
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="remove_symbol",
+            args=(sym,),
+            desc="Remove Symbol from Watchlist",
+            old_val=", ".join(s["symbols"]),
+            new_val=", ".join(remaining) or "None",
+        )
+
+    def _cmd_set_trade_limit(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(
+                chat_id,
+                "⚠️ Usage: `/set_trade_limit <number>` or `/set_trade_limit unlimited`"
+            )
+            return
+        raw_val = args[0].lower().strip()
+        limit_val = None if raw_val in ("unlimited", "none", "0") else raw_val
+
+        valid, err = TradingSettings.validate_trade_limit(limit_val)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        s = self.engine.get_settings_summary()
+        new_val_str = "unlimited" if limit_val is None else str(limit_val)
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="set_trade_limit",
+            args=(limit_val,),
+            desc="Session Automated Trade Limit",
+            old_val=str(s["trade_limit"]),
+            new_val=new_val_str,
+        )
+
+    def _cmd_set_sl(self, chat_id: int, user_id: int, args: list) -> None:
+        if len(args) < 2:
+            self.send_message(chat_id, "⚠️ Usage: `/set_sl <percent|fixed> <val> [symbol]`")
+            return
+        mode = args[0]
+        try:
+            val = float(args[1])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: SL value must be numeric.")
+            return
+        symbol = args[2].upper().strip() if len(args) >= 3 else None
+
+        valid, err = TradingSettings.validate_sl(mode, val)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        r = self.engine.get_risk_settings_summary(symbol)
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_sl_setting",
+            args=(mode, val, symbol),
+            desc=f"Stop-Loss ({symbol or 'Global'})",
+            old_val=f"{r['sl_mode']} ({r['sl_value']})",
+            new_val=f"{mode.upper()} ({val})",
+        )
+
+    def _cmd_set_tp(self, chat_id: int, user_id: int, args: list) -> None:
+        if len(args) < 2:
+            self.send_message(chat_id, "⚠️ Usage: `/set_tp <percent|fixed> <val> [symbol]`")
+            return
+        mode = args[0]
+        try:
+            val = float(args[1])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: TP value must be numeric.")
+            return
+        symbol = args[2].upper().strip() if len(args) >= 3 else None
+
+        valid, err = TradingSettings.validate_tp(mode, val)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        r = self.engine.get_risk_settings_summary(symbol)
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_tp_setting",
+            args=(mode, val, symbol),
+            desc=f"Take-Profit ({symbol or 'Global'})",
+            old_val=f"{r['tp_mode']} ({r['tp_value']})",
+            new_val=f"{mode.upper()} ({val})",
+        )
+
+    def _cmd_set_trailing(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/set_trailing <buffer_pct> [symbol]`")
+            return
+        try:
+            buf = float(args[0])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: Trailing buffer must be numeric.")
+            return
+        symbol = args[1].upper().strip() if len(args) >= 2 else None
+
+        r = self.engine.get_risk_settings_summary(symbol)
+        valid, err = TradingSettings.validate_trailing(buf, r["trailing_activation"])
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_trailing_setting",
+            args=(buf, symbol),
+            desc=f"Trailing Buffer ({symbol or 'Global'})",
+            old_val=f"{r['trailing_buffer']}%",
+            new_val=f"{buf}%",
+        )
+
+    def _cmd_set_trailing_activation(self, chat_id: int, user_id: int, args: list) -> None:
+        if not args:
+            self.send_message(chat_id, "⚠️ Usage: `/set_trailing_activation <activation_pct> [symbol]`")
+            return
+        try:
+            act = float(args[0])
+        except ValueError:
+            self.send_message(chat_id, "❌ Error: Trailing activation must be numeric.")
+            return
+        symbol = args[1].upper().strip() if len(args) >= 2 else None
+
+        r = self.engine.get_risk_settings_summary(symbol)
+        valid, err = TradingSettings.validate_trailing(r["trailing_buffer"], act)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_trailing_activation_setting",
+            args=(act, symbol),
+            desc=f"Trailing Activation ({symbol or 'Global'})",
+            old_val=f"{r['trailing_activation']}%",
+            new_val=f"{act}%",
+        )
+
+    def _cmd_set_exit_plan(self, chat_id: int, user_id: int, args: list) -> None:
+        if len(args) < 2:
+            self.send_message(
+                chat_id,
+                "⚠️ Usage: `/set_exit_plan <global|symbol> <leg1> <leg2> ...` (e.g. `/set_exit_plan XRP-USDT 25@1.0 25@2.0 50@trailing`)"
+            )
+            return
+
+        target = args[0].upper().strip()
+        symbol = None if target == "GLOBAL" else target
+        tokens = args[1:]
+
+        valid, err, legs = TradingSettings.parse_exit_plan(tokens)
+        if not valid:
+            self.send_message(chat_id, f"❌ Validation Error: {err}")
+            return
+
+        r = self.engine.get_risk_settings_summary(symbol)
+        old_str = ", ".join(f"{leg['pct']}%" for leg in r["exit_plan"])
+        new_str = ", ".join(tokens)
+
+        self._request_settings_confirm(
+            chat_id=chat_id,
+            user_id=user_id,
+            method_name="update_exit_plan_setting",
+            args=(tokens, symbol),
+            desc=f"Exit Plan Legs ({symbol or 'Global'})",
+            old_val=old_str,
+            new_val=new_str,
+        )
+
+    def _cmd_confirm_settings(self, chat_id: int, user_id: int) -> None:
+        key = (user_id, "settings")
+        with self._lock:
+            intent = self._pending_confirmations.pop(key, None)
+
+        if not intent:
+            self.send_message(chat_id, "❌ Settings confirmation expired or missing.")
+            return
+
+        if time.time() > intent["expires_at"]:
+            self.send_message(chat_id, "❌ Settings confirmation has expired.")
+            return
+
+        method_name = intent["method_name"]
+        args = intent["args"]
+
+        method = getattr(self.engine, method_name, None)
+        if not method:
+            self.send_message(chat_id, "❌ Error: Engine method not found.")
+            return
+
+        success, msg = method(*args)
+        prefix = "✅" if success else "❌"
         self.send_message(chat_id, f"{prefix} {msg}")
