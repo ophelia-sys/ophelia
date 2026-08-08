@@ -1,3 +1,5 @@
+import time
+
 import config
 from brokers.paper_broker import PaperBroker
 from core.candle_scheduler import CandleScheduler
@@ -54,13 +56,37 @@ class TradingEngine:
         try:
 
             signals = self.scanner.scan(self.watchlist)
+            if self.scanner.last_failed_symbols:
+                failed = ", ".join(self.scanner.last_failed_symbols)
+                logger.error(f"Scanner failed symbols this cycle: {failed}")
 
             logger.info(f"Signals Received: {len(signals)}")
 
+            now = int(time.time())
+            for symbol in list(self.position_manager.get_all_positions().keys()):
+                try:
+                    price = self.scanner.market.get_current_price(symbol)
+                    self.broker.process_signal(
+                        {
+                            "symbol": symbol,
+                            "signal": "HOLD",
+                            "price": price,
+                            "timestamp": now,
+                        },
+                        self.risk_manager,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Protection update failed for {symbol}: {e}"
+                    )
+
             for signal in signals:
 
+                symbol = signal.get("symbol", "UNKNOWN")
+                signal_type = signal.get("signal", "HOLD")
+
                 logger.info(
-                    f"{signal.symbol} | {signal.signal}"
+                    f"{symbol} | {signal_type}"
                 )
 
                 self.broker.process_signal(

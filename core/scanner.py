@@ -16,6 +16,8 @@ class Scanner:
         self.market = MarketData(self.client)
 
         self.strategy = StrategyFactory.create()
+        self.failure_counts = {}
+        self.last_failed_symbols = []
 
     def scan_symbol(self, symbol):
 
@@ -25,22 +27,30 @@ class Scanner:
 
             df = EMAIndicator.calculate(df)
 
-            signal = self.strategy.generate_signal(
-                df,
-                symbol
-            )
+            signal = self.strategy.get_signal(df)
+            if isinstance(signal, dict):
+                signal["symbol"] = symbol
+            self.failure_counts[symbol] = 0
 
             return signal
 
         except Exception as e:
+            count = self.failure_counts.get(symbol, 0) + 1
+            self.failure_counts[symbol] = count
 
-            logger.error(f"{symbol}: {e}")
+            logger.error(f"{symbol}: {e} (failure #{count})")
+            if count >= 3:
+                logger.error(
+                    f"Scanner failure escalation for {symbol}: "
+                    f"{count} consecutive failures"
+                )
 
             return None
 
     def scan(self, watchlist):
 
         signals = []
+        failed_symbols = []
 
         with ThreadPoolExecutor(max_workers=10) as executor:
 
@@ -49,10 +59,14 @@ class Scanner:
                 watchlist
             )
 
-            for signal in results:
+            for symbol, signal in zip(watchlist, results):
 
                 if signal is not None:
 
                     signals.append(signal)
+                else:
+                    failed_symbols.append(symbol)
+
+        self.last_failed_symbols = failed_symbols
 
         return signals
