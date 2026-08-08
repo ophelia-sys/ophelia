@@ -1,4 +1,4 @@
-# TEMP COPILOT TEST
+from typing import Any
 
 import pandas as pd
 
@@ -53,12 +53,17 @@ class MarketData:
 
     def get_klines(self, symbol, interval="1m", limit=200):
 
-        rows = self.client.get_klines(
+        payload = self.client.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit
         )
 
+        rows: Any = (
+            payload.get("data", [])
+            if isinstance(payload, dict)
+            else payload
+        )
         if not isinstance(rows, list):
             raise ValueError(
                 "Kline payload must be a list of rows."
