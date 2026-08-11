@@ -16,6 +16,12 @@ class Endpoint:
 
     OPEN_INTEREST = "/openApi/swap/v2/quote/openInterest"
 
+    FUNDING_RATE = "/openApi/swap/v2/quote/fundingRate"
+
+    DEPTH = "/openApi/swap/v2/quote/depth"
+
+    TRADES = "/openApi/swap/v2/quote/trades"
+
     KLINES = "/openApi/swap/v3/quote/klines"
 
     # ==============================

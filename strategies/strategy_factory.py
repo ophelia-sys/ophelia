@@ -13,7 +13,11 @@ class StrategyFactory:
 
         if strategy_name == "EMA":
             return EMAStrategy()
+            
+        if strategy_name == "ANTI_CHOP":
+            from strategies.anti_chop_ema_strategy import AntiChopEMAStrategy
+            return AntiChopEMAStrategy()
 
         raise ValueError(
             f"Unknown strategy: {strategy_name}"
-        )
+        )

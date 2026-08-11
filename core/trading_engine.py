@@ -16,6 +16,7 @@ from paper.trade_journal import TradeJournal
 from portfolio.position_manager import PositionManager as LivePositionManager
 from risk.risk_manager import RiskManager
 from utils.logger import logger
+from institutional.data.engine import InstitutionalDataEngine
 
 
 class TradingEngine:
@@ -51,8 +52,10 @@ class TradingEngine:
         else:
             market_client = PublicBingXClient()
 
+        self.institutional_data = InstitutionalDataEngine(market_client)
+
         # Scanner
-        self.scanner = Scanner(market_client)
+        self.scanner = Scanner(market_client, institutional_data=self.institutional_data)
         self.watchlist = list(self.settings.symbols)
 
         self.trade_journal = TradeJournal()
@@ -301,6 +304,11 @@ class TradingEngine:
     def run(self):
 
         logger.info("Trading Engine Started")
+        
+        try:
+            self.institutional_data.start()
+        except Exception as e:
+            logger.error(f"Failed to start InstitutionalDataEngine: {e}")
 
         while True:
 
@@ -320,6 +328,11 @@ class TradingEngine:
                         "Emergency close path: "
                         "call broker.emergency_close_all() if needed."
                     )
+                
+                try:
+                    self.institutional_data.stop()
+                except Exception as e:
+                    logger.error(f"Failed to stop InstitutionalDataEngine: {e}")
 
                 break
 

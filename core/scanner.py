@@ -5,17 +5,20 @@ from exchange.market_data import MarketData
 from indicators.ema import EMAIndicator
 from strategies.strategy_factory import StrategyFactory
 from utils.logger import logger
+from core.decision_engine import DecisionEngine
 
 
 class Scanner:
 
-    def __init__(self, client: BingXClient | None = None):
+    def __init__(self, client: BingXClient | None = None, institutional_data=None):
 
         self.client = client or BingXClient()
 
         self.market = MarketData(self.client)
 
         self.strategy = StrategyFactory.create()
+        self.institutional_data = institutional_data
+        self.decision_engine = DecisionEngine()
         self.failure_counts = {}
         self.last_failed_symbols = []
 
@@ -30,6 +33,19 @@ class Scanner:
             signal = self.strategy.get_signal(df, ema_fast=ema_fast, ema_slow=ema_slow)
             if isinstance(signal, dict):
                 signal["symbol"] = symbol
+                
+                if signal.get("signal") in ("BUY", "SELL"):
+                    snapshot = None
+                    if self.institutional_data:
+                        try:
+                            snapshot = self.institutional_data.get_snapshot(symbol)
+                        except Exception as e:
+                            logger.warning(f"Institutional data failure for {symbol}: {e}")
+                            
+                    analysis = self.decision_engine.evaluate(symbol, df, signal, snapshot=snapshot)
+                    if not analysis.approved:
+                        return None
+
             self.failure_counts[symbol] = 0
 
             return signal

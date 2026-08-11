@@ -1,0 +1,27 @@
+# Institutional Math Engine v3 - Tasks
+
+- [ ] Phase 1: Types & Normalization
+  - [ ] Refactor `institutional/types.py` (MarketState, DataQuality)
+  - [ ] Refactor `institutional/normalization.py` (MAD Z-Score, Rank, ECDF)
+- [ ] Phase 2: Core Estimators
+  - [ ] Update `institutional/volatility.py`
+  - [ ] Update `institutional/trend.py`
+  - [ ] Update `institutional/momentum.py`
+- [ ] Phase 3: Order Flow & Liquidity
+  - [ ] Update `institutional/order_flow.py` (CKS OFI, CVD, TVI)
+  - [ ] Update `institutional/liquidity.py`
+  - [ ] Update `institutional/open_interest.py`, `funding.py`, `liquidation.py`
+- [ ] Phase 4: Advanced Statistical Layers (Slow Path)
+  - [ ] Create `institutional/cross_asset.py`
+  - [ ] Create `institutional/structural_break.py`
+  - [ ] Create `institutional/regime.py`
+  - [ ] Create `institutional/anomaly.py`
+  - [ ] Update `institutional/score.py`
+- [ ] Phase 5: Verification & Integration
+  - [ ] Update `institutional/institutional_math.py`
+  - [ ] Create `institutional/FORMULA_REGISTRY.md`
+  - [ ] Create `institutional/DATA_REQUIREMENTS.md`
+  - [ ] Create `institutional/ARCHITECTURE.md`
+  - [ ] Write `tests/test_institutional_math_v3.py`
+- [ ] Phase 6: Final Reporting
+  - [ ] Generate `institutional/INSTITUTIONAL_MATH_V3_REPORT.md`

@@ -402,6 +402,56 @@ class BingXClient:
             response
         )
 
+    def get_open_interest(self, symbol: str) -> dict:
+        """
+        Return open interest.
+        """
+        response = self._get(
+            Endpoint.OPEN_INTEREST,
+            {"symbol": symbol},
+        )
+        return Serializer.raw_data(response)
+
+    def get_funding_rate(self, symbol: str) -> list:
+        """
+        Return funding rate history.
+        """
+        response = self._get(
+            Endpoint.FUNDING_RATE,
+            {"symbol": symbol},
+        )
+        return Serializer.raw_data(response)
+
+    def get_premium_index(self, symbol: str) -> dict:
+        """
+        Return premium index.
+        """
+        response = self._get(
+            Endpoint.PREMIUM_INDEX,
+            {"symbol": symbol},
+        )
+        return Serializer.raw_data(response)
+
+    def get_depth(self, symbol: str, limit: int = 20) -> dict:
+        """
+        Return order book depth.
+        """
+        response = self._get(
+            Endpoint.DEPTH,
+            {"symbol": symbol, "limit": limit},
+        )
+        return Serializer.raw_data(response)
+
+    def get_trades(self, symbol: str, limit: int = 100) -> list:
+        """
+        Return recent trades.
+        """
+        response = self._get(
+            Endpoint.TRADES,
+            {"symbol": symbol, "limit": limit},
+        )
+        return Serializer.raw_data(response)
+
     # =====================================================
     # ACCOUNT API
     # =====================================================
