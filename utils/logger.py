@@ -45,5 +45,9 @@ class Logger:
 
         self.logger.error(message)
 
+    def debug(self, message):
+
+        self.logger.debug(message)
+
 
 logger = Logger()

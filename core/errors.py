@@ -201,3 +201,12 @@ class InvalidPositionSize(RiskError):
     """
     Invalid calculated position size.
     """
+
+# =====================================================
+# ISOLATION / SHADOW
+# =====================================================
+
+class ShadowModeIsolationError(OpheliaError):
+    """
+    Raised when the system attempts a prohibited action in SHADOW mode.
+    """

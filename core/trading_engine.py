@@ -1,10 +1,14 @@
 import threading
 import time
+import json
+import os
+import tempfile
 from typing import Any, Callable
 
 import config
 from brokers.bingx_broker import BingXBroker
 from brokers.paper_broker import PaperBroker
+from brokers.shadow_broker import ShadowBroker
 from core.candle_scheduler import CandleScheduler
 from core.enums import EngineState
 from core.position_manager import PositionManager
@@ -17,7 +21,44 @@ from portfolio.position_manager import PositionManager as LivePositionManager
 from risk.risk_manager import RiskManager
 from utils.logger import logger
 from institutional.data.engine import InstitutionalDataEngine
+from institutional.cvd.probability_engine import Phase7ProbabilityEngine
 
+
+class ShadowStateManager:
+    def __init__(self):
+        self.state_file = os.path.join(os.path.dirname(__file__), "../data/shadow_state.json")
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        self.state = {
+            "phase": "WARMING",
+            "shadow_started_at": None,
+            "observations": 0,
+            "long_candidates": 0,
+            "short_candidates": 0,
+            "holds": 0,
+            "conflicts": 0,
+            "telemetry_counts": {"dtr": 0, "flp": 0, "div": 0, "abs": 0},
+            "last_update": 0
+        }
+        self._load()
+
+    def _load(self):
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, "r") as f:
+                    data = json.load(f)
+                self.state.update(data)
+            except Exception as e:
+                logger.error(f"Failed to load shadow state: {e}")
+
+    def save(self):
+        try:
+            self.state["last_update"] = int(time.time())
+            tmp_path = self.state_file + ".tmp"
+            with open(tmp_path, "w") as f:
+                json.dump(self.state, f)
+            os.replace(tmp_path, self.state_file)
+        except Exception as e:
+            logger.error(f"Failed to save shadow state: {e}")
 
 class TradingEngine:
 
@@ -53,14 +94,38 @@ class TradingEngine:
             market_client = PublicBingXClient()
 
         self.institutional_data = InstitutionalDataEngine(market_client)
+        self.probability_engine = Phase7ProbabilityEngine(self.institutional_data)
 
-        # Scanner
+        # Scanner (Legacy Kronos/EMA - Quarantined)
         self.scanner = Scanner(market_client, institutional_data=self.institutional_data)
         self.watchlist = list(self.settings.symbols)
 
+        # Load Phase 7 Decision Thresholds for Shadow Mode
+        self.phase7_thresholds = {}
+        try:
+            import json
+            import os
+            threshold_path = os.path.join(os.path.dirname(__file__), "../PHASE7_DECISION_THRESHOLDS.json")
+            if os.path.exists(threshold_path):
+                with open(threshold_path, "r") as f:
+                    self.phase7_thresholds = json.load(f)
+                logger.info("Loaded Phase 7 Decision Thresholds for Shadow Mode.")
+            else:
+                logger.warning("PHASE7_DECISION_THRESHOLDS.json not found. Shadow Mode will lack threshold evaluation.")
+        except Exception as e:
+            logger.error(f"Failed to load Phase 7 thresholds: {e}")
+
+        self.shadow_state_manager = ShadowStateManager()
         self.trade_journal = TradeJournal()
 
-        if self.live_trading:
+        if getattr(config, "OPHELIA_MODE", "RESEARCH") == "SHADOW":
+            self.position_manager = PositionManager()
+            self.broker = ShadowBroker(
+                self.position_manager,
+                self.trade_journal,
+            )
+            logger.warning("Execution mode: SHADOW (Broker completely isolated)")
+        elif self.live_trading:
             self.position_manager = LivePositionManager(self.client)
             self.broker = BingXBroker(
                 self.client,
@@ -123,17 +188,143 @@ class TradingEngine:
 
         try:
             active_symbols = list(self.settings.symbols)
-            signals = self.scanner.scan(
+
+            # -------------------------------------------------------------
+            # PHASE 7 PROBABILITY ENGINE (OBSERVATION ONLY)
+            # -------------------------------------------------------------
+            now = int(time.time())
+            now_ms = now * 1000
+            
+            for symbol in active_symbols:
+                prob_result = self.probability_engine.get_probability(symbol, now_ms)
+                if prob_result is not None:
+                    if prob_result.get("status") == "warming":
+                        logger.info(f"[PHASE 7] {symbol} Buffer Warming: {prob_result['blocks']}/{prob_result['required']} blocks (Failed Closed)")
+                    else:
+                        prob_long = prob_result.get('probability_long', 0.0)
+                        prob_short = prob_result.get('probability_short', 0.0)
+                        logger.info(f"[PHASE 7] {symbol} Probability: LONG={prob_long:.4f} SHORT={prob_short:.4f}")
+                        
+                        # -------------------------------------------------------------
+                        # SHADOW MODE EVALUATION
+                        # -------------------------------------------------------------
+                        threshold_data = self.phase7_thresholds.get(symbol) or self.phase7_thresholds.get(symbol.replace("-", ""))
+                        if threshold_data is not None:
+                            thresh_long = threshold_data.get("threshold")
+                            thresh_short = threshold_data.get("short_threshold")
+                            thresh_version = threshold_data.get("version", "1.0.0")
+                            
+                            if thresh_long is not None and thresh_short is not None:
+                                long_margin = prob_long - thresh_long
+                                short_margin = prob_short - thresh_short
+                                
+                                decision = "HOLD"
+                                reason = "P < THRESH"
+                                
+                                telemetry = prob_result.get("telemetry", {})
+                                conf_long = []
+                                conf_short = []
+                                
+                                if telemetry.get("delta_deterioration_bullish", 0) == 1.0: conf_long.append("DTR")
+                                if telemetry.get("delta_flip_bullish", 0) == 1.0: conf_long.append("FLP")
+                                if telemetry.get("divergence_bullish", 0) == 1.0: conf_long.append("DIV")
+                                
+                                if telemetry.get("delta_deterioration_bearish", 0) == 1.0: conf_short.append("DTR")
+                                if telemetry.get("delta_flip_bearish", 0) == 1.0: conf_short.append("FLP")
+                                if telemetry.get("divergence_bearish", 0) == 1.0: conf_short.append("DIV")
+                                
+                                l_flags = f" [{','.join(conf_long)}]" if conf_long else ""
+                                s_flags = f" [{','.join(conf_short)}]" if conf_short else ""
+                                
+                                if long_margin >= 0 and short_margin >= 0:
+                                    if long_margin >= short_margin:
+                                        decision = "LONG_CANDIDATE"
+                                        reason = f"CONFLICT RESOLVED: LONG_MARGIN ({long_margin:.4f}) >= SHORT_MARGIN ({short_margin:.4f}){l_flags}"
+                                    else:
+                                        decision = "SHORT_CANDIDATE"
+                                        reason = f"CONFLICT RESOLVED: SHORT_MARGIN ({short_margin:.4f}) > LONG_MARGIN ({long_margin:.4f}){s_flags}"
+                                elif long_margin >= 0:
+                                    decision = "LONG_CANDIDATE"
+                                    reason = f"LONG P >= THRESH ({prob_long:.4f} >= {thresh_long:.4f}){l_flags}"
+                                elif short_margin >= 0:
+                                    decision = "SHORT_CANDIDATE"
+                                    reason = f"SHORT P >= THRESH ({prob_short:.4f} >= {thresh_short:.4f}){s_flags}"
+                                
+                                snapshot = self.institutional_data.get_snapshot(symbol, "5m")
+                                hypothetical_entry = snapshot.ohlcv[-1].close if snapshot and snapshot.ohlcv else 0.0
+                                
+                                import json
+                                shadow_log = {
+                                    "timestamp": now_ms,
+                                    "symbol": symbol,
+                                    "probability_long": float(prob_long),
+                                    "probability_short": float(prob_short),
+                                    "frozen_threshold_long": float(thresh_long),
+                                    "frozen_threshold_short": float(thresh_short),
+                                    "threshold_version": thresh_version,
+                                    "model_version": "frozen_v1",
+                                    "feature_version": "frozen_v1",
+                                    "decision": decision,
+                                    "reason": reason,
+                                    "data_freshness": "FRESH",  # Assumes valid if probability exists
+                                    "feature_validity": "VALID",
+                                    "hypothetical_entry_price": float(hypothetical_entry),
+                                    "hypothetical_risk_status": "N/A",
+                                    "engine_version": "phase7_1.2_adv_orderflow",
+                                    "telemetry": telemetry
+                                }
+                                logger.info(f"[SHADOW_JSON] {json.dumps(shadow_log)}")
+                                
+                                # Update durable shadow state
+                                with self._lock:
+                                    s_state = self.shadow_state_manager.state
+                                    
+                                    if s_state["phase"] == "WARMING":
+                                        s_state["phase"] = "SHADOW_RUNNING"
+                                        s_state["shadow_started_at"] = now_ms / 1000.0
+                                        logger.info(f"Shadow State transitioned to SHADOW_RUNNING at {now_ms}")
+                                        
+                                    s_state["observations"] += 1
+                                    if decision == "LONG_CANDIDATE":
+                                        s_state["long_candidates"] += 1
+                                    elif decision == "SHORT_CANDIDATE":
+                                        s_state["short_candidates"] += 1
+                                    elif decision == "HOLD":
+                                        s_state["holds"] += 1
+                                        
+                                    if "CONFLICT RESOLVED" in reason:
+                                        s_state["conflicts"] += 1
+                                        
+                                    if telemetry.get("delta_deterioration_bullish", 0) == 1.0 or telemetry.get("delta_deterioration_bearish", 0) == 1.0:
+                                        s_state["telemetry_counts"]["dtr"] += 1
+                                    if telemetry.get("delta_flip_bullish", 0) == 1.0 or telemetry.get("delta_flip_bearish", 0) == 1.0:
+                                        s_state["telemetry_counts"]["flp"] += 1
+                                    if telemetry.get("divergence_bullish", 0) == 1.0 or telemetry.get("divergence_bearish", 0) == 1.0:
+                                        s_state["telemetry_counts"]["div"] += 1
+                                    if telemetry.get("absorption_bullish_proxy", 0) == 1.0 or telemetry.get("absorption_bearish_proxy", 0) == 1.0:
+                                        s_state["telemetry_counts"]["abs"] += 1
+                                        
+                                    self.shadow_state_manager.save()
+                else:
+                    logger.info(f"[PHASE 7] {symbol} Probability: NONE (Failed Closed)")
+                    
+            # -------------------------------------------------------------
+            # LEGACY KRONOS/EMA SCANNER (QUARANTINED)
+            # -------------------------------------------------------------
+            _legacy_signals = self.scanner.scan(
                 active_symbols,
                 timeframe=self.settings.timeframe,
                 ema_fast=self.settings.ema_fast,
                 ema_slow=self.settings.ema_slow,
             )
+            # Force empty signals to completely quarantine Kronos/EMA from placing orders.
+            signals = []
+            
             if self.scanner.last_failed_symbols:
                 failed = ", ".join(self.scanner.last_failed_symbols)
                 logger.error(f"Scanner failed symbols this cycle: {failed}")
 
-            logger.info(f"Signals Received: {len(signals)}")
+            logger.info(f"Legacy Signals Ignored (Quarantined): {len(_legacy_signals)}")
 
             now = int(time.time())
             stale_symbols = []
@@ -306,7 +497,7 @@ class TradingEngine:
         logger.info("Trading Engine Started")
         
         try:
-            self.institutional_data.start()
+            self.institutional_data.start(watchlist=list(self.settings.symbols))
         except Exception as e:
             logger.error(f"Failed to start InstitutionalDataEngine: {e}")
 

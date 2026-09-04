@@ -42,10 +42,10 @@ class BingXClient:
 
     RECV_WINDOW = 5000
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None, secret_key: str | None = None):
 
-        self.api_key = os.getenv("BINGX_API_KEY")
-        self.secret_key = os.getenv("BINGX_SECRET_KEY")
+        self.api_key = api_key or os.getenv("BINGX_API_KEY")
+        self.secret_key = secret_key or os.getenv("BINGX_SECRET_KEY")
 
         if not self.api_key:
             raise ValueError(
@@ -166,6 +166,11 @@ class BingXClient:
         endpoint: str,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        import os
+        from core.errors import ShadowModeIsolationError
+        if os.getenv("OPHELIA_MODE", "RESEARCH") == "SHADOW" and method.upper() in ["POST", "DELETE"]:
+            if "trade" in endpoint.lower() or "order" in endpoint.lower() or "position" in endpoint.lower():
+                raise ShadowModeIsolationError("Broker isolation: Attempted to call a live order endpoint in SHADOW mode.")
 
         params = params.copy() if params else {}
 

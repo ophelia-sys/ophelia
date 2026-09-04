@@ -83,7 +83,7 @@ class InstitutionalDataEngine:
         with self._lock:
             self._tickers[ticker.symbol] = ticker
             
-    def get_snapshot(self, symbol: str, timeframe: str) -> MarketDataSnapshot:
+    def get_snapshot(self, symbol: str, timeframe: str = "5m") -> MarketDataSnapshot:
         """
         Builds the consolidated MarketDataSnapshot for the Math Engine.
         """

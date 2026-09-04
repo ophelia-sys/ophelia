@@ -16,6 +16,22 @@ def calculate_cvd(trades: pd.DataFrame) -> float:
     cvd = np.sum(trades['volume'].astype(float) * signs)
     return float(cvd)
 
+def calculate_trade_delta(trades: pd.DataFrame) -> float:
+    """
+    Trade Delta (DeltaV_t = BuyVolume_t - SellVolume_t)
+    Requires aggressor-labeled trades. If unavailable, returns NaN.
+    """
+    if trades is None or trades.empty or 'is_buyer_maker' not in trades.columns:
+        return np.nan
+        
+    volume = trades['volume'].astype(float)
+    buyer_maker = trades['is_buyer_maker'].astype(bool)
+    
+    taker_sell = volume[buyer_maker].sum()
+    taker_buy = volume[~buyer_maker].sum()
+    
+    return float(taker_buy - taker_sell)
+
 def calculate_taker_volume_imbalance(trades: pd.DataFrame) -> float:
     """
     Taker Volume Imbalance

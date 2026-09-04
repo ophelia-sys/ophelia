@@ -5,9 +5,13 @@ OPHELIA v1.0 CONFIGURATION
 Central configuration for the Ophelia trading system.
 """
 
+import os
+
 # =====================================================
 # APPLICATION
 # =====================================================
+
+OPHELIA_MODE = os.getenv("OPHELIA_MODE", "RESEARCH")
 
 BOT_NAME = "Ophelia"
 VERSION = "1.0"
@@ -72,8 +76,9 @@ MARGIN_USDT = 10.0
 # Default leverage
 LEVERAGE = 20
 
-# Maximum simultaneously open positions
-MAX_OPEN_POSITIONS = 1
+# Maximum simultaneously open positions (authoritative hard cap = 2)
+MAX_OPEN_POSITIONS = int(os.environ.get("OPH_MAX_OPEN_TRADES", os.environ.get("MAX_OPEN_POSITIONS", "2")))
+MAX_OPEN_TRADES = MAX_OPEN_POSITIONS
 
 # Paper trading starting balance
 PAPER_STARTING_BALANCE = 10_000.0

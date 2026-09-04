@@ -57,6 +57,22 @@ def calculate_microprice(best_bid: float, best_ask: float, bid_qty_1: float, ask
         return None
     return (best_ask * bid_qty_1 + best_bid * ask_qty_1) / total
 
+def calculate_microprice_imbalance(best_bid: float, best_ask: float, bid_qty_1: float, ask_qty_1: float) -> Optional[float]:
+    """
+    LIVE_OBSERVATION_ONLY: Do not fabricate for historical data.
+    MI = 2 * (P_micro - P_mid) / (P_ask - P_bid)
+    """
+    p_micro = calculate_microprice(best_bid, best_ask, bid_qty_1, ask_qty_1)
+    p_mid = calculate_mid_price(best_bid, best_ask)
+    if p_micro is None or p_mid is None:
+        return None
+        
+    spread = best_ask - best_bid
+    if spread <= 0:
+        return None
+        
+    return 2.0 * (p_micro - p_mid) / spread
+
 def calculate_book_concentration(levels: List[List[float]]) -> Optional[float]:
     """
     HHI style concentration: sum(s_i^2) where s_i = q_i / sum(q_j)
@@ -152,14 +168,15 @@ def calculate_visible_impact_bps(levels: List[List[float]], best_price: float, q
         
     return float(impact_bps)
 
-def calculate_amihud_illiquidity(df: pd.DataFrame, window: int = 20) -> pd.Series:
+def calculate_amihud_illiquidity(df: pd.DataFrame) -> pd.Series:
     """
-    Amihud Illiquidity = |R_t| / V_USD,t
+    Modified Amihud Illiquidity = |R_t| / (Volume_USD,t + 1e-6)
+    Where R_t = ln(C_t / C_{t-1})
     """
     returns = calculate_log_returns(df, 1)
     volume_usd = df["close"].astype(float) * df["volume"].astype(float)
-    illiq = returns.abs() / volume_usd.replace(0, np.nan)
-    return illiq.rolling(window=window).mean()
+    illiq = returns.abs() / (volume_usd + 1e-6)
+    return illiq
 
 def estimate_kyle_lambda(df: pd.DataFrame, trades: pd.DataFrame, window: int = 20) -> float:
     """

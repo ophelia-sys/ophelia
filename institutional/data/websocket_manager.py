@@ -47,16 +47,42 @@ class InstitutionalWebSocketManager:
 
         self._symbols = symbols
         self._is_running = True
+        self.last_message_time = time.time()
 
         self._thread = threading.Thread(target=self._run_forever, daemon=True, name="InstWSThread")
         self._thread.start()
+        
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True, name="InstWSWatchdog")
+        self._watchdog_thread.start()
 
     def stop(self):
         self._is_running = False
         if self._ws:
             self._ws.close()
 
+    def _watchdog_loop(self):
+        stale_threshold = 60
+        wedge_threshold = 180
+        while self._is_running:
+            time_since_last = time.time() - self.last_message_time
+            if time_since_last > stale_threshold:
+                if time_since_last > wedge_threshold:
+                    logger.error(f"[InstWS] Worker unrecoverably wedged (no data for {int(time_since_last)}s). Escalating to process supervisor.")
+                    import sys
+                    sys.exit(1)
+                
+                logger.error("[InstWS] Stale data detected (no messages for >60s). Forcing socket disconnect to trigger reconnect.")
+                if self._ws:
+                    try:
+                        self._ws.close()
+                    except Exception as e:
+                        logger.error(f"[InstWS] Error closing socket: {e}")
+                self.last_message_time = time.time() # Reset to avoid spamming close
+            time.sleep(5)
+
     def _run_forever(self):
+        import random
+        backoff = 1.0
         while self._is_running:
             try:
                 self._ws = websocket.WebSocketApp(
@@ -66,14 +92,20 @@ class InstitutionalWebSocketManager:
                     on_close=self._on_close,
                     on_open=self._on_open
                 )
-                self._ws.run_forever()
+                self.last_message_time = time.time()
+                # Use internal ping/pong to avoid silent hangs
+                self._ws.run_forever(ping_interval=20, ping_timeout=10)
             except Exception as e:
                 logger.error(f"[InstWS] WebSocket error: {e}")
 
             if self._is_running:
                 self.stats_reconnects += 1
-                logger.info("[InstWS] Reconnecting in 5 seconds...")
-                time.sleep(5)
+                jitter = random.uniform(0, 0.2 * backoff)
+                sleep_time = backoff + jitter
+                logger.info(f"[InstWS] Reconnecting in {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
+                backoff = min(60.0, backoff * 2.0)
+            self._ws = None
 
     def _on_open(self, ws):
         logger.info("[InstWS] Connected to BingX Market Data WS")
@@ -101,6 +133,7 @@ class InstitutionalWebSocketManager:
             }))
 
     def _on_message(self, ws, message):
+        self.last_message_time = time.time()
         # FIX 1: Handle plain-text Ping BEFORE attempting gzip decompression
         # BingX sends periodic plain-text "Ping" frames (not gzipped).
         # We must check for plain-text Ping on both str and bytes to avoid
@@ -167,9 +200,15 @@ class InstitutionalWebSocketManager:
             data_list = [data_list]
 
         for t in data_list:
+            raw_t = str(t.get("t", ""))
+            if not raw_t:
+                # BingX swap market may not provide a trade ID in the @trade channel.
+                # Synthesize a deterministic ID to avoid empty-string duplicate rejection.
+                raw_t = f"{t.get('T', 0)}_{t.get('p', 0.0)}_{t.get('q', 0.0)}_{t.get('m', False)}"
+                
             event = TradeEvent(
                 symbol=t.get("s", "UNKNOWN"),
-                trade_id=str(t.get("t", "")),
+                trade_id=raw_t,
                 timestamp=int(t.get("T", 0)),
                 price=float(t.get("p", 0.0)),
                 quantity=float(t.get("q", 0.0)),
