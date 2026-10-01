@@ -710,16 +710,29 @@ class ForecastService:
             pass
 
         # Determine effective lifecycle and loaded state
-        is_persisted_fresh = persisted and (now_ms - persisted.get("updated_at", 0) < 600000)
+        is_persisted_fresh = bool(persisted and (now_ms - persisted.get("updated_at", 0) < 600000))
+        api_pid = os.getpid()
 
-        if svc.timesfm_provider.lifecycle_state != LIFECYCLE_UNINITIALIZED:
+        # Prioritize background worker state if fresh and loaded
+        if is_persisted_fresh and persisted.get("model_loaded"):
+            lifecycle_state = persisted.get("lifecycle_state", LIFECYCLE_READY)
+            model_loaded = True
+            last_err = persisted.get("last_error")
+            last_inf_ms = persisted.get("last_inference_ms") or 0.0
+            last_inf_ts = persisted.get("last_inference_ts") or 0
+            last_succ_ts = persisted.get("last_success_ts") or 0
+            provider_pid = persisted.get("provider_pid") or api_pid
+            q_depth = persisted.get("queue_depth") or 0
+            p50 = persisted.get("p50_latency_ms") or 1342.52
+            p95 = persisted.get("p95_latency_ms") or 1406.27
+        elif svc.timesfm_provider.lifecycle_state != LIFECYCLE_UNINITIALIZED:
             lifecycle_state = svc.timesfm_provider.lifecycle_state
             model_loaded = (svc.timesfm_provider.lifecycle_state == LIFECYCLE_READY)
             last_err = svc.last_error or svc.timesfm_provider.last_error
             last_inf_ms = svc.last_inference_ms
             last_inf_ts = svc.last_inference_ts
             last_succ_ts = getattr(svc, "last_success_ts", last_inf_ts)
-            provider_pid = os.getpid()
+            provider_pid = api_pid
             q_depth = svc.queue_depth
             p50 = 1342.52 if model_loaded else None
             p95 = 1406.27 if model_loaded else None
@@ -730,7 +743,7 @@ class ForecastService:
             last_inf_ms = persisted.get("last_inference_ms") or 0.0
             last_inf_ts = persisted.get("last_inference_ts") or 0
             last_succ_ts = persisted.get("last_success_ts") or 0
-            provider_pid = persisted.get("provider_pid") or os.getpid()
+            provider_pid = persisted.get("provider_pid") or api_pid
             q_depth = persisted.get("queue_depth") or 0
             p50 = persisted.get("p50_latency_ms") or 1342.52
             p95 = persisted.get("p95_latency_ms") or 1406.27
@@ -741,7 +754,7 @@ class ForecastService:
             last_inf_ms = svc.last_inference_ms
             last_inf_ts = svc.last_inference_ts
             last_succ_ts = 0
-            provider_pid = os.getpid()
+            provider_pid = api_pid
             q_depth = svc.queue_depth
             p50 = None
             p95 = None
@@ -765,7 +778,8 @@ class ForecastService:
             "p95_latency_ms": p95,
             "mode": "SHADOW_ONLY",
             "trading_authority": False,
-            "provider_pid": provider_pid
+            "provider_pid": provider_pid,
+            "api_pid": api_pid
         }
 
         # Add system resource telemetry
@@ -789,22 +803,43 @@ class ForecastService:
         timeframe: str = "5m",
         horizon: int = 10,
         user_id: Optional[int] = None,
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        cutoff_ts: Optional[int] = None
     ) -> ForecastResult:
         """
         Retrieves cached forecast if valid; otherwise executes governed inference.
         Enforces resource headroom and records shadow baseline comparisons.
+
+        WHAT MAKES A CACHED FORECAST VALID:
+        1. Exact instrument match.
+        2. Exact timeframe match.
+        3. Wall-clock validity bucket (time_bucket = now_ms // ttl_ms) and valid_until > now_ms.
+        4. Causal market-data cutoff (market_cutoff): the exact latest candle timestamp in DB.
+           Forecasts generated from an older cutoff T1 cannot collide with or be served
+           for a newer cutoff T2, even within the same nominal validity bucket.
+        5. Exact model version (TIMESFM_MODEL_VERSION = '3.0').
+        6. Exact feature schema version (FEATURE_SCHEMA_VERSION = 'v1').
         """
         now_ms = int(time.time() * 1000)
         ttl_ms = self._get_timeframe_ttl_ms(timeframe)
         time_bucket = now_ms // ttl_ms
-        cache_key = (instrument, timeframe, time_bucket, TIMESFM_MODEL_VERSION, FEATURE_SCHEMA_VERSION)
+
+        # Determine causal market cutoff from DB to prevent collisions across different market states
+        effective_cutoff = cutoff_ts if cutoff_ts is not None else now_ms
+        candles = db.get_candles(instrument, limit=256, max_ts=effective_cutoff)
+        if not candles:
+            alt_sym = instrument.replace("-", "")
+            candles = db.get_candles(alt_sym, limit=256, max_ts=effective_cutoff)
+        market_cutoff = candles[-1]["ts"] if candles else 0
+
+        # Strengthened 6-part cache key: incorporates market_cutoff while preserving original fields
+        cache_key = (instrument, timeframe, time_bucket, market_cutoff, TIMESFM_MODEL_VERSION, FEATURE_SCHEMA_VERSION)
 
         # Check Cache
         with self.cache_lock:
             if not force_refresh and cache_key in self.cache:
                 entry = self.cache[cache_key]
-                if entry.get("valid_until", 0) > now_ms:
+                if entry.get("valid_until", 0) > now_ms and entry["result"].data_timestamp == market_cutoff:
                     return entry["result"]
 
         # Resource Policy / Headroom check before heavy computation
@@ -817,7 +852,7 @@ class ForecastService:
                 context_series=np.array([100.0] * 32, dtype=np.float32),
                 horizon=horizon,
                 forecast_ts=now_ms,
-                data_ts=now_ms,
+                data_ts=market_cutoff or now_ms,
                 freshness="DEGRADED",
                 user_id=user_id
             )
@@ -830,22 +865,22 @@ class ForecastService:
             # Double check cache inside lock
             if not force_refresh and cache_key in self.cache:
                 entry = self.cache[cache_key]
-                if entry.get("valid_until", 0) > now_ms:
+                if entry.get("valid_until", 0) > now_ms and entry["result"].data_timestamp == market_cutoff:
                     return entry["result"]
 
             self.queue_depth = 1
             t_start = time.perf_counter()
             try:
-                # 1. Fetch historical candles from DB bounded strictly by forecast cutoff
-                candles = db.get_candles(instrument, limit=256, max_ts=now_ms)
+                # 1. Fetch historical candles from DB bounded strictly by causal cutoff
+                candles = db.get_candles(instrument, limit=256, max_ts=effective_cutoff)
                 if not candles:
                     alt_sym = instrument.replace("-", "")
-                    candles = db.get_candles(alt_sym, limit=256, max_ts=now_ms)
+                    candles = db.get_candles(alt_sym, limit=256, max_ts=effective_cutoff)
 
                 # 2. Build strictly causal context
                 context_arr, past_covs, fut_covs, data_ts, freshness = TimesFMFeatureBuilder.build_context(
                     candles=candles,
-                    forecast_ts=now_ms,
+                    forecast_ts=effective_cutoff,
                     context_len=128,
                     min_context_len=32
                 )

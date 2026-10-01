@@ -28,16 +28,17 @@ def test_forecast_cache_validity_window():
     res2 = svc.generate_forecast("BTC-USDT", timeframe="15m", horizon=10, force_refresh=False)
     assert res1.forecast_id == res2.forecast_id
 
-    # Check cache entry metadata and verify 5-part cache key mandated by Item 12
+    # Check cache entry metadata and verify strengthened 6-part cache key incorporating market cutoff
     matching_keys = [k for k in svc.cache.keys() if k[0] == "BTC-USDT" and k[1] == "15m"]
     assert len(matching_keys) == 1
     key = matching_keys[0]
-    assert len(key) == 5
+    assert len(key) == 6
     assert key[0] == "BTC-USDT"
     assert key[1] == "15m"
     # key[2] is validity bucket
-    assert key[3] == "3.0"
-    assert key[4] == "TIMESFM_FEATURE_SCHEMA_V1"
+    # key[3] is market_cutoff
+    assert key[4] == "3.0"
+    assert key[5] == "TIMESFM_FEATURE_SCHEMA_V1"
 
     cache_entry = svc.cache[key]
     assert cache_entry is not None

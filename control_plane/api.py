@@ -3973,6 +3973,7 @@ def get_timesfm_diagnostics(user: dict = Depends(require_authenticated_user)):
         raise HTTPException(status_code=403, detail="Forbidden: Admin authority required for system diagnostics")
     from .forecast_service import ForecastService
     status = ForecastService.get_status()
+    status["api_pid"] = os.getpid()
     try:
         import psutil
         mem = psutil.virtual_memory()
