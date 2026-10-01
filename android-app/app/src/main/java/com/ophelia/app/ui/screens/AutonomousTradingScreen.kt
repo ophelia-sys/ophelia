@@ -462,18 +462,32 @@ fun AutonomousTradingScreen(
                                 Divider(color = BorderColor.copy(alpha = 0.3f))
                                 Spacer(Modifier.height(12.dp))
 
+                                // Section 1: SYSTEM MODEL HEALTH
+                                Text(
+                                    "SYSTEM MODEL HEALTH",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentCyan,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(Modifier.height(6.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     MetricColumn("MODEL", timesfmDiagnostics?.version ?: "3.0", PrimaryText)
-                                    MetricColumn("DEVICE", timesfmDiagnostics?.device?.uppercase() ?: "CPU", AccentCyan)
-                                    MetricColumn("LATENCY", "${timesfmDiagnostics?.lastInferenceMs ?: 0.0}ms", AccentGreen)
-                                    MetricColumn("FORECASTS", "${timesfmDiagnostics?.forecastCount ?: 0}", Color(0xFFF59E0B))
-                                    MetricColumn("QUEUE", "${timesfmDiagnostics?.queueDepth ?: 0}", SecondaryText)
+                                    MetricColumn("STATE", timesfmDiagnostics?.lifecycleState ?: "READY", if (timesfmDiagnostics?.modelLoaded == true) AccentGreen else WarningAmber)
+                                    MetricColumn("PID", "${timesfmDiagnostics?.providerPid ?: "N/A"}", SecondaryText)
+                                    MetricColumn("P50 LAT", "${timesfmDiagnostics?.p50LatencyMs ?: timesfmDiagnostics?.lastInferenceMs ?: 0.0}ms", AccentGreen)
+                                    MetricColumn("P95 LAT", "${timesfmDiagnostics?.p95LatencyMs ?: timesfmDiagnostics?.lastInferenceMs ?: 0.0}ms", AccentCyan)
                                 }
 
                                 Spacer(Modifier.height(10.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(
-                                        "RAM: ${timesfmDiagnostics?.systemRamAvailableMb ?: 0.0}MB Avail / ${timesfmDiagnostics?.systemRamTotalMb ?: 0.0}MB Total (${timesfmDiagnostics?.systemRamUsedPct ?: 0.0}%)",
+                                        "RAM: ${timesfmDiagnostics?.systemRamAvailableMb ?: 0.0}MB Avail / ${timesfmDiagnostics?.systemRamTotalMb ?: 0.0}MB (${timesfmDiagnostics?.systemRamUsedPct ?: 0.0}%)",
+                                        fontSize = 11.sp,
+                                        color = SecondaryText
+                                    )
+                                    Text(
+                                        "SWAP: ${timesfmDiagnostics?.systemSwapUsedMb ?: 0.0}MB",
                                         fontSize = 11.sp,
                                         color = SecondaryText
                                     )
@@ -482,6 +496,36 @@ fun AutonomousTradingScreen(
                                         fontSize = 11.sp,
                                         color = SecondaryText
                                     )
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.2f))
+                                Spacer(Modifier.height(8.dp))
+
+                                // Section 2: FORECAST QUALITY & EVALUATION
+                                Text(
+                                    "FORECAST QUALITY & EVALUATION",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF59E0B),
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    MetricColumn("FORECASTS", "${timesfmDiagnostics?.forecastCount ?: 0}", Color(0xFFF59E0B))
+                                    MetricColumn("EVAL COUNT", "${timesfmDiagnostics?.evaluationCount ?: 0}", SecondaryText)
+                                    Column {
+                                        Text("EVAL STATUS", fontSize = 10.sp, color = SecondaryText)
+                                        OpheliaStatusBadge(
+                                            status = timesfmDiagnostics?.evaluationStatus ?: "INSUFFICIENT_SAMPLE",
+                                            color = WarningAmber,
+                                            showDot = false
+                                        )
+                                    }
+                                    Column {
+                                        Text("AUTHORITY", fontSize = 10.sp, color = SecondaryText)
+                                        Text("DISABLED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BearishRed)
+                                    }
                                 }
 
                                 if (!timesfmDiagnostics?.lastError.isNullOrBlank()) {

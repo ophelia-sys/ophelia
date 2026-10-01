@@ -2041,13 +2041,20 @@ data class TimesFmDiagnosticsResponse(
     @SerializedName("forecast_count") val forecastCount: Int = 0,
     @SerializedName("last_inference_ms") val lastInferenceMs: Double = 0.0,
     @SerializedName("last_inference_ts") val lastInferenceTs: Long = 0L,
+    @SerializedName("last_success_timestamp") val lastSuccessTimestamp: Long = 0L,
     @SerializedName("last_error") val lastError: String? = null,
     @SerializedName("queue_depth") val queueDepth: Int = 0,
+    @SerializedName("p50_latency_ms") val p50LatencyMs: Double? = null,
+    @SerializedName("p95_latency_ms") val p95LatencyMs: Double? = null,
     val mode: String = "SHADOW_ONLY",
     @SerializedName("trading_authority") val tradingAuthority: Boolean = false,
+    @SerializedName("provider_pid") val providerPid: Int? = null,
+    @SerializedName("evaluation_count") val evaluationCount: Int = 0,
+    @SerializedName("evaluation_status") val evaluationStatus: String = "INSUFFICIENT_SAMPLE",
     @SerializedName("system_ram_total_mb") val systemRamTotalMb: Double? = null,
     @SerializedName("system_ram_available_mb") val systemRamAvailableMb: Double? = null,
     @SerializedName("system_ram_used_pct") val systemRamUsedPct: Double? = null,
+    @SerializedName("system_swap_used_mb") val systemSwapUsedMb: Double? = null,
     @SerializedName("system_cpu_pct") val systemCpuPct: Double? = null
 )
 

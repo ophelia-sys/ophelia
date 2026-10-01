@@ -3968,15 +3968,19 @@ def recover_stale_slots(current_user: dict = Depends(require_admin)):
 # ---------------------------------------------------------------- TimesFM Endpoints
 @app.get("/api/timesfm/diagnostics")
 def get_timesfm_diagnostics(user: dict = Depends(require_authenticated_user)):
-    """TimesFM 3.0 runtime diagnostics and hardware telemetry."""
+    """TimesFM 3.0 runtime diagnostics and hardware telemetry. Requires ADMIN role."""
+    if user.get("role") != "ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin authority required for system diagnostics")
     from .forecast_service import ForecastService
     status = ForecastService.get_status()
     try:
         import psutil
         mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
         status["system_ram_total_mb"] = round(mem.total / (1024 * 1024), 1)
         status["system_ram_available_mb"] = round(mem.available / (1024 * 1024), 1)
         status["system_ram_used_pct"] = mem.percent
+        status["system_swap_used_mb"] = round(swap.used / (1024 * 1024), 1)
         status["system_cpu_pct"] = psutil.cpu_percent(interval=None)
     except Exception:
         pass

@@ -342,8 +342,8 @@ def query_candles(symbol: str, start_ms: int, end_ms: int,
     return [dict(zip(keys, r)) for r in rows]
 
 
-def get_candles(symbol: str, limit: int = 256) -> list[dict]:
-    """Retrieve up to 'limit' most recent candles for symbol."""
+def get_candles(symbol: str, limit: int = 256, max_ts: int | None = None) -> list[dict]:
+    """Retrieve up to 'limit' most recent candles for symbol, optionally bounded by max_ts."""
     conn = _connect()
     symbols_to_check = [symbol]
     venue = config.to_venue_symbol(symbol)
@@ -354,9 +354,14 @@ def get_candles(symbol: str, limit: int = 256) -> list[dict]:
         symbols_to_check.append(disp)
 
     placeholders = ",".join("?" for _ in symbols_to_check)
-    q = (f"SELECT exchange,symbol,ts,open,high,low,close,volume,taker_buy,trades "
-         f"FROM candles WHERE symbol IN ({placeholders}) ORDER BY ts DESC LIMIT ?")
-    args = list(symbols_to_check) + [limit]
+    if max_ts is not None:
+        q = (f"SELECT exchange,symbol,ts,open,high,low,close,volume,taker_buy,trades "
+             f"FROM candles WHERE symbol IN ({placeholders}) AND ts <= ? ORDER BY ts DESC LIMIT ?")
+        args = list(symbols_to_check) + [max_ts, limit]
+    else:
+        q = (f"SELECT exchange,symbol,ts,open,high,low,close,volume,taker_buy,trades "
+             f"FROM candles WHERE symbol IN ({placeholders}) ORDER BY ts DESC LIMIT ?")
+        args = list(symbols_to_check) + [limit]
     with _lock:
         rows = conn.execute(q, args).fetchall()
     keys = ("exchange", "symbol", "ts", "open", "high", "low", "close",
@@ -1031,6 +1036,29 @@ def _wl_conn() -> sqlite3.Connection:
             created_at INTEGER NOT NULL,
             FOREIGN KEY(forecast_id) REFERENCES model_forecasts(forecast_id))""")
         c.execute("CREATE INDEX IF NOT EXISTS ix_model_forecast_evaluations_inst_tf ON model_forecast_evaluations(instrument, timeframe, evaluation_timestamp)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS model_subsystem_state(
+            worker_id TEXT PRIMARY KEY,
+            provider_pid INTEGER,
+            lifecycle_state TEXT NOT NULL,
+            model_loaded INTEGER NOT NULL DEFAULT 0,
+            checkpoint TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            device TEXT NOT NULL,
+            last_health_check_ms INTEGER,
+            last_health_check_status TEXT,
+            last_inference_ms REAL,
+            last_inference_ts INTEGER,
+            last_success_ts INTEGER,
+            last_error TEXT,
+            queue_depth INTEGER DEFAULT 0,
+            active_inferences INTEGER DEFAULT 0,
+            cached_forecasts INTEGER DEFAULT 0,
+            p50_latency_ms REAL,
+            p95_latency_ms REAL,
+            mode TEXT NOT NULL DEFAULT 'SHADOW_ONLY',
+            trading_authority INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL)""")
 
         c.commit()
     return c
@@ -4974,7 +5002,7 @@ def list_model_forecast_evaluations(limit: int = 50, instrument: str | None = No
 
 
 def get_model_forecast_evaluation_metrics(model_name: str | None = None, instrument: str | None = None, timeframe: str | None = None) -> dict:
-    """Aggregate evaluation statistics: MAE, RMSE, directional accuracy, hit count."""
+    """Aggregate evaluation statistics: MAE, RMSE, directional accuracy, sample sufficiency tiers."""
     c = _wl_conn()
     q = ("SELECT COUNT(*), AVG(mae), AVG(rmse), AVG(direction_correct), "
          "AVG(absolute_error), AVG(signed_error), AVG(coverage) "
@@ -4996,24 +5024,95 @@ def get_model_forecast_evaluation_metrics(model_name: str | None = None, instrum
     if not count:
         return {
             "evaluation_count": 0,
+            "sample_sufficiency": "INSUFFICIENT_SAMPLE",
             "avg_mae": None,
             "avg_rmse": None,
             "directional_accuracy_pct": None,
             "avg_absolute_error": None,
             "avg_signed_error": None,
             "quantile_coverage": None,
-            "status": "INSUFFICIENT_EVALUATIONS"
+            "baseline_comparison": "NOT_AVAILABLE",
+            "status": "INSUFFICIENT_SAMPLE"
         }
+
+    # Explicit statistical sufficiency tiers
+    if count < 30:
+        tier_status = "INSUFFICIENT_SAMPLE"
+    elif count < 100:
+        tier_status = "CALIBRATING"
+    elif count < 500:
+        tier_status = "PRELIMINARY"
+    else:
+        tier_status = "SUFFICIENT_SAMPLE"
+
     return {
         "evaluation_count": count,
+        "sample_sufficiency": tier_status,
         "avg_mae": round(float(row[1] or 0.0), 4),
         "avg_rmse": round(float(row[2] or 0.0), 4),
         "directional_accuracy_pct": round(float(row[3] or 0.0) * 100, 2),
         "avg_absolute_error": round(float(row[4] or 0.0), 4),
         "avg_signed_error": round(float(row[5] or 0.0), 4),
         "quantile_coverage": round(float(row[6] or 0.0), 4),
-        "status": "CALIBRATING" if count < 100 else "EVALUATED"
+        "baseline_comparison": "CHRONOLOGICAL_MATCHED",
+        "status": tier_status
     }
+
+
+def save_model_subsystem_state(state: dict) -> None:
+    """Persist authoritative state of the TimesFM subsystem/worker."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    worker_id = state.get("worker_id", "timesfm_primary")
+    with _lock:
+        c.execute("""
+            INSERT OR REPLACE INTO model_subsystem_state (
+                worker_id, provider_pid, lifecycle_state, model_loaded,
+                checkpoint, model_version, device, last_health_check_ms,
+                last_health_check_status, last_inference_ms, last_inference_ts,
+                last_success_ts, last_error, queue_depth, active_inferences,
+                cached_forecasts, p50_latency_ms, p95_latency_ms, mode,
+                trading_authority, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            worker_id,
+            state.get("provider_pid"),
+            state.get("lifecycle_state", "UNINITIALIZED"),
+            1 if state.get("model_loaded") else 0,
+            state.get("checkpoint", "google/timesfm-3.0-pytorch"),
+            state.get("model_version", "3.0"),
+            state.get("device", "cpu"),
+            state.get("last_health_check_ms"),
+            state.get("last_health_check_status"),
+            float(state.get("last_inference_ms") or 0.0),
+            state.get("last_inference_ts"),
+            state.get("last_success_ts"),
+            state.get("last_error"),
+            int(state.get("queue_depth") or 0),
+            int(state.get("active_inferences") or 0),
+            int(state.get("cached_forecasts") or 0),
+            float(state.get("p50_latency_ms")) if state.get("p50_latency_ms") is not None else None,
+            float(state.get("p95_latency_ms")) if state.get("p95_latency_ms") is not None else None,
+            state.get("mode", "SHADOW_ONLY"),
+            1 if state.get("trading_authority") else 0,
+            int(state.get("updated_at") or now_ms)
+        ))
+        c.commit()
+
+
+def get_model_subsystem_state(worker_id: str = "timesfm_primary") -> dict | None:
+    """Retrieve authoritative persisted state of the TimesFM subsystem."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute("SELECT * FROM model_subsystem_state WHERE worker_id = ?", (worker_id,)).fetchone()
+    if not row:
+        return None
+    cols = [col[0] for col in c.execute("SELECT * FROM model_subsystem_state LIMIT 0").description]
+    res = dict(zip(cols, row))
+    res["model_loaded"] = bool(res.get("model_loaded"))
+    res["trading_authority"] = bool(res.get("trading_authority"))
+    return res
+
 
 
 

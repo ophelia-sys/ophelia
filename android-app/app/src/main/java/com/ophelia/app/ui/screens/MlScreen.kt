@@ -294,16 +294,22 @@ fun MlScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "TIMESFM 3.0 FORECAST",
+                                "TIMESFM 3.0",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryText,
                                 letterSpacing = 0.5.sp
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(6.dp))
                             OpheliaStatusBadge(
                                 status = "SHADOW",
                                 color = AccentCyan,
+                                showDot = false
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            OpheliaStatusBadge(
+                                status = "CALIBRATING",
+                                color = WarningAmber,
                                 showDot = false
                             )
                         }
@@ -322,7 +328,7 @@ fun MlScreen(
                     ) {
                         Column {
                             Text(
-                                text = "PROJECTED RETURN (H=${f.horizon})",
+                                text = "PROJECTED RETURN (H=${f.horizon} • 5m)",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TextMuted
                             )
@@ -365,9 +371,29 @@ fun MlScreen(
                         Text("Q90: \$$q90Str", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                     }
 
+                    Spacer(Modifier.height(6.dp))
+                    val timeStr = if (f.forecastTimestamp > 0) java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(f.forecastTimestamp)) else "LIVE"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "FRESHNESS: ${f.dataFreshness}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (f.dataFreshness == "FRESH") AccentGreen else WarningAmber,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = "TS: $timeStr",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
+                    }
+
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "SHADOW ONLY: Zero direct trading authority. Used as advisory context for Ophelia deterministic engine.",
+                        text = "CALIBRATING: Shadow only. Zero direct trading authority. Confidence metric disabled pending empirical calibration sample.",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted,
                         fontSize = 10.sp
