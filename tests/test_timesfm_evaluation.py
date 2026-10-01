@@ -22,11 +22,12 @@ def test_forecast_evaluation_and_metrics_calculation():
     now_ms = int(time.time() * 1000)
 
     # 1. Save a mock forecast
+    test_sym = f"TEST-ETH-{uuid.uuid4().hex[:6]}"
     forecast_values = [100.0, 102.0, 104.0, 106.0, 108.0]
     rec = {
         "forecast_id": fid,
         "user_id": 1,
-        "instrument": "ETH-USDT",
+        "instrument": test_sym,
         "timeframe": "15m",
         "forecast_timestamp": now_ms,
         "data_timestamp": now_ms,
@@ -62,7 +63,7 @@ def test_forecast_evaluation_and_metrics_calculation():
     eval_rec = {
         "evaluation_id": f"eval-{uuid.uuid4()}",
         "forecast_id": fid,
-        "instrument": "ETH-USDT",
+        "instrument": test_sym,
         "timeframe": "15m",
         "forecast_timestamp": now_ms,
         "evaluation_timestamp": now_ms + 5 * 15 * 60000,
@@ -80,7 +81,7 @@ def test_forecast_evaluation_and_metrics_calculation():
     db.save_model_forecast_evaluation(eval_rec)
 
     # 3. Retrieve evaluation metrics
-    metrics = db.get_model_forecast_evaluation_metrics(model_name="timesfm", instrument="ETH-USDT")
+    metrics = db.get_model_forecast_evaluation_metrics(model_name="timesfm", instrument=test_sym)
     assert metrics["evaluation_count"] >= 1
     assert metrics["avg_mae"] is not None
     assert metrics["directional_accuracy_pct"] == 100.0
