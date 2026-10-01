@@ -1841,7 +1841,22 @@ def evaluate_active_automations() -> list[dict]:
                 elif curr_strat == "EMA_CROSSOVER":
                     tf = int(tf_map.get("EMA_CROSSOVER", 1))
                 else:
-                    tf = int(a.get("timeframe") or params.get("timeframe_min") or 3)
+                    tf_raw = str(a.get("timeframe") or params.get("timeframe_min") or "3").strip().lower()
+                    if tf_raw.endswith("m"):
+                        try:
+                            tf = int(tf_raw[:-1])
+                        except Exception:
+                            tf = 3
+                    elif tf_raw.endswith("h"):
+                        try:
+                            tf = int(tf_raw[:-1]) * 60
+                        except Exception:
+                            tf = 60
+                    else:
+                        try:
+                            tf = int(tf_raw)
+                        except Exception:
+                            tf = 3
 
                 is_ml_imported = (curr_strat == "VWAP_STRUCTURE_RETEST" or params.get("is_imported_ml") or params.get("origin") in ("ML_RECOMMENDATION", "USER_MODIFIED_FROM_ML"))
 
