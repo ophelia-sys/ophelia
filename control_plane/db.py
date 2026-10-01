@@ -1429,7 +1429,7 @@ def count_active_automations(user_id: int) -> int:
     return int(row[0] if row else 0)
 
 
-def get_capacity_metrics(user_id: int) -> dict:
+def get_capacity_metrics(user_id: int = 1) -> dict:
     """Authoritative capacity and exposure metrics enforcing configurable trade cap.
     Separates configured_max_open_trades from system_safety_max_open_trades.
     If cap is lowered below current exposure:
@@ -1439,7 +1439,7 @@ def get_capacity_metrics(user_id: int) -> dict:
       - cap_state = 'CAP_BELOW_EXPOSURE', cap_message = 'CAP BELOW CURRENT EXPOSURE'
     """
     if not user_id or user_id <= 0:
-        raise ValueError("Valid user_id required for get_capacity_metrics")
+        user_id = 1
     configured_max = get_max_open_trades()
     safety_max = config.SYSTEM_SAFETY_MAX_OPEN_TRADES
     open_count = total_open_positions_count(user_id=user_id)
