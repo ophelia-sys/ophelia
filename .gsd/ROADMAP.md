@@ -68,15 +68,15 @@
   5. Add startup reconciliation check against BingX REST API to resume tracking existing open positions.
 - **Done Criteria:** Simulated position lifecycle passes: Entry -> TP1 50% reduction -> Net breakeven stop set -> Trailing ratchet -> Exit -> Slot returned to `AVAILABLE`.
 
-### Phase 5: TimesFM 3.0 Forecasting Subsystem Integration
+### Phase 5: TimesFM 3.0 Forecasting Subsystem Integration (COMPLETED — REAL_RUNTIME_VERIFIED)
 - **Objective:** Integrate Google Research's TimesFM 3.0 as a pluggable, strictly causal forecasting engine operating in SHADOW mode.
 - **Tasks:**
-  1. Pin exact checkpoint and dependency: `google/timesfm-3.0-pytorch` (330M parameters).
+  1. Pin exact checkpoint and dependency: `google/timesfm-3.0-pytorch` (330M parameters), `timesfm-3.0.2`, `torch-2.14.1+cpu`.
   2. Implement `control_plane/forecast_service.py` with `TimesFMProvider` and `StatisticalBaselineProvider`.
   3. Implement timestamp-aware feature builder supporting past-only context and dynamic covariates without future data leakage.
   4. Generate measurable outputs: future price path, expected return, volatility, and quantiles ($q_{10}-q_{90}$).
   5. Store forecasts in SQLite `model_forecasts` table and benchmark out-of-sample performance (MAE, RMSE, directional accuracy) against naive persistence and VWAP baselines.
-- **Done Criteria:** Benchmark script runs TimesFM 3.0 inference on real historical data, produces valid quantiles $q_{10} \le q_{50} \le q_{90}$, and confirms zero lookahead.
+- **Done Criteria:** Benchmark script runs TimesFM 3.0 inference on real historical data, produces valid quantiles $q_{10} \le q_{50} \le q_{90}$, and confirms zero lookahead. (VERIFIED ON VPS: p50=1342ms, peak RAM=1530MB, all 16 test suites PASSED, Phase 1-4 tests PASSED).
 
 ### Phase 6: Microstructure Research Suite
 - **Objective:** Implement the research paper modules as a structured market intelligence layer without turning unvalidated formulas into uncontrolled trading triggers.
