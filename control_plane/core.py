@@ -75,6 +75,8 @@ def validate_risk(symbol: str, leverage: float, margin_usage_pct: float,
 
 def build_proposal(spec: dict) -> dict:
     """Full deterministic proposal: risk + geometry from live data."""
+    if str(spec.get("mode") or "").strip().upper() == "RESEARCH":
+        raise CoreReject("RESEARCH mode cannot create trading proposals or execute orders")
     import core.settings as settings_mod
     tfs = None
     if spec.get("strategy") == "BOTH":

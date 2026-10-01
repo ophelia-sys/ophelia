@@ -74,6 +74,9 @@ class SlotAllocationService:
             return None, "INVALID_USER"
 
         # 3. Trading mode safety check
+        cand_mode = str(candidate.get("mode") or "").strip().upper()
+        if cand_mode == "RESEARCH":
+            return None, "RESEARCH_EXECUTION_BARRED"
         mode = db.get_mode()
         if mode not in ("SHADOW", "PAPER", "LIVE"):
             return None, "INVALID_TRADING_MODE"
@@ -252,6 +255,8 @@ class SlotAllocationService:
         """
         if not user_id or user_id < 1:
             return False, "", "INVALID_USER"
+        if "RESEARCH" in str(candidate_id).upper() or (reservation_id and "RESEARCH" in str(reservation_id).upper()):
+            return False, "", "RESEARCH_SLOT_RESERVATION_BARRED"
 
         now_ms = int(time.time() * 1000)
         resv_id = reservation_id or f"resv_{uuid.uuid4().hex[:12]}"

@@ -208,7 +208,9 @@ class Client:
         return {"code": -1, "msg": res.get("error", "Connectivity failed"), "data": res}
 
     # ---------------- trading (gated) --------------------------------------
-    def _trade_guard(self, endpoint: str) -> None:
+    def _trade_guard(self, endpoint: str, client_order_id: str | None = None) -> None:
+        if client_order_id and "RESEARCH" in str(client_order_id).upper():
+            raise TradeDisabledError("RESEARCH execution cannot submit live exchange orders")
         if not self.allow_trade:
             raise TradeDisabledError(
                 f"trade endpoint {endpoint} disabled: client is read-only "
@@ -224,7 +226,7 @@ class Client:
                      quantity: float, client_order_id: str) -> dict:
         """Market entry/exit. side: BUY|SELL; positionSide: LONG|SHORT
         (hedged) - exit uses the opposite side with same positionSide."""
-        self._trade_guard(ORDER)
+        self._trade_guard(ORDER, client_order_id=client_order_id)
         valid_sym = validate_order_params(symbol, side=side, position_side=position_side,
                                           quantity=quantity, client_order_id=client_order_id)
         params = {"symbol": valid_sym, "side": side.upper(),
