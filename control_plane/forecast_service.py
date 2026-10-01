@@ -135,8 +135,9 @@ class TimesFMFeatureBuilder:
         causal_candles = [c for c in candles if int(c.get("ts") or 0) <= forecast_ts]
         causal_candles.sort(key=lambda x: int(x.get("ts") or 0))
 
+        latest_data_ts = int(causal_candles[-1].get("ts") or 0) if causal_candles else 0
         if len(causal_candles) < min_context_len:
-            return np.array([]), None, None, 0, STATUS_INSUFFICIENT_DATA
+            return np.array([]), None, None, latest_data_ts, STATUS_INSUFFICIENT_DATA
 
         # Truncate to desired context_len
         selected = causal_candles[-context_len:]
@@ -839,7 +840,7 @@ class ForecastService:
         with self.cache_lock:
             if not force_refresh and cache_key in self.cache:
                 entry = self.cache[cache_key]
-                if entry.get("valid_until", 0) > now_ms and entry["result"].data_timestamp == market_cutoff:
+                if entry.get("valid_until", 0) > now_ms:
                     return entry["result"]
 
         # Resource Policy / Headroom check before heavy computation
@@ -865,7 +866,7 @@ class ForecastService:
             # Double check cache inside lock
             if not force_refresh and cache_key in self.cache:
                 entry = self.cache[cache_key]
-                if entry.get("valid_until", 0) > now_ms and entry["result"].data_timestamp == market_cutoff:
+                if entry.get("valid_until", 0) > now_ms:
                     return entry["result"]
 
             self.queue_depth = 1
