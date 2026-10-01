@@ -525,6 +525,94 @@ def _auto_conn() -> sqlite3.Connection:
             FOREIGN KEY(forecast_id) REFERENCES model_forecasts(forecast_id))""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_model_forecast_eval_inst ON model_forecast_evaluations(instrument, timeframe)")
 
+        # Microstructure Research Tables (RESEARCH mode strictly, promoted structured columns)
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_observations (
+            observation_id TEXT PRIMARY KEY,
+            instrument TEXT NOT NULL,
+            venue_source TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            source_data_type TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            bid_depth REAL,
+            ask_depth REAL,
+            spread REAL,
+            trade_volume REAL,
+            signed_flow REAL,
+            trade_count INTEGER,
+            duration_ms REAL,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_obs_inst_ts ON microstructure_observations(instrument, event_timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_obs_mode ON microstructure_observations(mode)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_feature_values (
+            feature_id TEXT PRIMARY KEY,
+            observation_id TEXT,
+            instrument TEXT NOT NULL,
+            venue_source TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            source_data_type TEXT NOT NULL,
+            module_name TEXT NOT NULL,
+            feature_name TEXT NOT NULL,
+            feature_value REAL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            feature_metadata_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_feat_inst_mod ON microstructure_feature_values(instrument, module_name, event_timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_feat_name ON microstructure_feature_values(feature_name, event_timestamp)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_model_runs (
+            run_id TEXT PRIMARY KEY,
+            model_type TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            venue_source TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            status TEXT NOT NULL,
+            coefficients_json TEXT,
+            diagnostics_json TEXT,
+            error TEXT,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_model_runs_inst ON microstructure_model_runs(instrument, model_type, event_timestamp)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_evaluations (
+            eval_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            venue_source TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            evaluation_timestamp INTEGER NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES microstructure_model_runs(run_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_eval_inst ON microstructure_evaluations(instrument, metric_name)")
+
         # Migrations for existing tables
         try:
             c.execute("ALTER TABLE automations ADD COLUMN user_id INTEGER DEFAULT 1")
