@@ -380,6 +380,9 @@ interface OpheliaApiService {
     @GET("/api/admin/diagnostics/automation-pipeline")
     suspend fun getAutomationPipelineDiagnostics(): AutomationPipelineDiagnosticsResponse
 
+    @GET("/api/user/positions/lifecycle")
+    suspend fun getUserPositionLifecycle(): UserPositionLifecycleResponse
+
     @POST("/api/admin/slots/recover-stale")
     suspend fun recoverStaleReservations(): RecoverStaleReservationsResponse
 

@@ -1738,6 +1738,88 @@ private fun PipelineDrilldownCard(item: AutomationPipelineItemDto) {
                     color = SecondaryText
                 )
             }
+
+            // 5. TP1 PARTIAL EXIT
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("5. TP1 PARTIAL EXIT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                val tp1Status = item.tp1?.get("status")?.toString() ?: "PENDING"
+                Text(
+                    tp1Status,
+                    fontSize = 10.sp,
+                    color = if (tp1Status == "EXECUTED") AccentGreen else SecondaryText
+                )
+            }
+            if (item.tp1 != null && item.tp1["status"] == "EXECUTED") {
+                val exitPx = item.tp1["exit_price"]?.toString() ?: "0"
+                val tp1Qty = item.tp1["qty"]?.toString() ?: "0"
+                val pnl = item.tp1["realized_pnl"]?.toString() ?: "0"
+                Text(
+                    "Exit: $$exitPx • Qty: $tp1Qty • PnL: +$$pnl",
+                    fontSize = 9.sp,
+                    color = SecondaryText
+                )
+            }
+
+            // 6. NET BREAKEVEN
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("6. NET BREAKEVEN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                val beStatus = item.breakeven?.get("status")?.toString() ?: "PENDING"
+                Text(
+                    beStatus,
+                    fontSize = 10.sp,
+                    color = if (beStatus == "APPLIED") AccentGreen else SecondaryText
+                )
+            }
+            if (item.breakeven != null && item.breakeven["status"] == "APPLIED") {
+                val beStop = item.breakeven["stop"]?.toString() ?: "-"
+                val costBasis = item.breakeven["cost_basis"]?.toString() ?: "-"
+                Text(
+                    "Stop: $$beStop • Cost Basis: $$costBasis",
+                    fontSize = 9.sp,
+                    color = SecondaryText
+                )
+            }
+
+            // 7. DYNAMIC TRAILING
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("7. DYNAMIC TRAILING", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                val trStatus = item.trailing?.get("status")?.toString() ?: "INACTIVE"
+                Text(
+                    trStatus,
+                    fontSize = 10.sp,
+                    color = if (trStatus == "ACTIVE") AccentGreen else SecondaryText
+                )
+            }
+            if (item.trailing != null && item.trailing["status"] == "ACTIVE") {
+                val curStop = item.trailing["current_stop"]?.toString() ?: "-"
+                val prevStop = item.trailing["previous_stop"]?.toString() ?: "-"
+                val method = item.trailing["method"]?.toString() ?: "DYNAMIC_ATR"
+                Text(
+                    "Trailing Stop: $$curStop (Prev: $$prevStop) • Method: $method",
+                    fontSize = 9.sp,
+                    color = SecondaryText
+                )
+            }
+
+            // 8. EXIT & RECONCILIATION
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("8. EXIT & RECONCILIATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                val reconStatus = item.reconciliation?.get("status")?.toString() ?: "RECONCILED"
+                Text(
+                    reconStatus,
+                    fontSize = 10.sp,
+                    color = if (reconStatus == "RECONCILED") AccentGreen else WarningAmber
+                )
+            }
+            if (item.exit != null) {
+                val lifecycle = item.exit["status"]?.toString() ?: "IDLE"
+                val lastEvt = item.exit["last_event"]?.toString() ?: "NONE"
+                Text(
+                    "Lifecycle: $lifecycle • Event: $lastEvt",
+                    fontSize = 9.sp,
+                    color = SecondaryText
+                )
+            }
         }
     }
 }

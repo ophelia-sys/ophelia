@@ -1504,7 +1504,18 @@ data class UserPositionDto(
     val breakeven: Boolean = false,
     val status: String = "OPEN",
     @SerializedName("unrealized_pnl") val unrealizedPnl: Double = 0.0,
-    @SerializedName("realized_pnl") val realizedPnl: Double = 0.0
+    @SerializedName("realized_pnl") val realizedPnl: Double = 0.0,
+    @SerializedName("lifecycle_state") val lifecycleState: String = "FILLED",
+    @SerializedName("remaining_quantity") val remainingQuantity: Double? = null,
+    @SerializedName("actual_entry_price") val actualEntryPrice: Double? = null,
+    @SerializedName("breakeven_stop") val breakevenStop: Double? = null,
+    @SerializedName("current_trailing_stop") val currentTrailingStop: Double? = null,
+    @SerializedName("last_management_event") val lastManagementEvent: String? = null,
+    @SerializedName("reconciliation_status") val reconciliationStatus: String? = null
+)
+
+data class UserPositionLifecycleResponse(
+    val positions: List<Map<String, Any?>> = emptyList()
 )
 
 data class CopyExecutionDto(
@@ -1633,6 +1644,11 @@ data class AutomationPipelineItemDto(
     val slot: Map<String, Any?>? = null,
     @SerializedName("execution_intent") val executionIntent: Map<String, Any?>? = null,
     val position: Map<String, Any?>? = null,
+    val tp1: Map<String, Any?>? = null,
+    val breakeven: Map<String, Any?>? = null,
+    val trailing: Map<String, Any?>? = null,
+    val exit: Map<String, Any?>? = null,
+    val reconciliation: Map<String, Any?>? = null,
     @SerializedName("waiting_reason") val waitingReason: String? = null,
     @SerializedName("last_error") val lastError: String? = null
 )

@@ -3157,7 +3157,7 @@ def save_user_slot_template_endpoint(req: SaveSlotTemplateRequest, user_id: int 
 @app.get("/api/admin/diagnostics/automation-pipeline", dependencies=[Depends(require_admin)])
 def get_admin_automation_pipeline_diagnostics():
     """Authoritative Admin diagnostic drill-down view:
-    AUTOMATION -> CANDIDATE -> SLOT -> EXECUTION INTENT -> POSITION.
+    AUTOMATION -> CANDIDATE -> SLOT -> EXECUTION INTENT -> POSITION -> TP1 -> BREAKEVEN -> TRAILING -> EXIT -> RECONCILIATION.
     """
     autos = db.list_automations()
     pipeline = []
@@ -3166,6 +3166,7 @@ def get_admin_automation_pipeline_diagnostics():
         aid = a["id"]
         uid = a.get("user_id") or 1
         acc_id = a.get("account_id") or 1
+        sym = a.get("symbol")
 
         cand = db.get_setup_candidate_by_automation(aid)
         intent = db.get_execution_intent_by_automation(aid)
@@ -3177,7 +3178,7 @@ def get_admin_automation_pipeline_diagnostics():
             from .slot_allocation_service import SlotAllocationService
             cand_spec = {
                 "candidate_id": cand.get("setup_id"),
-                "symbol": a.get("symbol"),
+                "symbol": sym,
                 "direction": a.get("direction") or a.get("direction_pref") or "LONG",
                 "strategy": a.get("strategy")
             }
@@ -3186,16 +3187,121 @@ def get_admin_automation_pipeline_diagnostics():
 
         position = None
         if intent and intent.get("position_id"):
-            position = db.get_position(intent["position_id"])
+            try:
+                position = db.get_position(int(intent["position_id"]), user_id=uid)
+            except Exception:
+                pass
+        if not position:
+            open_positions = db.open_positions(user_id=uid)
+            for p in open_positions:
+                if (p.get("detail") or {}).get("automation_id") == aid:
+                    position = p
+                    break
 
         cand_state = cand.get("current_state") if cand else "MONITORING"
+        
+        current_price = 0.0
+        unrealized_pnl = 0.0
+        if position:
+            try:
+                row = db._connect().execute("SELECT close FROM candles WHERE symbol=? ORDER BY ts DESC LIMIT 1", (sym,)).fetchone()
+                if row and row[0]:
+                    current_price = float(row[0])
+                    from . import position_math
+                    entry = float(position.get("actual_entry_price") or position.get("entry") or 0.0)
+                    rem_qty = float(position.get("remaining_qty") if position.get("remaining_qty") is not None else position.get("qty", 0.0))
+                    dir_str = (position.get("direction") or "LONG").upper()
+                    unrealized_pnl = position_math.calculate_unrealized_pnl(entry, current_price, rem_qty, dir_str)
+            except Exception:
+                pass
+
+        pos_payload = None
+        tp1_payload = None
+        be_payload = None
+        trail_payload = None
+        exit_payload = None
+        recon_payload = None
+
+        if position:
+            pos_id = position["id"]
+            pos_status = position.get("status", "OPEN")
+            pos_lifecycle = position.get("lifecycle_state") or pos_status
+            targets = position.get("targets") or []
+            tp1_target = targets[0].get("price") if targets and len(targets) > 0 else None
+
+            pos_payload = {
+                "position_id": pos_id,
+                "symbol": position.get("symbol"),
+                "direction": position.get("direction"),
+                "entry": position.get("entry"),
+                "actual_entry_price": position.get("actual_entry_price") or position.get("entry"),
+                "quantity": position.get("qty"),
+                "remaining_quantity": position.get("remaining_qty") if position.get("remaining_qty") is not None else position.get("qty"),
+                "margin_usdt": position.get("margin_usdt"),
+                "leverage": position.get("leverage"),
+                "current_price": current_price,
+                "unrealized_pnl": unrealized_pnl,
+                "realized_pnl": position.get("realized_pnl") or 0.0,
+                "fees": position.get("total_fees") or 0.0,
+                "status": pos_status,
+                "lifecycle_state": pos_lifecycle,
+                "current_stop": position.get("stop_current"),
+                "last_management_event": position.get("last_management_event"),
+                "last_exchange_response": position.get("last_exchange_response"),
+                "reconciliation_status": position.get("reconciliation_status") or "RECONCILED"
+            }
+
+            tp1_done = bool(position.get("tp1_executed_ms"))
+            tp1_payload = {
+                "status": "COMPLETED" if tp1_done else ("PENDING" if tp1_target else "NOT_CONFIGURED"),
+                "target_price": tp1_target,
+                "fill_price": position.get("tp1_exit_price"),
+                "fill_qty": position.get("tp1_qty"),
+                "realized_pnl": position.get("tp1_realized_pnl"),
+                "fee": position.get("tp1_fee"),
+                "executed_ms": position.get("tp1_executed_ms")
+            }
+
+            be_active = bool(position.get("breakeven_stop"))
+            be_payload = {
+                "status": "ACTIVE" if be_active else "PENDING",
+                "breakeven_stop": position.get("breakeven_stop"),
+                "calculated_cost_basis": position.get("calculated_cost_basis"),
+                "calculated_at_ms": position.get("calculated_at_ms"),
+                "calculation_inputs": position.get("breakeven_inputs") or {}
+            }
+
+            trail_active = bool(position.get("current_trailing_stop"))
+            trail_payload = {
+                "status": "ACTIVE" if trail_active else ("ENABLED" if position.get("trailing_pct") else "DISABLED"),
+                "current_trailing_stop": position.get("current_trailing_stop") or position.get("stop_current"),
+                "previous_trailing_stop": position.get("previous_trailing_stop"),
+                "trailing_method": position.get("trailing_method") or "ATR_DYNAMIC",
+                "trailing_pct": position.get("trailing_pct") or 1.5,
+                "trailing_inputs": position.get("trailing_inputs") or {}
+            }
+
+            is_closed = pos_status in ("CLOSED", "STOPPED", "TRAILING_STOPPED", "DESYNC_CLOSED")
+            exit_payload = {
+                "status": "CLOSED" if is_closed else ("EXITING" if pos_lifecycle == "EXITING" else "OPEN"),
+                "exit_price": position.get("exit_price"),
+                "closed_ms": position.get("closed_ms"),
+                "final_realized_pnl": position.get("realized_pnl")
+            }
+
+            recon_payload = {
+                "status": position.get("reconciliation_status") or "RECONCILED",
+                "last_event": position.get("last_management_event"),
+                "exchange_response": position.get("last_exchange_response")
+            }
+
         pipeline.append({
             "automation_id": aid,
             "user_id": uid,
             "account_id": acc_id,
             "status": a.get("status"),
             "strategy": a.get("strategy"),
-            "symbol": a.get("symbol"),
+            "symbol": sym,
             "last_evaluated_ms": a.get("last_evaluated_ms"),
             "last_eval_reason": a.get("last_eval_reason"),
             "candidate": {
@@ -3226,15 +3332,12 @@ def get_admin_automation_pipeline_diagnostics():
                 "created_at": intent["created_at"],
                 "error_reason": intent.get("error_reason")
             } if intent else None,
-            "position": {
-                "position_id": position["id"],
-                "status": position["status"],
-                "symbol": position["symbol"],
-                "direction": position["direction"],
-                "entry": position["entry"],
-                "qty": position["qty"],
-                "margin_usdt": position["margin_usdt"]
-            } if position else None,
+            "position": pos_payload,
+            "tp1": tp1_payload,
+            "breakeven": be_payload,
+            "trailing": trail_payload,
+            "exit": exit_payload,
+            "reconciliation": recon_payload,
             "waiting_reason": (
                 "WAITING_FOR_RETEST" if cand_state in ("WAITING_FOR_RETEST", "RETEST_TOUCHED", "CONFIRMING_REJECTION")
                 else ("WAITING_FOR_SLOT" if cand_state == "WAITING_FOR_SLOT"
@@ -3244,6 +3347,11 @@ def get_admin_automation_pipeline_diagnostics():
         })
 
     return {"pipeline": pipeline}
+
+
+def get_automation_pipeline_diagnostics(current_user: Optional[Dict[str, Any]] = None):
+    """Backwards-compatible alias for get_admin_automation_pipeline_diagnostics."""
+    return get_admin_automation_pipeline_diagnostics()
 
 
 @app.post("/api/admin/slots/recover-stale", dependencies=[Depends(require_admin)])
@@ -3745,46 +3853,94 @@ def update_user_slot_template(req: dict, current_user: dict = Depends(get_curren
     return {"success": True, "message": "User slot template updated"}
 
 
-@app.get("/api/admin/diagnostics/automation-pipeline")
-def get_automation_pipeline_diagnostics(current_user: dict = Depends(require_admin)):
-    """Drill-down diagnostic view: AUTOMATION -> CANDIDATE -> SLOT -> EXECUTION INTENT -> POSITION."""
-    automations = db.list_automations()
-    pipeline = []
-    for a in automations:
-        aid = a["id"]
-        uid = a["user_id"]
-        cand = db.get_setup_candidate_by_automation(aid)
-        intent = db.get_execution_intent_by_automation(aid)
-        slot = None
-        if intent and intent.get("slot_id"):
-            slot = db.get_autonomous_trade_slot(intent["slot_id"], user_id=uid)
-        elif a.get("slot_info"):
-            slot = a.get("slot_info")
+@app.get("/api/user/positions/lifecycle")
+def get_user_positions_lifecycle(current_user: dict = Depends(get_current_user)):
+    """User-facing authoritative position lifecycle endpoint (same contract as Admin)."""
+    uid = current_user["id"]
+    open_pos = db.open_positions(user_id=uid)
+    cutoff = int(time.time() * 1000) - (86400 * 1000)
+    closed_pos = db.closed_positions_since(cutoff, user_id=uid)
+    
+    positions_list = []
+    seen_ids = set()
 
-        pos = None
-        if intent and intent.get("position_id"):
-            try:
-                pos = db.get_position(int(intent["position_id"]), user_id=uid)
-            except Exception:
-                pass
+    for p in open_pos + closed_pos:
+        pid = p["id"]
+        if pid in seen_ids:
+            continue
+        seen_ids.add(pid)
+        
+        full_pos = db.get_position(pid, user_id=uid)
+        if not full_pos:
+            continue
+            
+        sym = full_pos.get("symbol")
+        current_price = 0.0
+        unrealized_pnl = 0.0
+        try:
+            row = db._connect().execute("SELECT close FROM candles WHERE symbol=? ORDER BY ts DESC LIMIT 1", (sym,)).fetchone()
+            if row and row[0]:
+                current_price = float(row[0])
+                from . import position_math
+                entry = float(full_pos.get("actual_entry_price") or full_pos.get("entry") or 0.0)
+                rem_qty = float(full_pos.get("remaining_qty") if full_pos.get("remaining_qty") is not None else full_pos.get("qty", 0.0))
+                dir_str = (full_pos.get("direction") or "LONG").upper()
+                unrealized_pnl = position_math.calculate_unrealized_pnl(entry, current_price, rem_qty, dir_str)
+        except Exception:
+            pass
 
-        pipeline.append({
-            "automation_id": aid,
-            "user_id": uid,
-            "account_id": a.get("account_id", 1),
-            "status": a.get("status"),
-            "strategy": a.get("strategy"),
-            "symbol": a.get("symbol"),
-            "last_evaluated_ms": a.get("last_evaluated_ms"),
-            "last_eval_reason": a.get("last_eval_reason"),
-            "candidate": cand,
-            "slot": slot,
-            "execution_intent": intent,
-            "position": pos,
-            "waiting_reason": a.get("waiting_reason"),
-            "last_error": a.get("last_error")
+        targets = full_pos.get("targets") or []
+        tp1_target = targets[0].get("price") if targets and len(targets) > 0 else None
+        tp1_done = bool(full_pos.get("tp1_executed_ms"))
+        pos_status = full_pos.get("status", "OPEN")
+        pos_lifecycle = full_pos.get("lifecycle_state") or pos_status
+
+        positions_list.append({
+            "position_id": pid,
+            "symbol": sym,
+            "direction": full_pos.get("direction"),
+            "entry": full_pos.get("entry"),
+            "actual_entry_price": full_pos.get("actual_entry_price") or full_pos.get("entry"),
+            "quantity": full_pos.get("qty"),
+            "remaining_quantity": full_pos.get("remaining_qty") if full_pos.get("remaining_qty") is not None else full_pos.get("qty"),
+            "margin_usdt": full_pos.get("margin_usdt"),
+            "leverage": full_pos.get("leverage"),
+            "current_price": current_price,
+            "unrealized_pnl": unrealized_pnl,
+            "realized_pnl": full_pos.get("realized_pnl") or 0.0,
+            "fees": full_pos.get("total_fees") or 0.0,
+            "status": pos_status,
+            "lifecycle_state": pos_lifecycle,
+            "current_stop": full_pos.get("stop_current"),
+            "tp1": {
+                "status": "COMPLETED" if tp1_done else ("PENDING" if tp1_target else "NOT_CONFIGURED"),
+                "target_price": tp1_target,
+                "fill_price": full_pos.get("tp1_exit_price"),
+                "fill_qty": full_pos.get("tp1_qty"),
+                "realized_pnl": full_pos.get("tp1_realized_pnl"),
+                "executed_ms": full_pos.get("tp1_executed_ms")
+            },
+            "breakeven": {
+                "status": "ACTIVE" if full_pos.get("breakeven_stop") else "PENDING",
+                "breakeven_stop": full_pos.get("breakeven_stop"),
+                "calculated_cost_basis": full_pos.get("calculated_cost_basis")
+            },
+            "trailing": {
+                "status": "ACTIVE" if full_pos.get("current_trailing_stop") else ("ENABLED" if full_pos.get("trailing_pct") else "DISABLED"),
+                "current_trailing_stop": full_pos.get("current_trailing_stop") or full_pos.get("stop_current"),
+                "trailing_method": full_pos.get("trailing_method")
+            },
+            "exit": {
+                "status": "CLOSED" if pos_status in ("CLOSED", "STOPPED", "TRAILING_STOPPED", "DESYNC_CLOSED") else "OPEN",
+                "exit_price": full_pos.get("exit_price"),
+                "closed_ms": full_pos.get("closed_ms")
+            },
+            "last_management_event": full_pos.get("last_management_event"),
+            "reconciliation_status": full_pos.get("reconciliation_status") or "RECONCILED",
+            "lifecycle_history": full_pos.get("lifecycle_history") or []
         })
-    return {"pipeline": pipeline}
+
+    return {"positions": positions_list}
 
 
 @app.post("/api/admin/slots/recover-stale")

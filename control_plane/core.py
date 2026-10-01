@@ -2216,9 +2216,15 @@ def evaluate_active_automations() -> list[dict]:
                         notifications.notify_system_connectivity(f"Live order failed for {sym}", severity="CRITICAL", details=str(e), user_id=uid)
                         continue
                         
+                    from . import position_math
+                    entry_fee = position_math.calculate_actual_fee(entry, live_qty)
                     pid = db.create_position({
                         "symbol": sym, "direction": direction, "entry": entry,
-                        "qty": live_qty, "leverage": lev, "margin_usdt": margin_alloc,
+                        "actual_entry_price": entry,
+                        "qty": live_qty, "remaining_qty": live_qty,
+                        "leverage": lev, "margin_usdt": margin_alloc,
+                        "total_fees": entry_fee,
+                        "lifecycle_state": "FILLED",
                         "mode": "LIVE", "status": "OPEN", "client_order_id": coid,
                         "exchange_order_id": str(order_id or ""),
                         "stop_current": round(stop, 6),
@@ -2227,6 +2233,8 @@ def evaluate_active_automations() -> list[dict]:
                         "targets": targets_payload,
                         "targets_json": json.dumps(targets_payload),
                         "user_id": uid,
+                        "last_management_event": "LIVE_ENTRY_FILLED",
+                        "reconciliation_status": "RECONCILED",
                         "detail": {"automation_id": aid, "strategy": curr_strat, "slot_id": slot_id, "order_id": str(order_id or ""), "exchange_resp": str(resp)[:200], "be_after_partial": True}
                     })
                     db.event_record(event_id, "SIGNAL", pid)
@@ -2237,9 +2245,15 @@ def evaluate_active_automations() -> list[dict]:
                     db.update_automation_diagnostics(aid, now_ms, f"LIVE Trade Executed #{pid} in Slot {slot['name']} ({sym} {direction})", signal_ms=now_ms, signal_dir=direction, exec_status="EXECUTED_LIVE")
                     
                 else: # SHADOW MODE
+                    from . import position_math
+                    entry_fee = position_math.calculate_actual_fee(entry, qty)
                     pid = db.create_position({
                         "symbol": sym, "direction": direction, "entry": entry,
-                        "qty": qty, "leverage": lev, "margin_usdt": margin_alloc,
+                        "actual_entry_price": entry,
+                        "qty": qty, "remaining_qty": qty,
+                        "leverage": lev, "margin_usdt": margin_alloc,
+                        "total_fees": entry_fee,
+                        "lifecycle_state": "FILLED",
                         "mode": "SHADOW", "status": "OPEN", "client_order_id": coid,
                         "stop_current": round(stop, 6),
                         "stops": stops_payload,
@@ -2247,6 +2261,8 @@ def evaluate_active_automations() -> list[dict]:
                         "targets": targets_payload,
                         "targets_json": json.dumps(targets_payload),
                         "user_id": uid,
+                        "last_management_event": "SHADOW_ENTRY_FILLED",
+                        "reconciliation_status": "RECONCILED",
                         "detail": {"automation_id": aid, "strategy": curr_strat, "slot_id": slot_id, "be_after_partial": True}
                     })
                     db.event_record(event_id, "SIGNAL", pid)
@@ -2274,8 +2290,9 @@ def evaluate_active_automations() -> list[dict]:
 
 
 def evaluate_open_positions_with_execution() -> list[dict]:
-    """Evaluate every open position against current market and execute stops/TP in LIVE/SHADOW."""
-    acts = evaluate_all_positions()
+    """Evaluate every open position against current market and execute stops/TP in LIVE/SHADOW via authoritative position manager daemon."""
+    from . import position_manager_daemon
+    acts = position_manager_daemon.evaluate_and_manage_positions()
     for a in acts:
         pid = a.get("position_id")
         action = a.get("action")
@@ -2283,45 +2300,22 @@ def evaluate_open_positions_with_execution() -> list[dict]:
         if not p:
             continue
             
-        uid = p.get("user_id")
-        if not uid or uid < 1:
-            continue
-        mode = p.get("mode", "SHADOW")
-        sym = p.get("symbol", "")
-        qty = p.get("qty", 0.0)
-        long = (p.get("direction") == "LONG")
+        uid = p.get("user_id") or 1
         
-        # If in LIVE mode and an exit action occurred, submit close order to BingX
-        if mode == "LIVE" and action in ("exit_all", "partial_exit"):
-            # Deduplication for exit to prevent sending duplicate close orders
-            exit_event_id = f"exit_{pid}_{action}_{int(time.time() // 60)}"
-            if not db.event_seen(exit_event_id):
-                db.event_record(exit_event_id, "EXIT", None)
-                try:
-                    client = _live_client(user_id=uid)
-                    side = "SELL" if long else "BUY"
-                    pos_side = "LONG" if long else "SHORT"
-                    close_qty = a.get("qty") or qty
-                    coid = f"oph-close-{pid}-{uuid.uuid4().hex[:6]}"
-                    bingx_sym = symbols.to_bingx_symbol(sym)
-                    client.market_order(bingx_sym, side, pos_side, close_qty, coid)
-                except Exception as e:
-                    db.audit("core", "LIVE_CLOSE_FAILED", {"position_id": pid, "error": str(e)[:200]}, user_id=uid)
-                
         # Notifications dispatch
         if action == "exit_all":
             reason = a.get("reason", "EXIT")
-            pnl = p.get("realized_pnl", 0.0)
-            if reason in ("hard_stop", "structural_stop", "stop_loss", "trailing_stop"):
+            pnl = float(p.get("realized_pnl") or 0.0)
+            if reason in ("hard_stop", "structural_stop", "stop_loss", "trailing_stop", "STOP_LOSS_HIT", "TRAILING_STOP_HIT"):
                 notifications.notify_sl_hit(p, loss_usdt=abs(pnl), loss_pct=abs(p.get("pnl_pct", 0.0)), reason=reason, user_id=uid)
             else:
                 notifications.notify_trade_closed(p, realized_pnl=pnl, pnl_pct=p.get("pnl_pct", 0.0), reason=reason, user_id=uid)
-        elif action == "partial_exit":
-            notifications.notify_partial_close(p, stage_pct=50.0, realized_pnl=p.get("realized_pnl", 0.0), pnl_pct=p.get("pnl_pct", 0.0), remaining_qty=p.get("qty", 0.0), user_id=uid)
+        elif action == "partial_close":
+            notifications.notify_partial_close(p, stage_pct=50.0, realized_pnl=float(p.get("realized_pnl") or 0.0), pnl_pct=p.get("pnl_pct", 0.0), remaining_qty=float(p.get("remaining_qty") or p.get("qty", 0.0)), user_id=uid)
         elif action == "breakeven":
-            notifications.notify_breakeven_activated(p, new_stop=a.get("stop", 0.0), user_id=uid)
-        elif action == "stop_updated":
-            notifications.notify_trailing_stop_update(p, new_stop=a.get("stop", 0.0), user_id=uid)
+            notifications.notify_breakeven_activated(p, new_stop=a.get("new_stop") or a.get("stop", 0.0), user_id=uid)
+        elif action in ("trailing_stop_advanced", "stop_updated"):
+            notifications.notify_trailing_stop_update(p, new_stop=a.get("new_stop") or a.get("stop", 0.0), user_id=uid)
             
     return acts
 

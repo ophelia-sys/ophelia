@@ -229,6 +229,24 @@ def _init_user_and_copy_tables(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_up_user ON user_positions(user_id, status)")
 
+    # Phase 4 user_positions migrations
+    existing_up_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_positions)").fetchall()}
+    up_cols_to_add = [
+        ("lifecycle_state", "TEXT DEFAULT 'FILLED'"),
+        ("remaining_qty", "REAL"),
+        ("actual_entry_price", "REAL"),
+        ("breakeven_stop", "REAL"),
+        ("current_trailing_stop", "REAL"),
+        ("last_management_event", "TEXT"),
+        ("reconciliation_status", "TEXT DEFAULT 'RECONCILED'"),
+    ]
+    for cname, ctype in up_cols_to_add:
+        if cname not in existing_up_cols:
+            try:
+                conn.execute(f"ALTER TABLE user_positions ADD COLUMN {cname} {ctype}")
+            except sqlite3.OperationalError:
+                pass
+
     # 9. reconciliation_events
     conn.execute("""CREATE TABLE IF NOT EXISTS reconciliation_events(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -799,14 +817,39 @@ def _wl_conn() -> sqlite3.Connection:
             mode TEXT, client_order_id TEXT, closed_ms INTEGER, exit_price REAL,
             realized_pnl REAL, detail_json TEXT)""")
             
-        try:
-            c.execute("ALTER TABLE positions ADD COLUMN user_id INTEGER DEFAULT 1")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE positions ADD COLUMN account_id INTEGER DEFAULT 1")
-        except sqlite3.OperationalError:
-            pass
+        existing_pos_cols = {row[1] for row in c.execute("PRAGMA table_info(positions)").fetchall()}
+        pos_cols_to_add = [
+            ("user_id", "INTEGER DEFAULT 1"),
+            ("account_id", "INTEGER DEFAULT 1"),
+            ("lifecycle_state", "TEXT DEFAULT 'FILLED'"),
+            ("remaining_qty", "REAL"),
+            ("actual_entry_price", "REAL"),
+            ("total_fees", "REAL DEFAULT 0.0"),
+            ("funding_accrued", "REAL DEFAULT 0.0"),
+            ("tp1_executed_ms", "INTEGER DEFAULT NULL"),
+            ("tp1_exit_price", "REAL DEFAULT NULL"),
+            ("tp1_qty", "REAL DEFAULT NULL"),
+            ("tp1_realized_pnl", "REAL DEFAULT NULL"),
+            ("tp1_fee", "REAL DEFAULT NULL"),
+            ("breakeven_stop", "REAL DEFAULT NULL"),
+            ("calculated_cost_basis", "REAL DEFAULT NULL"),
+            ("breakeven_inputs_json", "TEXT DEFAULT NULL"),
+            ("calculated_at_ms", "INTEGER DEFAULT NULL"),
+            ("current_trailing_stop", "REAL DEFAULT NULL"),
+            ("previous_trailing_stop", "REAL DEFAULT NULL"),
+            ("trailing_method", "TEXT DEFAULT NULL"),
+            ("trailing_inputs_json", "TEXT DEFAULT NULL"),
+            ("last_management_event", "TEXT DEFAULT NULL"),
+            ("last_exchange_response", "TEXT DEFAULT NULL"),
+            ("reconciliation_status", "TEXT DEFAULT 'RECONCILED'"),
+            ("lifecycle_history_json", "TEXT DEFAULT '[]'")
+        ]
+        for cname, ctype in pos_cols_to_add:
+            if cname not in existing_pos_cols:
+                try:
+                    c.execute(f"ALTER TABLE positions ADD COLUMN {cname} {ctype}")
+                except Exception:
+                    pass
 
         c.execute("""CREATE TABLE IF NOT EXISTS audit(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 1,
@@ -1040,25 +1083,115 @@ def event_delete(event_id: str) -> None:
 
 # ---------------------------------------------------------------- positions
 
+_POSITION_COLUMNS = (
+    "id", "user_id", "account_id", "opened_ms", "symbol", "direction", "entry", "qty", "leverage",
+    "margin_usdt", "stops_json", "targets_json", "trailing_pct", "trailing_ref", "stop_current", "status",
+    "mode", "client_order_id", "closed_ms", "exit_price", "realized_pnl", "detail_json",
+    "lifecycle_state", "remaining_qty", "actual_entry_price", "total_fees", "funding_accrued",
+    "tp1_executed_ms", "tp1_exit_price", "tp1_qty", "tp1_realized_pnl", "tp1_fee",
+    "breakeven_stop", "calculated_cost_basis", "breakeven_inputs_json", "calculated_at_ms",
+    "current_trailing_stop", "previous_trailing_stop", "trailing_method", "trailing_inputs_json",
+    "last_management_event", "last_exchange_response", "reconciliation_status", "lifecycle_history_json"
+)
+
+
+def _parse_position_row(r: tuple, keys: tuple = _POSITION_COLUMNS) -> dict:
+    d = dict(zip(keys, r))
+    try:
+        d["stops"] = json.loads(d.get("stops_json") or "[]")
+    except Exception:
+        d["stops"] = []
+    try:
+        d["targets"] = json.loads(d.get("targets_json") or "[]")
+    except Exception:
+        d["targets"] = []
+    try:
+        d["detail"] = json.loads(d.get("detail_json") or "{}")
+    except Exception:
+        d["detail"] = {}
+    try:
+        d["breakeven_inputs"] = json.loads(d.get("breakeven_inputs_json") or "{}")
+    except Exception:
+        d["breakeven_inputs"] = {}
+    try:
+        d["trailing_inputs"] = json.loads(d.get("trailing_inputs_json") or "{}")
+    except Exception:
+        d["trailing_inputs"] = {}
+    try:
+        d["lifecycle_history"] = json.loads(d.get("lifecycle_history_json") or "[]")
+    except Exception:
+        d["lifecycle_history"] = []
+    d["sl"] = d.get("stop_current") or (d["stops"][0] if d.get("stops") else None)
+    d["sl_price"] = d["sl"]
+    d["tp1"] = d["targets"][0] if len(d.get("targets") or []) > 0 else None
+    d["tp1_price"] = d["tp1"]
+    d["tp2"] = d["targets"][1] if len(d.get("targets") or []) > 1 else None
+    d["tp2_price"] = d["tp2"]
+    d["tp3"] = d["targets"][2] if len(d.get("targets") or []) > 2 else None
+    d["tp3_price"] = d["tp3"]
+    return d
+
+
 def create_position(row: dict, user_id: int | None = None, account_id: int = 1) -> int:
     effective_uid = row.get("user_id") or user_id
     if not effective_uid or effective_uid <= 0:
         raise ValueError("Valid user_id required to create position")
     c = _wl_conn()
+    now_ms = int(time.time() * 1000)
     with _lock:
-        stops_val = row["stops_json"] if isinstance(row.get("stops_json"), str) else json_dumps(row.get("stops", []))
-        targets_val = row["targets_json"] if isinstance(row.get("targets_json"), str) else json_dumps(row.get("targets", []))
+        sl_val = row.get("sl") or row.get("sl_price")
+        stops_list = row.get("stops") or ([sl_val] if sl_val is not None else [])
+        stops_val = row["stops_json"] if isinstance(row.get("stops_json"), str) else json_dumps(stops_list)
+
+        tp_candidates = [row.get("tp1") or row.get("tp1_price"), row.get("tp2") or row.get("tp2_price"), row.get("tp3") or row.get("tp3_price")]
+        tps = [t for t in tp_candidates if t is not None]
+        targets_list = row.get("targets") or tps
+        targets_val = row["targets_json"] if isinstance(row.get("targets_json"), str) else json_dumps(targets_list)
+
+        stop_current_val = float(row.get("stop_current") or sl_val or 0.0)
+
+        entry_val = float(row.get("entry") or 0.0)
+        qty_val = float(row.get("qty") or 0.0)
+        remaining_qty = float(row.get("remaining_qty") if row.get("remaining_qty") is not None else qty_val)
+        actual_entry = float(row.get("actual_entry_price") if row.get("actual_entry_price") is not None else entry_val)
+        total_fees = float(row.get("total_fees") or 0.0)
+        lifecycle_state = str(row.get("lifecycle_state") or "FILLED")
+        recon_status = str(row.get("reconciliation_status") or "RECONCILED")
+        last_exch_resp = row.get("last_exchange_response")
+        init_history = json_dumps([{
+            "state": lifecycle_state,
+            "timestamp_ms": now_ms,
+            "event": "POSITION_OPENED",
+            "entry": actual_entry,
+            "qty": qty_val
+        }])
+
+        client_oid = str(row.get("client_order_id") or row.get("position_id") or "")
+        detail_raw = row.get("detail", {})
+        detail_dict = dict(detail_raw) if isinstance(detail_raw, dict) else {}
+        if "slot_id" in row and "slot_id" not in detail_dict:
+            detail_dict["slot_id"] = row["slot_id"]
+        detail_val = json_dumps(detail_dict)
+
         cur = c.execute(
-            "INSERT INTO positions(user_id,account_id,opened_ms,symbol,direction,entry,qty,leverage,"
-            "margin_usdt,stops_json,targets_json,trailing_pct,trailing_ref,"
-            "stop_current,status,mode,client_order_id,detail_json) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (effective_uid, account_id, int(time.time() * 1000), row["symbol"], row["direction"],
-             row["entry"], row["qty"], row.get("leverage"), row.get("margin_usdt"),
-             stops_val, targets_val,
-             row.get("trailing_pct"), row.get("trailing_ref"), row.get("stop_current"),
-             row.get("status", "OPEN"), row.get("mode", "SHADOW"),
-             row.get("client_order_id"), json_dumps(row.get("detail", {}))))
+            """INSERT INTO positions(
+                user_id, account_id, opened_ms, symbol, direction, entry, qty, leverage,
+                margin_usdt, stops_json, targets_json, trailing_pct, trailing_ref,
+                stop_current, status, mode, client_order_id, detail_json,
+                lifecycle_state, remaining_qty, actual_entry_price, total_fees, funding_accrued,
+                reconciliation_status, lifecycle_history_json, last_management_event, last_exchange_response
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                effective_uid, account_id, now_ms, row["symbol"], row["direction"],
+                entry_val, qty_val, row.get("leverage"), row.get("margin_usdt"),
+                stops_val, targets_val,
+                row.get("trailing_pct"), row.get("trailing_ref"), stop_current_val,
+                row.get("status", "OPEN"), row.get("mode", "SHADOW"),
+                client_oid or None, detail_val,
+                lifecycle_state, remaining_qty, actual_entry, total_fees, float(row.get("funding_accrued") or 0.0),
+                recon_status, init_history, "POSITION_OPENED", last_exch_resp
+            )
+        )
         c.commit()
 
         pid = int(cur.lastrowid or 0)
@@ -1194,7 +1327,7 @@ def get_capacity_metrics(user_id: int) -> dict:
     }
 
 
-def update_position(pid: int, **fields) -> None:
+def update_position(pid: int | str, **fields) -> None:
     if not fields:
         return
     if "detail" in fields:
@@ -1206,10 +1339,24 @@ def update_position(pid: int, **fields) -> None:
     if "targets" in fields:
         t = fields.pop("targets")
         fields["targets_json"] = json.dumps(t) if isinstance(t, (dict, list)) else str(t)
-    allowed = {"qty", "stop_current", "trailing_ref", "trailing_pct",
-               "status", "closed_ms", "exit_price", "realized_pnl",
-               "stops_json", "targets_json", "detail_json", "client_order_id",
-               "entry", "leverage", "margin_usdt"}
+    if "breakeven_inputs" in fields:
+        bi = fields.pop("breakeven_inputs")
+        fields["breakeven_inputs_json"] = json.dumps(bi) if isinstance(bi, (dict, list)) else str(bi)
+    if "trailing_inputs" in fields:
+        ti = fields.pop("trailing_inputs")
+        fields["trailing_inputs_json"] = json.dumps(ti) if isinstance(ti, (dict, list)) else str(ti)
+
+    allowed = {
+        "qty", "stop_current", "trailing_ref", "trailing_pct",
+        "status", "closed_ms", "exit_price", "realized_pnl",
+        "stops_json", "targets_json", "detail_json", "client_order_id",
+        "entry", "leverage", "margin_usdt",
+        "lifecycle_state", "remaining_qty", "actual_entry_price", "total_fees", "funding_accrued",
+        "tp1_executed_ms", "tp1_exit_price", "tp1_qty", "tp1_realized_pnl", "tp1_fee",
+        "breakeven_stop", "calculated_cost_basis", "breakeven_inputs_json", "calculated_at_ms",
+        "current_trailing_stop", "previous_trailing_stop", "trailing_method", "trailing_inputs_json",
+        "last_management_event", "last_exchange_response", "reconciliation_status", "lifecycle_history_json"
+    }
     sets = []
     args: list = []
     for k, v in fields.items():
@@ -1217,32 +1364,66 @@ def update_position(pid: int, **fields) -> None:
             raise ValueError(f"field not allowed: {k}")
         sets.append(f"{k}=?")
         args.append(v)
-    args.append(pid)
+    
+    is_num = isinstance(pid, int) or (isinstance(pid, str) and str(pid).isdigit())
+    where = "WHERE id=?" if is_num else "WHERE client_order_id=?"
+    target = int(pid) if is_num else str(pid)
+    args.append(target)
     c = _wl_conn()
     with _lock:
-        c.execute(f"UPDATE positions SET {', '.join(sets)} WHERE id=?", args)
+        c.execute(f"UPDATE positions SET {', '.join(sets)} {where}", args)
         c.commit()
 
     if fields.get("status") in ("CLOSED", "STOPPED", "TRAILING_STOPPED", "DESYNC_CLOSED"):
         try:
-            release_slot_by_position(pid)
-            release_slot_by_position(str(pid))
-            row = c.execute("SELECT detail_json FROM positions WHERE id=?", (pid,)).fetchone()
+            from .slot_allocation_service import SlotAllocationService
+            row = c.execute(f"SELECT detail_json, user_id FROM positions {where}", (target,)).fetchone()
             if row and row[0]:
                 d = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                uid = row[1] or 1
                 if isinstance(d, dict) and d.get("slot_id"):
-                    release_autonomous_trade_slot(int(d["slot_id"]))
+                    SlotAllocationService.release_slot(int(d["slot_id"]), user_id=uid, reason="POSITION_CLOSED")
         except Exception:
             pass
 
 
+def record_position_lifecycle_transition(
+    pid: int | str,
+    state: str,
+    event: str,
+    details: dict | None = None
+) -> None:
+    """Record an authoritative state machine transition for a position."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    is_num = isinstance(pid, int) or (isinstance(pid, str) and str(pid).isdigit())
+    where = "WHERE id=?" if is_num else "WHERE client_order_id=?"
+    target = int(pid) if is_num else str(pid)
+    with _lock:
+        row = c.execute(f"SELECT lifecycle_history_json FROM positions {where}", (target,)).fetchone()
+        history = []
+        if row and row[0]:
+            try:
+                history = json.loads(row[0])
+            except Exception:
+                history = []
+        history.append({
+            "state": state,
+            "event": event,
+            "timestamp_ms": now_ms,
+            "details": details or {}
+        })
+        c.execute(
+            f"UPDATE positions SET lifecycle_state=?, last_management_event=?, lifecycle_history_json=? {where}",
+            (state, event, json.dumps(history), target)
+        )
+        c.commit()
+
 
 def open_positions(mode: str | None = None, user_id: int | None = None) -> list[dict]:
     c = _wl_conn()
-    q = ("SELECT id,user_id,account_id,opened_ms,symbol,direction,entry,qty,leverage,margin_usdt,"
-         "stops_json,targets_json,trailing_pct,trailing_ref,stop_current,status,"
-         "mode,client_order_id,detail_json FROM positions WHERE status IN "
-         "('OPEN','PARTIAL','TRAILING')")
+    cols = ", ".join(_POSITION_COLUMNS)
+    q = f"SELECT {cols} FROM positions WHERE status IN ('OPEN','PARTIAL','TRAILING')"
     args: list = []
     if user_id is not None:
         q += " AND user_id=?"
@@ -1253,54 +1434,33 @@ def open_positions(mode: str | None = None, user_id: int | None = None) -> list[
     q += " ORDER BY id"
     with _lock:
         rows = c.execute(q, args).fetchall()
-    keys = ("id", "user_id", "account_id", "opened_ms", "symbol", "direction", "entry", "qty", "leverage",
-            "margin_usdt", "stops_json", "targets_json", "trailing_pct",
-            "trailing_ref", "stop_current", "status", "mode", "client_order_id",
-            "detail_json")
-    out = []
-    for r in rows:
-        d = dict(zip(keys, r))
-        d["stops"] = json.loads(d.pop("stops_json") or "[]")
-        d["targets"] = json.loads(d.pop("targets_json") or "[]")
-        try:
-            d["detail"] = json.loads(d.pop("detail_json") or "{}")
-        except json.JSONDecodeError:
-            d["detail"] = {}
-        out.append(d)
-    return out
+    return [_parse_position_row(r) for r in rows]
 
 
-def get_position(pid: int, user_id: int | None = None) -> dict | None:
+def get_position(pid: int | str, user_id: int | None = None) -> dict | None:
     c = _wl_conn()
-    q = ("SELECT id,user_id,account_id,opened_ms,symbol,direction,entry,qty,leverage,margin_usdt,"
-         "stops_json,targets_json,trailing_pct,trailing_ref,stop_current,status,"
-         "mode,client_order_id,detail_json FROM positions WHERE id=?")
-    args: list = [pid]
+    cols = ", ".join(_POSITION_COLUMNS)
+    is_num = isinstance(pid, int) or (isinstance(pid, str) and str(pid).isdigit())
+    if is_num:
+        q = f"SELECT {cols} FROM positions WHERE id=?"
+        args: list = [int(pid)]
+    else:
+        q = f"SELECT {cols} FROM positions WHERE client_order_id=?"
+        args = [str(pid)]
     if user_id is not None:
         q += " AND user_id=?"
         args.append(user_id)
     with _lock:
         row = c.execute(q, args).fetchone()
+        if not row and not is_num:
+            # Fallback attempt by id
+            try:
+                row = c.execute(f"SELECT {cols} FROM positions WHERE id=?", [int(pid)]).fetchone()
+            except Exception:
+                pass
     if not row:
         return None
-    keys = ("id", "user_id", "account_id", "opened_ms", "symbol", "direction", "entry", "qty", "leverage",
-            "margin_usdt", "stops_json", "targets_json", "trailing_pct",
-            "trailing_ref", "stop_current", "status", "mode", "client_order_id",
-            "detail_json")
-    d = dict(zip(keys, row))
-    try:
-        d["stops"] = json.loads(d.pop("stops_json") or "[]")
-    except Exception:
-        d["stops"] = []
-    try:
-        d["targets"] = json.loads(d.pop("targets_json") or "[]")
-    except Exception:
-        d["targets"] = []
-    try:
-        d["detail"] = json.loads(d.pop("detail_json") or "{}")
-    except Exception:
-        d["detail"] = {}
-    return d
+    return _parse_position_row(row)
 
 
 def has_open_position_for_automation(automation_id: int, user_id: int, mode: str | None = None) -> bool:
