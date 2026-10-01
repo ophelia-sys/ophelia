@@ -646,11 +646,11 @@ def get_health():
     return core.health()
 
 @app.get("/api/dashboard")
-def get_dashboard(user: dict = Depends(require_authenticated_user)):
+def get_dashboard(mode: Optional[str] = "LIVE", user: dict = Depends(require_authenticated_user)):
     user_id = user["id"]
     is_admin = (user.get("role") == "ADMIN")
     from . import account
-    return account.dashboard_view(user_id=user_id, is_admin_caller=is_admin)
+    return account.dashboard_view(user_id=user_id, is_admin_caller=is_admin, mode=mode)
 
 @app.get("/api/account/capacity")
 def get_capacity(user_id: int = Depends(get_current_user_id)):
@@ -3963,6 +3963,54 @@ def recover_stale_slots(current_user: dict = Depends(require_admin)):
     from .slot_allocation_service import SlotAllocationService
     count = SlotAllocationService.recover_stale_reservations()
     return {"success": True, "recovered_count": count}
+
+
+# ---------------------------------------------------------------- TimesFM Endpoints
+@app.get("/api/timesfm/diagnostics")
+def get_timesfm_diagnostics(user: dict = Depends(require_authenticated_user)):
+    """TimesFM 3.0 runtime diagnostics and hardware telemetry."""
+    from .forecast_service import ForecastService
+    status = ForecastService.get_status()
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        status["system_ram_total_mb"] = round(mem.total / (1024 * 1024), 1)
+        status["system_ram_available_mb"] = round(mem.available / (1024 * 1024), 1)
+        status["system_ram_used_pct"] = mem.percent
+        status["system_cpu_pct"] = psutil.cpu_percent(interval=None)
+    except Exception:
+        pass
+    return status
+
+
+@app.get("/api/timesfm/forecasts")
+def get_timesfm_forecasts(
+    instrument: str = Query("BTC-USDT"),
+    timeframe: str = Query("15m"),
+    horizon: int = Query(10),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve the latest TimesFM forecast for an instrument and timeframe."""
+    from .forecast_service import ForecastService
+    svc = ForecastService.get_instance()
+    res = svc.generate_forecast(
+        instrument=instrument,
+        timeframe=timeframe,
+        horizon=horizon,
+        user_id=user["id"]
+    )
+    return res.to_dict()
+
+
+@app.get("/api/timesfm/evaluations")
+def get_timesfm_evaluations(
+    instrument: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve TimesFM out-of-sample evaluation performance metrics."""
+    return db.get_model_forecast_evaluation_metrics(model_name="timesfm", instrument=instrument, timeframe=timeframe)
+
 
 
 

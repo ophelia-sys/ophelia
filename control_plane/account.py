@@ -371,12 +371,13 @@ def account_capacity(user_id: int = 0) -> dict:
     }
 
 
-def dashboard_view(user_id: int = 0, force: bool = False, is_admin_caller: bool = False) -> dict:
+def dashboard_view(user_id: int = 0, force: bool = False, is_admin_caller: bool = False, mode: str | None = "LIVE") -> dict:
     """Aggregated view for the Android Home Dashboard."""
     if not user_id or user_id < 1:
         return {"error": "Valid user_id required for dashboard view"}
     from . import config
     from .provenance import DataProvenance
+    active_mode = (mode or "LIVE").upper()
     connection_failed = False
     try:
         account, positions = exchange_snapshot(user_id=user_id, force=force, is_admin_caller=is_admin_caller)
@@ -426,7 +427,7 @@ def dashboard_view(user_id: int = 0, force: bool = False, is_admin_caller: bool 
         "month_pct": _pct_change(equity, eq_month),
     }
     
-    closed_today = db.closed_positions_since(start_today_ms, user_id)
+    closed_today = db.closed_positions_since(start_today_ms, user_id, mode=active_mode)
     wins = sum(1 for p in closed_today if (p.get("realized_pnl") or 0) > 0)
     losses = sum(1 for p in closed_today if (p.get("realized_pnl") or 0) < 0)
     n_trades = len(closed_today)
@@ -439,7 +440,10 @@ def dashboard_view(user_id: int = 0, force: bool = False, is_admin_caller: bool 
         "losses": losses,
         "win_rate": win_rate,
         "realized_pnl": round(realized, 2),
-        "fees": 0.0
+        "fees": 0.0,
+        "mode": active_mode,
+        "namespace": active_mode,
+        "provenance": DataProvenance.LIVE_BINGX.value if active_mode == "LIVE" else DataProvenance.SHADOW_PAPER.value
     }
     
     open_pos = db.open_positions(user_id=user_id)

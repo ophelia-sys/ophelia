@@ -249,6 +249,17 @@ interface OpheliaApiService {
     @POST("/api/automations/from_news_setup")
     suspend fun createAutomationFromNewsSetup(@Body request: Map<String, @JvmSuppressWildcards Any>): CreateAutomationFromSetupResponse
 
+    // --- TimesFM 3.0 Forecasting Subsystem ---
+    @GET("/api/timesfm/diagnostics")
+    suspend fun getTimesFmDiagnostics(): TimesFmDiagnosticsResponse
+
+    @GET("/api/timesfm/forecasts")
+    suspend fun getTimesFmForecast(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("timeframe") timeframe: String = "15m",
+        @Query("horizon") horizon: Int = 10
+    ): TimesFmForecastResponse
+
     // --- 48-Hour Historical Backtest ---
     @GET("/api/backtest/48h")
     suspend fun get48hBacktest(): BacktestResponseDto

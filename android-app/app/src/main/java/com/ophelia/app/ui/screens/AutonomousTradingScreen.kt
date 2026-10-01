@@ -54,6 +54,8 @@ fun AutonomousTradingScreen(
 
     var diagnosticsPipeline by remember { mutableStateOf<List<AutomationPipelineItemDto>>(emptyList()) }
     var isLoadingPipeline by remember { mutableStateOf(false) }
+    var timesfmDiagnostics by remember { mutableStateOf<TimesFmDiagnosticsResponse?>(null) }
+    var isTimesfmExpanded by remember { mutableStateOf(false) }
 
     fun refreshPipeline() {
         scope.launch {
@@ -76,6 +78,9 @@ fun AutonomousTradingScreen(
                 summary = RetrofitClient.api.getAutonomousSlots()
                 try {
                     replication = RetrofitClient.api.getReplicationStatus()
+                } catch (_: Exception) {}
+                try {
+                    timesfmDiagnostics = RetrofitClient.api.getTimesFmDiagnostics()
                 } catch (_: Exception) {}
             } catch (e: Exception) {
                 Toast.makeText(context, "Error loading autonomous status: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -271,15 +276,21 @@ fun AutonomousTradingScreen(
                                     }
                                 }
 
-                                Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "SYSTEM MAX CONCURRENT: ${data?.systemMaxSlots ?: 4} | USER CONFIGURED: ${data?.totalSlots ?: 0}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
+                                Spacer(Modifier.height(8.dp))
 
                                 // Metrics Grid
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    MetricColumn("TOTAL SLOTS", "${data?.totalSlots ?: 0}", AccentCyan)
+                                    MetricColumn("CONFIGURED", "${data?.totalSlots ?: 0}", AccentCyan)
                                     MetricColumn("AVAILABLE", "${data?.availableSlots ?: 0}", AccentGreen)
                                     MetricColumn("OCCUPIED", "${data?.occupiedSlots ?: 0}", Color(0xFFF59E0B))
                                     MetricColumn("AUTHORIZED", "${data?.totalAuthorizedMarginUsdt ?: 0.0} USDT", PrimaryText)
-                                    MetricColumn("RESERVED", "${data?.reservedMarginUsdt ?: 0.0} USDT", Color(0xFFA855F7))
+                                    MetricColumn("ALLOCATED", "${data?.reservedMarginUsdt ?: 0.0} USDT", Color(0xFFA855F7))
                                 }
                             }
                         }
@@ -394,6 +405,92 @@ fun AutonomousTradingScreen(
                                             CopiedTradeRow(c)
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==========================================
+                // COLLAPSIBLE 3: TIMESFM 3.0 DIAGNOSTICS (SHADOW)
+                // ==========================================
+                item {
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isTimesfmExpanded = !isTimesfmExpanded },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (isTimesfmExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = AccentCyan,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                "TIMESFM 3.0 DIAGNOSTICS",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = PrimaryText,
+                                                letterSpacing = 1.sp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            OpheliaStatusBadge(
+                                                status = "SHADOW",
+                                                color = AccentCyan,
+                                                showDot = false
+                                            )
+                                        }
+                                        Text(
+                                            "google/timesfm-3.0-pytorch • ${timesfmDiagnostics?.lifecycleState ?: "READY"}",
+                                            fontSize = 11.sp,
+                                            color = if (timesfmDiagnostics?.modelLoaded == true) AccentGreen else WarningAmber
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isTimesfmExpanded) {
+                                Spacer(Modifier.height(14.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(12.dp))
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("MODEL", timesfmDiagnostics?.version ?: "3.0", PrimaryText)
+                                    MetricColumn("DEVICE", timesfmDiagnostics?.device?.uppercase() ?: "CPU", AccentCyan)
+                                    MetricColumn("LATENCY", "${timesfmDiagnostics?.lastInferenceMs ?: 0.0}ms", AccentGreen)
+                                    MetricColumn("FORECASTS", "${timesfmDiagnostics?.forecastCount ?: 0}", Color(0xFFF59E0B))
+                                    MetricColumn("QUEUE", "${timesfmDiagnostics?.queueDepth ?: 0}", SecondaryText)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(
+                                        "RAM: ${timesfmDiagnostics?.systemRamAvailableMb ?: 0.0}MB Avail / ${timesfmDiagnostics?.systemRamTotalMb ?: 0.0}MB Total (${timesfmDiagnostics?.systemRamUsedPct ?: 0.0}%)",
+                                        fontSize = 11.sp,
+                                        color = SecondaryText
+                                    )
+                                    Text(
+                                        "CPU: ${timesfmDiagnostics?.systemCpuPct ?: 0.0}%",
+                                        fontSize = 11.sp,
+                                        color = SecondaryText
+                                    )
+                                }
+
+                                if (!timesfmDiagnostics?.lastError.isNullOrBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "Last Error: ${timesfmDiagnostics?.lastError}",
+                                        fontSize = 11.sp,
+                                        color = BearishRed
+                                    )
                                 }
                             }
                         }

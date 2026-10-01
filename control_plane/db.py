@@ -342,6 +342,30 @@ def query_candles(symbol: str, start_ms: int, end_ms: int,
     return [dict(zip(keys, r)) for r in rows]
 
 
+def get_candles(symbol: str, limit: int = 256) -> list[dict]:
+    """Retrieve up to 'limit' most recent candles for symbol."""
+    conn = _connect()
+    symbols_to_check = [symbol]
+    venue = config.to_venue_symbol(symbol)
+    if venue not in symbols_to_check:
+        symbols_to_check.append(venue)
+    disp = config.to_display_symbol(symbol)
+    if disp not in symbols_to_check:
+        symbols_to_check.append(disp)
+
+    placeholders = ",".join("?" for _ in symbols_to_check)
+    q = (f"SELECT exchange,symbol,ts,open,high,low,close,volume,taker_buy,trades "
+         f"FROM candles WHERE symbol IN ({placeholders}) ORDER BY ts DESC LIMIT ?")
+    args = list(symbols_to_check) + [limit]
+    with _lock:
+        rows = conn.execute(q, args).fetchall()
+    keys = ("exchange", "symbol", "ts", "open", "high", "low", "close",
+            "volume", "taker_buy", "trades")
+    res = [dict(zip(keys, r)) for r in rows]
+    res.reverse()  # chronological order
+    return res
+
+
 def oldest_newest(symbol: str | None = None) -> dict:
     conn = _connect()
     q = "SELECT MIN(ts),MAX(ts),COUNT(*) FROM candles"
@@ -450,6 +474,51 @@ def _auto_conn() -> sqlite3.Connection:
             market_reaction_json TEXT,
             model TEXT,
             analysis_ts_ms INTEGER)""")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS model_forecasts(
+            forecast_id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            instrument TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            forecast_timestamp INTEGER NOT NULL,
+            data_timestamp INTEGER NOT NULL,
+            model_name TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            checkpoint TEXT NOT NULL,
+            context_length INTEGER NOT NULL,
+            horizon INTEGER NOT NULL,
+            input_schema_version TEXT NOT NULL,
+            forecast_values TEXT NOT NULL,
+            quantiles TEXT,
+            forecast_generation_ms REAL NOT NULL,
+            latency_ms REAL NOT NULL,
+            status TEXT NOT NULL,
+            data_freshness TEXT NOT NULL,
+            error TEXT,
+            mode TEXT NOT NULL DEFAULT 'SHADOW',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_model_forecasts_inst_tf ON model_forecasts(instrument, timeframe, forecast_timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_model_forecasts_status ON model_forecasts(status, mode)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS model_forecast_evaluations(
+            evaluation_id TEXT PRIMARY KEY,
+            forecast_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            forecast_timestamp INTEGER NOT NULL,
+            evaluation_timestamp INTEGER NOT NULL,
+            actual_values TEXT NOT NULL,
+            mae REAL NOT NULL,
+            rmse REAL NOT NULL,
+            direction_correct INTEGER NOT NULL,
+            absolute_error REAL NOT NULL,
+            signed_error REAL NOT NULL,
+            quantile_hit INTEGER,
+            coverage REAL,
+            regime TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(forecast_id) REFERENCES model_forecasts(forecast_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_model_forecast_eval_inst ON model_forecast_evaluations(instrument, timeframe)")
 
         # Migrations for existing tables
         try:
@@ -1503,7 +1572,7 @@ def has_open_position_for_symbol(symbol: str, user_id: int, mode: str | None = N
     return cnt > 0
 
 
-def closed_positions_since(start_ms: int, user_id: int | None = None) -> list[dict]:
+def closed_positions_since(start_ms: int, user_id: int | None = None, mode: str | None = None) -> list[dict]:
     c = _wl_conn()
     q = ("SELECT id,user_id,account_id,symbol,direction,entry,exit_price,qty,realized_pnl,mode "
          "FROM positions WHERE status IN ('CLOSED','STOPPED','TARGET') AND closed_ms>=?")
@@ -1511,6 +1580,9 @@ def closed_positions_since(start_ms: int, user_id: int | None = None) -> list[di
     if user_id is not None:
         q += " AND user_id=?"
         args.append(user_id)
+    if mode is not None:
+        q += " AND mode=?"
+        args.append(mode)
     with _lock:
         rows = c.execute(q, args).fetchall()
     keys = ("id", "user_id", "account_id", "symbol", "direction", "entry", "exit_price", "qty",
@@ -1518,22 +1590,25 @@ def closed_positions_since(start_ms: int, user_id: int | None = None) -> list[di
     return [dict(zip(keys, r)) for r in rows]
 
 
-def get_recent_completed_trades(limit: int = 3, user_id: int | None = None) -> list[dict]:
+def get_recent_completed_trades(limit: int = 3, user_id: int | None = None, mode: str | None = None) -> list[dict]:
     c = _wl_conn()
     q = ("SELECT id, symbol, direction, entry, exit_price, qty, realized_pnl, "
-         "leverage, margin_usdt, closed_ms FROM positions "
+         "leverage, margin_usdt, closed_ms, mode FROM positions "
          "WHERE status IN ('CLOSED','STOPPED','TARGET') "
          "AND exit_price IS NOT NULL AND closed_ms > 1000000 ")
     args: list = []
     if user_id is not None:
         q += "AND user_id=? "
         args.append(user_id)
+    if mode is not None:
+        q += "AND mode=? "
+        args.append(mode)
     q += "ORDER BY closed_ms DESC LIMIT ?"
     args.append(limit)
     with _lock:
         rows = c.execute(q, args).fetchall()
     keys = ("id", "symbol", "direction", "entry", "exit_price", "qty", "realized_pnl", 
-            "leverage", "margin", "closed_ms")
+            "leverage", "margin", "closed_ms", "mode")
     out = []
     for r in rows:
         d = dict(zip(keys, r))
@@ -3995,12 +4070,16 @@ def get_autonomous_trading_summary(user_id: int | None = None) -> dict:
         "global_enabled": is_global_autonomous_enabled(),
         "user_id": user_id,
         "total_slots": total_slots,
+        "user_configured_slots": total_slots,
+        "system_max_slots": get_max_open_trades(),
         "enabled_slots": enabled_slots,
         "available_slots": available_slots,
         "occupied_slots": occupied_slots,
         "reserved_slots": reserved_slots,
         "total_authorized_margin_usdt": round(total_authorized_margin, 2),
+        "authorized_capital_usdt": round(total_authorized_margin, 2),
         "reserved_margin_usdt": round(reserved_margin, 2),
+        "allocated_capital_usdt": round(reserved_margin, 2),
         "available_authorized_margin_usdt": round(available_margin, 2),
         "slots": slots
     }
@@ -4656,6 +4735,243 @@ def purge_synthetic_users() -> dict:
         "remaining_users_count": len(remaining),
         "remaining_users": [{"id": r[0], "user_uid": r[1], "role": r[2], "name": r[3], "email": r[4]} for r in remaining]
     }
+
+
+# =====================================================================
+# TIMESFM / MODEL FORECAST REPOSITORY
+# =====================================================================
+
+def save_model_forecast(rec: dict) -> None:
+    """Persist a forecast result with full governance provenance."""
+    import json
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    forecast_values_raw = rec.get("forecast_values")
+    forecast_values_str = json.dumps(forecast_values_raw) if not isinstance(forecast_values_raw, str) else forecast_values_raw
+    quantiles_raw = rec.get("quantiles")
+    quantiles_str = json.dumps(quantiles_raw) if (quantiles_raw is not None and not isinstance(quantiles_raw, str)) else quantiles_raw
+
+    with _lock:
+        c.execute("""
+            INSERT OR REPLACE INTO model_forecasts (
+                forecast_id, user_id, instrument, timeframe, forecast_timestamp,
+                data_timestamp, model_name, model_version, checkpoint, context_length,
+                horizon, input_schema_version, forecast_values, quantiles,
+                forecast_generation_ms, latency_ms, status, data_freshness,
+                error, mode, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            rec["forecast_id"],
+            rec.get("user_id"),
+            rec["instrument"],
+            rec["timeframe"],
+            int(rec["forecast_timestamp"]),
+            int(rec["data_timestamp"]),
+            rec.get("model_name", "timesfm"),
+            rec.get("model_version", "3.0"),
+            rec.get("checkpoint", "google/timesfm-3.0-pytorch"),
+            int(rec.get("context_length", 0)),
+            int(rec.get("horizon", 10)),
+            rec.get("input_schema_version", "TIMESFM_FEATURE_SCHEMA_V1"),
+            forecast_values_str,
+            quantiles_str,
+            float(rec.get("forecast_generation_ms", 0.0)),
+            float(rec.get("latency_ms", 0.0)),
+            rec.get("status", "SUCCESS"),
+            rec.get("data_freshness", "FRESH"),
+            rec.get("error"),
+            rec.get("mode", "SHADOW"),
+            int(rec.get("created_at") or now_ms)
+        ))
+        c.commit()
+
+
+def get_model_forecast(forecast_id: str) -> dict | None:
+    """Retrieve forecast by ID."""
+    import json
+    c = _wl_conn()
+    with _lock:
+        row = c.execute("SELECT * FROM model_forecasts WHERE forecast_id = ?", (forecast_id,)).fetchone()
+    if not row:
+        return None
+    cols = [col[0] for col in c.execute("SELECT * FROM model_forecasts LIMIT 0").description]
+    res = dict(zip(cols, row))
+    if res.get("forecast_values"):
+        try:
+            res["forecast_values"] = json.loads(res["forecast_values"])
+        except Exception:
+            pass
+    if res.get("quantiles"):
+        try:
+            res["quantiles"] = json.loads(res["quantiles"])
+        except Exception:
+            pass
+    return res
+
+
+def get_latest_model_forecast(instrument: str, timeframe: str, mode: str = "SHADOW") -> dict | None:
+    """Retrieve the most recent forecast for instrument and timeframe."""
+    import json
+    c = _wl_conn()
+    with _lock:
+        row = c.execute("""
+            SELECT * FROM model_forecasts
+            WHERE instrument = ? AND timeframe = ? AND mode = ?
+            ORDER BY forecast_timestamp DESC LIMIT 1
+        """, (instrument, timeframe, mode)).fetchone()
+    if not row:
+        return None
+    cols = [col[0] for col in c.execute("SELECT * FROM model_forecasts LIMIT 0").description]
+    res = dict(zip(cols, row))
+    if res.get("forecast_values"):
+        try:
+            res["forecast_values"] = json.loads(res["forecast_values"])
+        except Exception:
+            pass
+    if res.get("quantiles"):
+        try:
+            res["quantiles"] = json.loads(res["quantiles"])
+        except Exception:
+            pass
+    return res
+
+
+def list_model_forecasts(limit: int = 50, instrument: str | None = None, mode: str = "SHADOW") -> list[dict]:
+    """List recent model forecasts."""
+    import json
+    c = _wl_conn()
+    q = "SELECT * FROM model_forecasts WHERE mode = ?"
+    args: list = [mode]
+    if instrument:
+        q += " AND instrument = ?"
+        args.append(instrument)
+    q += " ORDER BY forecast_timestamp DESC LIMIT ?"
+    args.append(limit)
+    with _lock:
+        rows = c.execute(q, args).fetchall()
+    cols = [col[0] for col in c.execute("SELECT * FROM model_forecasts LIMIT 0").description]
+    out = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        if d.get("forecast_values"):
+            try:
+                d["forecast_values"] = json.loads(d["forecast_values"])
+            except Exception:
+                pass
+        if d.get("quantiles"):
+            try:
+                d["quantiles"] = json.loads(d["quantiles"])
+            except Exception:
+                pass
+        out.append(d)
+    return out
+
+
+def save_model_forecast_evaluation(rec: dict) -> None:
+    """Save evaluation matching forecast against realized future outcome."""
+    import json
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    actual_raw = rec.get("actual_values")
+    actual_str = json.dumps(actual_raw) if not isinstance(actual_raw, str) else actual_raw
+
+    with _lock:
+        c.execute("""
+            INSERT OR REPLACE INTO model_forecast_evaluations (
+                evaluation_id, forecast_id, instrument, timeframe,
+                forecast_timestamp, evaluation_timestamp, actual_values,
+                mae, rmse, direction_correct, absolute_error, signed_error,
+                quantile_hit, coverage, regime, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            rec["evaluation_id"],
+            rec["forecast_id"],
+            rec["instrument"],
+            rec["timeframe"],
+            int(rec["forecast_timestamp"]),
+            int(rec["evaluation_timestamp"]),
+            actual_str,
+            float(rec["mae"]),
+            float(rec["rmse"]),
+            int(rec["direction_correct"]),
+            float(rec["absolute_error"]),
+            float(rec["signed_error"]),
+            int(rec.get("quantile_hit", 1)),
+            float(rec.get("coverage", 1.0)),
+            rec.get("regime", "UNKNOWN"),
+            int(rec.get("created_at") or now_ms)
+        ))
+        c.commit()
+
+
+def list_model_forecast_evaluations(limit: int = 50, instrument: str | None = None) -> list[dict]:
+    """List evaluations."""
+    import json
+    c = _wl_conn()
+    q = "SELECT * FROM model_forecast_evaluations"
+    args: list = []
+    if instrument:
+        q += " WHERE instrument = ?"
+        args.append(instrument)
+    q += " ORDER BY evaluation_timestamp DESC LIMIT ?"
+    args.append(limit)
+    with _lock:
+        rows = c.execute(q, args).fetchall()
+    cols = [col[0] for col in c.execute("SELECT * FROM model_forecast_evaluations LIMIT 0").description]
+    out = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        if d.get("actual_values"):
+            try:
+                d["actual_values"] = json.loads(d["actual_values"])
+            except Exception:
+                pass
+        out.append(d)
+    return out
+
+
+def get_model_forecast_evaluation_metrics(model_name: str | None = None, instrument: str | None = None, timeframe: str | None = None) -> dict:
+    """Aggregate evaluation statistics: MAE, RMSE, directional accuracy, hit count."""
+    c = _wl_conn()
+    q = ("SELECT COUNT(*), AVG(mae), AVG(rmse), AVG(direction_correct), "
+         "AVG(absolute_error), AVG(signed_error), AVG(coverage) "
+         "FROM model_forecast_evaluations e "
+         "JOIN model_forecasts f ON e.forecast_id = f.forecast_id WHERE 1=1")
+    args: list = []
+    if model_name:
+        q += " AND f.model_name = ?"
+        args.append(model_name)
+    if instrument:
+        q += " AND e.instrument = ?"
+        args.append(instrument)
+    if timeframe:
+        q += " AND e.timeframe = ?"
+        args.append(timeframe)
+    with _lock:
+        row = c.execute(q, args).fetchone()
+    count = row[0] if row else 0
+    if not count:
+        return {
+            "evaluation_count": 0,
+            "avg_mae": None,
+            "avg_rmse": None,
+            "directional_accuracy_pct": None,
+            "avg_absolute_error": None,
+            "avg_signed_error": None,
+            "quantile_coverage": None,
+            "status": "INSUFFICIENT_EVALUATIONS"
+        }
+    return {
+        "evaluation_count": count,
+        "avg_mae": round(float(row[1] or 0.0), 4),
+        "avg_rmse": round(float(row[2] or 0.0), 4),
+        "directional_accuracy_pct": round(float(row[3] or 0.0) * 100, 2),
+        "avg_absolute_error": round(float(row[4] or 0.0), 4),
+        "avg_signed_error": round(float(row[5] or 0.0), 4),
+        "quantile_coverage": round(float(row[6] or 0.0), 4),
+        "status": "CALIBRATING" if count < 100 else "EVALUATED"
+    }
+
 
 
 

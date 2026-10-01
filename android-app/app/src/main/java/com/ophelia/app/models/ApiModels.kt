@@ -474,7 +474,9 @@ data class DashboardTodayStats(
     @SerializedName("win_rate") val winRate: Double = 0.0,
     @SerializedName("realized_pnl") val realizedPnl: Double = 0.0,
     val fees: Double = 0.0,
-    val provenance: String? = null
+    val provenance: String? = null,
+    val mode: String? = null,
+    val namespace: String? = null
 )
 
 data class DashboardRisk(
@@ -1665,12 +1667,16 @@ data class RecoverStaleReservationsResponse(
 data class AutonomousSlotsSummaryResponse(
     @SerializedName("global_enabled") val globalEnabled: Boolean,
     @SerializedName("total_slots") val totalSlots: Int,
+    @SerializedName("user_configured_slots") val userConfiguredSlots: Int? = null,
+    @SerializedName("system_max_slots") val systemMaxSlots: Int? = null,
     @SerializedName("enabled_slots") val enabledSlots: Int,
     @SerializedName("available_slots") val availableSlots: Int,
     @SerializedName("occupied_slots") val occupiedSlots: Int,
     @SerializedName("reserved_slots") val reservedSlots: Int,
     @SerializedName("total_authorized_margin_usdt") val totalAuthorizedMarginUsdt: Double,
+    @SerializedName("authorized_capital_usdt") val authorizedCapitalUsdt: Double? = null,
     @SerializedName("reserved_margin_usdt") val reservedMarginUsdt: Double,
+    @SerializedName("allocated_capital_usdt") val allocatedCapitalUsdt: Double? = null,
     @SerializedName("available_authorized_margin_usdt") val availableAuthorizedMarginUsdt: Double,
     val slots: List<AutonomousTradeSlotDto> = emptyList(),
     @SerializedName("is_admin") val isAdmin: Boolean = false
@@ -2023,6 +2029,52 @@ data class ManualOrderResponse(
     val status: String,
     val message: String? = null
 )
+
+// --- TimesFM 3.0 Subsystem Models ---
+data class TimesFmDiagnosticsResponse(
+    @SerializedName("model_loaded") val modelLoaded: Boolean = false,
+    @SerializedName("lifecycle_state") val lifecycleState: String = "UNINITIALIZED",
+    val version: String = "3.0",
+    @SerializedName("package_version") val packageVersion: String = "3.0.2",
+    val checkpoint: String = "google/timesfm-3.0-pytorch",
+    val device: String = "cpu",
+    @SerializedName("forecast_count") val forecastCount: Int = 0,
+    @SerializedName("last_inference_ms") val lastInferenceMs: Double = 0.0,
+    @SerializedName("last_inference_ts") val lastInferenceTs: Long = 0L,
+    @SerializedName("last_error") val lastError: String? = null,
+    @SerializedName("queue_depth") val queueDepth: Int = 0,
+    val mode: String = "SHADOW_ONLY",
+    @SerializedName("trading_authority") val tradingAuthority: Boolean = false,
+    @SerializedName("system_ram_total_mb") val systemRamTotalMb: Double? = null,
+    @SerializedName("system_ram_available_mb") val systemRamAvailableMb: Double? = null,
+    @SerializedName("system_ram_used_pct") val systemRamUsedPct: Double? = null,
+    @SerializedName("system_cpu_pct") val systemCpuPct: Double? = null
+)
+
+data class TimesFmForecastResponse(
+    @SerializedName("forecast_id") val forecastId: String = "",
+    val instrument: String = "",
+    val timeframe: String = "15m",
+    @SerializedName("forecast_timestamp") val forecastTimestamp: Long = 0L,
+    @SerializedName("data_timestamp") val dataTimestamp: Long = 0L,
+    @SerializedName("model_name") val modelName: String = "timesfm",
+    @SerializedName("model_version") val modelVersion: String = "3.0",
+    val checkpoint: String = "google/timesfm-3.0-pytorch",
+    @SerializedName("context_length") val contextLength: Int = 0,
+    val horizon: Int = 10,
+    @SerializedName("forecast_values") val forecastValues: List<Double> = emptyList(),
+    val quantiles: Map<String, List<Double>> = emptyMap(),
+    @SerializedName("forecast_generation_ms") val forecastGenerationMs: Double = 0.0,
+    @SerializedName("latency_ms") val latencyMs: Double = 0.0,
+    val status: String = "SUCCESS",
+    @SerializedName("data_freshness") val dataFreshness: String = "FRESH",
+    val error: String? = null,
+    val mode: String = "SHADOW",
+    @SerializedName("forecast_return_pct") val forecastReturnPct: Double = 0.0,
+    @SerializedName("quantile_spread_pct") val quantileSpreadPct: Double = 0.0,
+    val direction: String = "NEUTRAL"
+)
+
 
 
 
