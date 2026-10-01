@@ -1144,9 +1144,15 @@ def _wl_conn() -> sqlite3.Connection:
             cached_forecasts INTEGER DEFAULT 0,
             p50_latency_ms REAL,
             p95_latency_ms REAL,
+            cold_start_ms REAL,
             mode TEXT NOT NULL DEFAULT 'SHADOW_ONLY',
             trading_authority INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL)""")
+
+        try:
+            c.execute("ALTER TABLE model_subsystem_state ADD COLUMN cold_start_ms REAL")
+        except sqlite3.OperationalError:
+            pass
 
         c.commit()
     return c
@@ -5159,9 +5165,9 @@ def save_model_subsystem_state(state: dict) -> None:
                 checkpoint, model_version, device, last_health_check_ms,
                 last_health_check_status, last_inference_ms, last_inference_ts,
                 last_success_ts, last_error, queue_depth, active_inferences,
-                cached_forecasts, p50_latency_ms, p95_latency_ms, mode,
+                cached_forecasts, p50_latency_ms, p95_latency_ms, cold_start_ms, mode,
                 trading_authority, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             worker_id,
             state.get("provider_pid"),
@@ -5181,6 +5187,7 @@ def save_model_subsystem_state(state: dict) -> None:
             int(state.get("cached_forecasts") or 0),
             float(state.get("p50_latency_ms")) if state.get("p50_latency_ms") is not None else None,
             float(state.get("p95_latency_ms")) if state.get("p95_latency_ms") is not None else None,
+            float(state.get("cold_start_ms")) if state.get("cold_start_ms") is not None else None,
             state.get("mode", "SHADOW_ONLY"),
             1 if state.get("trading_authority") else 0,
             int(state.get("updated_at") or now_ms)

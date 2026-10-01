@@ -286,6 +286,7 @@ class TimesFMProvider(ForecastProvider):
         self.device = device or "cpu"
         self.model = None
         self.lifecycle_state = LIFECYCLE_UNINITIALIZED
+        self.cold_start_ms: float = 0.0
         self.last_error: Optional[str] = None
         self.last_health_check_status: Optional[str] = None
         self.last_health_check_ts: Optional[int] = None
@@ -314,6 +315,7 @@ class TimesFMProvider(ForecastProvider):
                     "device": self.device,
                     "last_health_check_ms": now_ms,
                     "last_health_check_status": "LOADING",
+                    "cold_start_ms": self.cold_start_ms,
                     "updated_at": now_ms
                 })
             except Exception:
@@ -333,7 +335,8 @@ class TimesFMProvider(ForecastProvider):
                 _ = self.model.predict(context=warmup_ctx, horizon=10, return_quantiles=True)
                 
                 load_sec = time.perf_counter() - t0
-                logger.info(f"TimesFM 3.0 loaded and warmed up successfully in {load_sec:.2f}s")
+                self.cold_start_ms = round(load_sec * 1000, 2)
+                logger.info(f"TimesFM 3.0 loaded and warmed up successfully in {load_sec:.2f}s ({self.cold_start_ms}ms)")
                 self.lifecycle_state = LIFECYCLE_READY
                 self.last_error = None
 
@@ -350,6 +353,7 @@ class TimesFMProvider(ForecastProvider):
                         "last_health_check_status": "READY",
                         "last_success_ts": int(time.time() * 1000),
                         "last_error": None,
+                        "cold_start_ms": self.cold_start_ms,
                         "updated_at": int(time.time() * 1000)
                     })
                 except Exception:
@@ -403,13 +407,13 @@ class TimesFMProvider(ForecastProvider):
         3. Verifies output shapes, values, and quantile monotonicity (q10 <= q50 <= q90).
         4. Updates and persists authoritative subsystem state to DB.
         """
-        t0 = time.perf_counter()
         now_ms = int(time.time() * 1000)
 
         if not self.load_model():
             err = self.last_error or "Model load failed"
-            return {"healthy": False, "status": "UNHEALTHY", "error": err, "lifecycle_state": self.lifecycle_state}
+            return {"healthy": False, "status": "UNHEALTHY", "error": err, "lifecycle_state": self.lifecycle_state, "cold_start_ms": self.cold_start_ms}
 
+        t_inf = time.perf_counter()
         try:
             test_ctx = np.linspace(60000.0, 60500.0, 64, dtype=np.float32)
             out = self.model.predict(context=test_ctx, horizon=10, return_quantiles=True, sort_quantiles=True)
@@ -432,7 +436,7 @@ class TimesFMProvider(ForecastProvider):
             if not (np.all(q10 <= q50) and np.all(q50 <= q90)):
                 raise ValueError("Quantile monotonicity check failed")
 
-            dur_ms = round((time.perf_counter() - t0) * 1000, 2)
+            dur_ms = round((time.perf_counter() - t_inf) * 1000, 2)
             self.lifecycle_state = LIFECYCLE_READY
             self.last_error = None
             self.last_health_check_status = "HEALTHY"
@@ -455,6 +459,7 @@ class TimesFMProvider(ForecastProvider):
                 "last_error": None,
                 "queue_depth": 0,
                 "p50_latency_ms": dur_ms,
+                "cold_start_ms": self.cold_start_ms,
                 "mode": "SHADOW_ONLY",
                 "trading_authority": False,
                 "updated_at": now_ms
@@ -467,6 +472,7 @@ class TimesFMProvider(ForecastProvider):
                 "checkpoint": self.checkpoint,
                 "version": TIMESFM_MODEL_VERSION,
                 "inference_ms": dur_ms,
+                "cold_start_ms": self.cold_start_ms,
                 "device": self.device
             }
         except Exception as ex:
@@ -777,6 +783,9 @@ class ForecastService:
             "cached_forecasts": len(svc.cache),
             "p50_latency_ms": p50,
             "p95_latency_ms": p95,
+            "steady_state_p50_ms": p50,
+            "steady_state_p95_ms": p95,
+            "cold_start_ms": getattr(svc.timesfm_provider, "cold_start_ms", 0.0) or (persisted.get("cold_start_ms") if persisted else 0.0),
             "mode": "SHADOW_ONLY",
             "trading_authority": False,
             "provider_pid": provider_pid,
