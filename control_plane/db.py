@@ -2121,8 +2121,8 @@ def save_setup_candidate(cand: dict) -> None:
             "confidence_pct, thesis, generated_ms, expires_ms, status, "
             "waiting_for, next_required_event, distance_pct, distance_atr, priority, "
             "priority_reasons_json, conditions_json, data_freshness_json, actionability_score, "
-            "zone_json, structural_invalidation) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "zone_json, structural_invalidation, user_id, account_id, automation_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (cand["setup_id"], cand["symbol"], cand["direction"], cand.get("timeframe", 3),
              cand.get("strategy", "VWAP_STRUCTURE_RETEST"), cand.get("current_state", "WAITING_FOR_RETEST"),
              cand.get("reason", ""), cand.get("vwap"), cand.get("breakout_price"),
@@ -2137,9 +2137,30 @@ def save_setup_candidate(cand: dict) -> None:
              cand.get("status", "ACTIVE"),
              waiting_for, next_required_event, distance_pct, distance_atr, prio,
              prio_reasons_json, conditions_json, data_freshness_json, act_score,
-             zone_json, structural_invalidation)
+             zone_json, structural_invalidation,
+             cand.get("user_id"), cand.get("account_id", 1), cand.get("automation_id"))
         )
         c.commit()
+
+
+def update_setup_candidate_state(setup_id: str, new_state: str, reason: str = "", retest_state: dict | str | None = None) -> bool:
+    """Update current_state and optional reason / retest_state on a setup candidate."""
+    c = _auto_conn()
+    import json as _j
+    sets = ["current_state=?", "status=?"]
+    args = [new_state, new_state]
+    if reason:
+        sets.append("reason=?")
+        args.append(reason)
+    if retest_state is not None:
+        retest_val = _j.dumps(retest_state) if isinstance(retest_state, dict) else str(retest_state)
+        sets.append("retest_state=?")
+        args.append(retest_val)
+    args.append(setup_id)
+    with _lock:
+        cur = c.execute(f"UPDATE setup_candidates SET {', '.join(sets)} WHERE setup_id=?", args)
+        c.commit()
+        return cur.rowcount > 0
 
 
 

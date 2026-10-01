@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Environment and Secret Files
+.env
+.env.*
+control.env
+*.key
+*.pem
+vps_output*.txt
+scratch/vps_*.json
+
