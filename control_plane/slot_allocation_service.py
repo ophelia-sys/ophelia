@@ -538,7 +538,7 @@ class SlotAllocationService:
         # 4. Provision new slot
         slot_number = len(existing_slots) + 1
         slot_name = f"{asset_upper} AUTO SLOT {slot_number}"
-        eff_account_id = account_id or template.get("account_id") or 1
+        eff_account_id = account_id or template.get("account_id")
 
         try:
             slot_id = db.add_autonomous_trade_slot(

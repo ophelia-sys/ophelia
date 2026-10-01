@@ -384,3 +384,31 @@ def test_fee_model_governance_short_shift():
 
     # For SHORT, cost basis = entry * (1 - fee) / (1 + fee) -> higher fee means lower exit price needed
     assert be_high["calculated_cost_basis"] < be_low["calculated_cost_basis"]
+
+
+def test_slot_auto_provisioning_never_falls_back_to_account_id_1():
+    """Verify that auto-provisioned slot retains account_id=None if not provided, never defaulting to 1."""
+    # User 500 without configured account_id
+    user_id = 500
+    db.set_user_slot_template(
+        user_id=user_id,
+        scope="CRYPTO",
+        strategy_scope="ALL",
+        max_slots=3,
+        max_autonomous_capital=500.0,
+        margin=50.0,
+        leverage=5.0,
+        account_id=None
+    )
+
+    slot, err = SlotAllocationService.auto_provision_slot(
+        user_id=user_id,
+        asset_class="CRYPTO",
+        strategy="ALL",
+        account_id=None
+    )
+    assert err == "OK"
+    assert slot is not None
+    assert slot["user_id"] == 500
+    assert slot["account_id"] is None, "Slot account_id must be None and NEVER fall back to 1"
+
