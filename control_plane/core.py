@@ -878,6 +878,17 @@ def edit_position(position_id: str | int, req: dict, user_id: int) -> dict:
     stops = req.get("stops")
     targets = req.get("targets")
     trailing_pct = req.get("trailing_pct")
+    if trailing_pct is None and req.get("trailing_stop") is True:
+        trailing_pct = 0.8
+    sl = req.get("stop_loss") or req.get("stop")
+    tp = req.get("take_profit") or req.get("target")
+    
+    if sl is not None:
+        updates["stop_current"] = float(sl)
+        if not stops:
+            stops = [{"type": "MANUAL", "price": float(sl)}]
+    if tp is not None and not targets:
+        targets = [{"distance_pct": 5.0, "price": float(tp)}]
     
     if stops is not None:
         updates["stops_json"] = json.dumps(stops)

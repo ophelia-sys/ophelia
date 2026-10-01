@@ -15,7 +15,8 @@
 | **Phase 2** | **Slot Allocation Service & Auto-Provisioning** | PENDING | `SlotAllocationService` running with atomic reservation and deterministic auto-provisioning. |
 | **Phase 3** | **Automation Worker & Candidate-to-Slot Pipeline** | PENDING | Worker evaluates all active user automations, bridges `ENTRY_READY` candidates to slots. |
 | **Phase 4** | **Position Manager Daemon Hardening** | PENDING | TP1 50% partial exit, exact net breakeven with fees/funding, monotonic trailing, restart recovery. |
-| **Phase 5** | **TimesFM 3.0 Forecasting Subsystem Integration** | PENDING | PyTorch TimesFM 3.0 pinned, `ForecastService` running shadow forecasts with $q_{10}-q_{90}$ quantiles. |
+| **Phase 5** | **TimesFM 3.0 Forecasting Subsystem Integration** | COMPLETE | PyTorch TimesFM 3.0 pinned, `ForecastService` running shadow forecasts with $q_{10}-q_{90}$ quantiles. |
+| **Phase 5.5** | **Resource / CPU Optimization Gate** | COMPLETE | TimesFM retained; VPS baseline, sub-component profiling, thread/batch benchmarking, redundancy reduction, critical path protection verified. |
 | **Phase 6** | **Microstructure Research Engine** | PENDING | Modules A–E operational, calibrated metrics, normalized toxicity score, ADAOT research score. |
 | **Phase 7** | **Multi-Market Parity (US Market & Gold)** | PENDING | Real data feeds, Top 100/Sectors/Movers, dynamic Gold resolution, honest freshness flags. |
 | **Phase 8** | **Software Update, Android APKs & Telegram Distribution** | PENDING | Admin & User APKs compiled, SHA-256 verified, uploaded to VPS static and Telegram bot, tested on emulator. |

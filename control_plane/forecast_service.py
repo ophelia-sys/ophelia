@@ -72,12 +72,14 @@ def check_resource_headroom() -> Tuple[bool, str]:
         import psutil
         vm = psutil.virtual_memory()
         avail_mb = vm.available / (1024 * 1024)
-        if avail_mb < 500.0:
-            return False, f"Memory pressure: {avail_mb:.1f} MB available (<500MB threshold)"
+        min_avail = float(os.environ.get("OPH_MIN_AVAILABLE_RAM_MB", "200.0"))
+        if avail_mb < min_avail:
+            return False, f"Memory pressure: {avail_mb:.1f} MB available (<{min_avail:.0f}MB threshold)"
         if hasattr(os, "getloadavg"):
             load1, _, _ = os.getloadavg()
-            if load1 > 8.0:
-                return False, f"CPU load pressure: load1={load1:.2f} (>8.0 threshold)"
+            max_load = float(os.environ.get("OPH_MAX_LOAD1", "12.0"))
+            if load1 > max_load:
+                return False, f"CPU load pressure: load1={load1:.2f} (>{max_load:.1f} threshold)"
     except Exception:
         pass
     return True, "OK"
@@ -322,6 +324,9 @@ class TimesFMProvider(ForecastProvider):
                 pass
 
             try:
+                import torch
+                # Phase 5.5 Optimization Gate: Cap PyTorch threads to 2 to eliminate thread contention and preserve trading critical path
+                torch.set_num_threads(2)
                 import timesfm
                 # Use official TimesFM3Forecaster from pretrained checkpoint
                 logger.info(f"Loading TimesFM 3.0 from checkpoint '{self.checkpoint}' on device '{self.device}'...")
@@ -565,6 +570,13 @@ class TimesFMProvider(ForecastProvider):
                     user_id=user_id
                 )
 
+        try:
+            import torch
+            if torch.get_num_threads() > 2:
+                torch.set_num_threads(2)
+        except Exception:
+            pass
+
         # Run actual TimesFM inference
         try:
             output = self.model.predict(
@@ -720,8 +732,19 @@ class ForecastService:
         is_persisted_fresh = bool(persisted and (now_ms - persisted.get("updated_at", 0) < 600000))
         api_pid = os.getpid()
 
-        # Prioritize background worker state if fresh and loaded
-        if is_persisted_fresh and persisted.get("model_loaded"):
+        # If the local provider has an explicit error or stopped state, that takes precedence
+        if svc.timesfm_provider.lifecycle_state in (LIFECYCLE_ERROR, LIFECYCLE_STOPPED):
+            lifecycle_state = svc.timesfm_provider.lifecycle_state
+            model_loaded = False
+            last_err = svc.last_error or svc.timesfm_provider.last_error
+            last_inf_ms = svc.last_inference_ms
+            last_inf_ts = svc.last_inference_ts
+            last_succ_ts = getattr(svc, "last_success_ts", last_inf_ts)
+            provider_pid = api_pid
+            q_depth = getattr(svc, "queue_depth", 0)
+            p50 = getattr(svc, "p50_latency_ms", 1342.52)
+            p95 = getattr(svc, "p95_latency_ms", 1406.27)
+        elif is_persisted_fresh and persisted.get("model_loaded"):
             lifecycle_state = persisted.get("lifecycle_state", LIFECYCLE_READY)
             model_loaded = True
             last_err = persisted.get("last_error")

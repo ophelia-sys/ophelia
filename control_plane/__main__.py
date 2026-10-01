@@ -79,7 +79,7 @@ def main() -> int:
         threading.Thread(target=poll_loop, args=(stop,), daemon=True, name="ingest"),
         threading.Thread(target=core.automation_worker_loop, args=(stop,), daemon=True, name="automation-engine"),
         threading.Thread(target=news_loop, args=(stop,), daemon=True, name="news"),
-        threading.Thread(target=intelligence.continuous_intelligence_worker, args=(stop, 20), daemon=True, name="continuous-intelligence"),
+        threading.Thread(target=intelligence.continuous_intelligence_worker, args=(stop, 60), daemon=True, name="continuous-intelligence"),
         threading.Thread(target=llm_keepalive_loop, args=(stop,), daemon=True,
                          name="llm-keepalive"),
         threading.Thread(target=run_bot, args=(stop,), daemon=True, name="telegram"),

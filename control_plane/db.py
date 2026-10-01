@@ -13,11 +13,15 @@ from . import config
 
 _lock = threading.RLock()
 _conn: sqlite3.Connection | None = None
+_auto_inited = False
+_wl_inited = False
 
 
 def _connect() -> sqlite3.Connection:
-    global _conn
+    global _conn, _auto_inited, _wl_inited
     if _conn is None:
+        _auto_inited = False
+        _wl_inited = False
         os.makedirs(config.DATA_DIR, exist_ok=True)
         _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
         _conn.execute("PRAGMA journal_mode=WAL")
@@ -389,8 +393,13 @@ def oldest_newest(symbol: str | None = None) -> dict:
 # ---------------------------------------------------------------- automations
 
 def _auto_conn() -> sqlite3.Connection:
+    global _auto_inited
     c = _connect()
+    if _auto_inited:
+        return c
     with _lock:
+        if _auto_inited:
+            return c
         c.execute("""CREATE TABLE IF NOT EXISTS automations(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 1,
             account_id INTEGER DEFAULT 1,
@@ -691,6 +700,7 @@ def _auto_conn() -> sqlite3.Connection:
             except sqlite3.OperationalError:
                 pass
         c.commit()
+        _auto_inited = True
     return c
 
 
@@ -960,8 +970,13 @@ def open_shadow_trades(user_id: int | None = None) -> list[dict]:
 # ---------------------------------------------------------------- watchlist
 
 def _wl_conn() -> sqlite3.Connection:
+    global _wl_inited
     c = _connect()
+    if _wl_inited:
+        return c
     with _lock:
+        if _wl_inited:
+            return c
         c.execute("""CREATE TABLE IF NOT EXISTS watchlist(
             user_id INTEGER DEFAULT 1, symbol TEXT, added_ms INTEGER, active INTEGER DEFAULT 1,
             PRIMARY KEY(user_id, symbol))""")
@@ -1155,6 +1170,7 @@ def _wl_conn() -> sqlite3.Connection:
             pass
 
         c.commit()
+        _wl_inited = True
     return c
 
 
@@ -5207,6 +5223,110 @@ def get_model_subsystem_state(worker_id: str = "timesfm_primary") -> dict | None
     res["model_loaded"] = bool(res.get("model_loaded"))
     res["trading_authority"] = bool(res.get("trading_authority"))
     return res
+
+
+def save_model_forecast(fc: dict) -> None:
+    """Persist a generated forecast to SQLite model_forecasts table."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    f_vals = json.dumps(fc.get("forecast_values", [])) if isinstance(fc.get("forecast_values"), (list, dict)) else str(fc.get("forecast_values", "[]"))
+    quantiles = json.dumps(fc.get("quantiles", {})) if isinstance(fc.get("quantiles"), (list, dict)) else str(fc.get("quantiles", "{}"))
+    with _lock:
+        c.execute("""
+            INSERT OR REPLACE INTO model_forecasts (
+                forecast_id, user_id, instrument, timeframe, forecast_timestamp,
+                data_timestamp, model_name, model_version, checkpoint, context_length,
+                horizon, input_schema_version, forecast_values, quantiles,
+                forecast_generation_ms, latency_ms, status, data_freshness,
+                error, mode, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            fc.get("forecast_id"),
+            fc.get("user_id"),
+            fc.get("instrument"),
+            fc.get("timeframe"),
+            int(fc.get("forecast_timestamp") or now_ms),
+            int(fc.get("data_timestamp") or now_ms),
+            fc.get("model_name", "timesfm"),
+            fc.get("model_version", "3.0"),
+            fc.get("checkpoint", "google/timesfm-3.0-pytorch"),
+            int(fc.get("context_length") or 0),
+            int(fc.get("horizon") or 10),
+            fc.get("input_schema_version", "TIMESFM_FEATURE_SCHEMA_V1"),
+            f_vals,
+            quantiles,
+            float(fc.get("forecast_generation_ms") or fc.get("latency_ms") or 0.0),
+            float(fc.get("latency_ms") or 0.0),
+            fc.get("status", "SUCCESS"),
+            fc.get("data_freshness", "FRESH"),
+            fc.get("error"),
+            fc.get("mode", "SHADOW"),
+            int(fc.get("created_at") or now_ms)
+        ))
+        c.commit()
+
+
+def get_model_forecasts(instrument: str, timeframe: str = "5m", limit: int = 10, user_id: Optional[int] = None) -> list[dict]:
+    """Retrieve recent model forecasts for an instrument and timeframe."""
+    c = _wl_conn()
+    q = "SELECT * FROM model_forecasts WHERE instrument = ? AND timeframe = ?"
+    args: list = [instrument, timeframe]
+    if user_id is not None:
+        q += " AND (user_id = ? OR user_id IS NULL)"
+        args.append(user_id)
+    else:
+        q += " AND user_id IS NULL"
+    q += " ORDER BY forecast_timestamp DESC LIMIT ?"
+    args.append(limit)
+    with _lock:
+        rows = c.execute(q, args).fetchall()
+    cols = [col[0] for col in c.execute("SELECT * FROM model_forecasts LIMIT 0").description]
+    results = []
+    for r in rows:
+        item = dict(zip(cols, r))
+        try:
+            item["forecast_values"] = json.loads(item["forecast_values"])
+        except Exception:
+            pass
+        try:
+            item["quantiles"] = json.loads(item["quantiles"])
+        except Exception:
+            pass
+        results.append(item)
+    return results
+
+
+def save_model_forecast_evaluation(evaluation: dict) -> None:
+    """Persist a forecast evaluation record to SQLite model_forecast_evaluations."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    act_vals = json.dumps(evaluation.get("actual_values", [])) if isinstance(evaluation.get("actual_values"), (list, dict)) else str(evaluation.get("actual_values", "[]"))
+    with _lock:
+        c.execute("""
+            INSERT OR REPLACE INTO model_forecast_evaluations (
+                evaluation_id, forecast_id, instrument, timeframe, forecast_timestamp,
+                evaluation_timestamp, actual_values, mae, rmse, direction_correct,
+                absolute_error, signed_error, quantile_hit, coverage, regime, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            evaluation.get("evaluation_id"),
+            evaluation.get("forecast_id"),
+            evaluation.get("instrument"),
+            evaluation.get("timeframe"),
+            int(evaluation.get("forecast_timestamp") or now_ms),
+            int(evaluation.get("evaluation_timestamp") or now_ms),
+            act_vals,
+            float(evaluation.get("mae") or 0.0),
+            float(evaluation.get("rmse") or 0.0),
+            1 if evaluation.get("direction_correct") else 0,
+            float(evaluation.get("absolute_error") or 0.0),
+            float(evaluation.get("signed_error") or 0.0),
+            1 if evaluation.get("quantile_hit") else 0,
+            float(evaluation.get("coverage") or 0.0),
+            evaluation.get("regime", "SHADOW_MONITOR"),
+            int(evaluation.get("created_at") or now_ms)
+        ))
+        c.commit()
 
 
 
