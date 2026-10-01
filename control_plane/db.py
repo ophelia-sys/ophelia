@@ -3707,7 +3707,7 @@ def _row_to_slot(r: tuple) -> dict:
 
 def ensure_root_admin() -> None:
     """Ensure root admin user (id=1, ophelia-sys) exists with valid password hash."""
-    admin_pass = os.environ.get("OPHELIA_ADMIN_PASSWORD", "Vishalnaik@1994")
+    admin_pass = os.environ.get("OPHELIA_ADMIN_PASSWORD", "")
     try:
         import bcrypt
         admin_pwd_hash = bcrypt.hashpw(admin_pass.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

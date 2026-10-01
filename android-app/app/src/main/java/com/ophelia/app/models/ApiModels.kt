@@ -2049,6 +2049,7 @@ data class TimesFmDiagnosticsResponse(
     val mode: String = "SHADOW_ONLY",
     @SerializedName("trading_authority") val tradingAuthority: Boolean = false,
     @SerializedName("provider_pid") val providerPid: Int? = null,
+    @SerializedName("api_pid") val apiPid: Int? = null,
     @SerializedName("evaluation_count") val evaluationCount: Int = 0,
     @SerializedName("evaluation_status") val evaluationStatus: String = "INSUFFICIENT_SAMPLE",
     @SerializedName("system_ram_total_mb") val systemRamTotalMb: Double? = null,
