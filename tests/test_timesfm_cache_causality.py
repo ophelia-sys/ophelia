@@ -4,7 +4,7 @@ from control_plane import db
 from control_plane.forecast_service import ForecastService
 
 
-def test_forecast_cache_no_collision_different_causal_cutoffs():
+def test_forecast_cache_no_collision_different_causal_cutoffs(monkeypatch):
     """
     Test 2: Strengthen Forecast Cache Correctness.
     Verifies that forecasts generated from different causal market-data cutoffs
@@ -25,9 +25,12 @@ def test_forecast_cache_no_collision_different_causal_cutoffs():
     svc = ForecastService.get_instance()
     svc.cache.clear()
 
+    # Freeze time during test to ensure test execution does not roll over wall-clock boundary
+    fixed_now_sec = 1790858100.0
+    monkeypatch.setattr(time, "time", lambda: fixed_now_sec)
+
     sym = "BTC-USDT"
-    now_ms = int(time.time() * 1000)
-    # Align to a base time within the current validity bucket
+    now_ms = int(fixed_now_sec * 1000)
     base_ts = (now_ms // 60000) * 60000
 
     # Populate 50 candles ending at T1
