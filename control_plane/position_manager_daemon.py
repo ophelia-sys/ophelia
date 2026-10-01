@@ -73,7 +73,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
         except Exception:
             detail = {}
 
-    slot_id = detail.get("slot_id")
+    slot_id = p.get("slot_id") or detail.get("slot_id")
     slot = db.get_autonomous_trade_slot(int(slot_id), user_id=user_id) if slot_id else None
 
     max_loss_usdt = float(slot.get("max_loss_usdt") or detail.get("max_loss_usdt") or 0.0) if slot else 0.0
@@ -580,7 +580,7 @@ def evaluate_and_manage_positions(
         if current_px > 0:
             acts = evaluate_single_position(p, current_px)
             for a in acts:
-                flattened_actions.append({
+                item = {
                     "position_id": p["id"],
                     "symbol": sym,
                     "action": a.get("action"),
@@ -589,7 +589,9 @@ def evaluate_and_manage_positions(
                     "new_quantity": p.get("qty"),
                     "reason": a.get("reason"),
                     "breakeven_applied": "new_stop" in a or a.get("action") == "partial_close"
-                })
+                }
+                item.update(a)
+                flattened_actions.append(item)
 
     return flattened_actions
 
