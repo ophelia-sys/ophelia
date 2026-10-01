@@ -987,8 +987,51 @@ def _wl_conn() -> sqlite3.Connection:
             unrealized_pnl REAL DEFAULT 0.0,
             open_positions INTEGER DEFAULT 0,
             mode TEXT NOT NULL)""")
-        c.execute("CREATE INDEX IF NOT EXISTS ix_equity_checkpoints_user_ts ON equity_checkpoints(user_id, ts_ms DESC)")
-            
+        c.execute("""CREATE TABLE IF NOT EXISTS model_forecasts(
+            forecast_id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            instrument TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            forecast_timestamp INTEGER NOT NULL,
+            data_timestamp INTEGER NOT NULL,
+            model_name TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            checkpoint TEXT NOT NULL,
+            context_length INTEGER NOT NULL,
+            horizon INTEGER NOT NULL,
+            input_schema_version TEXT NOT NULL,
+            forecast_values TEXT NOT NULL,
+            quantiles TEXT,
+            forecast_generation_ms REAL NOT NULL,
+            latency_ms REAL NOT NULL,
+            status TEXT NOT NULL,
+            data_freshness TEXT NOT NULL,
+            error TEXT,
+            mode TEXT NOT NULL DEFAULT 'SHADOW',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_model_forecasts_inst_tf ON model_forecasts(instrument, timeframe, forecast_timestamp)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_model_forecasts_status ON model_forecasts(status, mode)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS model_forecast_evaluations(
+            evaluation_id TEXT PRIMARY KEY,
+            forecast_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            forecast_timestamp INTEGER NOT NULL,
+            evaluation_timestamp INTEGER NOT NULL,
+            actual_values TEXT NOT NULL,
+            mae REAL NOT NULL,
+            rmse REAL NOT NULL,
+            direction_correct INTEGER NOT NULL,
+            absolute_error REAL NOT NULL,
+            signed_error REAL NOT NULL,
+            quantile_hit INTEGER,
+            coverage REAL,
+            regime TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(forecast_id) REFERENCES model_forecasts(forecast_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_model_forecast_evaluations_inst_tf ON model_forecast_evaluations(instrument, timeframe, evaluation_timestamp)")
+
         c.commit()
     return c
 
