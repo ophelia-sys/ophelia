@@ -68,15 +68,26 @@
   5. Add startup reconciliation check against BingX REST API to resume tracking existing open positions.
 - **Done Criteria:** Simulated position lifecycle passes: Entry -> TP1 50% reduction -> Net breakeven stop set -> Trailing ratchet -> Exit -> Slot returned to `AVAILABLE`.
 
-### Phase 5: TimesFM 3.0 Forecasting Subsystem Integration (COMPLETED — REAL_RUNTIME_VERIFIED)
-- **Objective:** Integrate Google Research's TimesFM 3.0 as a pluggable, strictly causal forecasting engine operating in SHADOW mode.
+### Phase 5: TimesFM 3.0 Forecasting Subsystem Integration & Hardening Gate (COMPLETED — REAL_RUNTIME_VERIFIED)
+- **Objective:** Integrate Google Research's TimesFM 3.0 as a pluggable, strictly causal forecasting engine operating in SHADOW mode, and harden operational state, resource isolation, zero-lookahead, and API/UI parity.
 - **Tasks:**
   1. Pin exact checkpoint and dependency: `google/timesfm-3.0-pytorch` (330M parameters), `timesfm-3.0.2`, `torch-2.14.1+cpu`.
   2. Implement `control_plane/forecast_service.py` with `TimesFMProvider` and `StatisticalBaselineProvider`.
-  3. Implement timestamp-aware feature builder supporting past-only context and dynamic covariates without future data leakage.
+  3. Implement timestamp-aware feature builder supporting past-only context and dynamic covariates without future data leakage (`test_timesfm_no_lookahead_integration.py`).
   4. Generate measurable outputs: future price path, expected return, volatility, and quantiles ($q_{10}-q_{90}$).
-  5. Store forecasts in SQLite `model_forecasts` table and benchmark out-of-sample performance (MAE, RMSE, directional accuracy) against naive persistence and VWAP baselines.
-- **Done Criteria:** Benchmark script runs TimesFM 3.0 inference on real historical data, produces valid quantiles $q_{10} \le q_{50} \le q_{90}$, and confirms zero lookahead. (VERIFIED ON VPS: p50=1342ms, peak RAM=1530MB, all 16 test suites PASSED, Phase 1-4 tests PASSED).
+  5. Store forecasts in SQLite `model_forecasts` table and benchmark out-of-sample performance (MAE, RMSE, directional accuracy) against naive persistence, EMA, and VWAP baselines.
+  6. **Hardening Gate (22 Verification Criteria):**
+     - Authoritative diagnostics state cross-process sync (`model_subsystem_state`).
+     - Real health check on 64-step sequence verifying shape and quantile monotonicity ($q_{10} \le q_{50} \le q_{90}$).
+     - 5-stage resource isolation stress benchmark on real VPS (`timesfm_stress_benchmark.json`).
+     - Memory-headroom check and "SWAP ENABLED FOR MEMORY-PRESSURE MITIGATION" policy.
+     - Scope pinned to `PHASE_5_INITIAL_SCHEDULER = "5m"`.
+     - Evaluation sample tiers (`INSUFFICIENT_SAMPLE` for $N=2$).
+     - Non-destructive migration discipline (zero `DROP TABLE`).
+     - 5-part cache key & User-scoped vs public forecast isolation.
+     - Admin diagnostics role auth (`ADMIN` only) and User forecast/eval auth.
+     - Admin UI (System Health vs Forecast Quality bifurcation) & User UI (`CALIBRATING` status badge, uncalibrated confidence disabled).
+- **Done Criteria:** Benchmark script runs TimesFM 3.0 inference on real historical data, produces valid quantiles $q_{10} \le q_{50} \le q_{90}$, confirms zero lookahead, and passes all 22 hardening gate criteria. (VERIFIED ON VPS: p50=1342ms, peak RAM=1530MB, all 23 Phase 5 tests PASSED, 29 Phase 1-4 tests PASSED, total 52 PASSED in 24.90s). Status: `PHASE_5 = REAL_RUNTIME_VERIFIED`, `PREDICTIVE_QUALITY = NOT_YET_VALIDATED`.
 
 ### Phase 6: Microstructure Research Suite
 - **Objective:** Implement the research paper modules as a structured market intelligence layer without turning unvalidated formulas into uncontrolled trading triggers.

@@ -1098,6 +1098,21 @@ class ForecastScheduler:
         except Exception:
             pass
 
+    def run_batch_cycle(self):
+        """Executes a single scheduled forecasting pass across the active watchlist."""
+        has_room, room_reason = check_resource_headroom()
+        if not has_room:
+            logger.warning(f"Scheduler paused due to resource headroom policy: {room_reason}")
+            return
+        for inst in UNIVERSAL_WATCHLIST:
+            try:
+                self.service.generate_forecast(instrument=inst, timeframe=PHASE_5_INITIAL_SCHEDULER, horizon=10)
+            except Exception as fe:
+                logger.error(f"Scheduler forecast failed for {inst}: {fe}")
+            time.sleep(0.5)
+
+    _run_cycle = run_batch_cycle
+
     def _run_loop(self):
         # 1. Run startup health check to verify model initialization
         logger.info("Executing TimesFM startup health check...")
@@ -1106,22 +1121,7 @@ class ForecastScheduler:
 
         while self.running:
             try:
-                # Check resource headroom before executing batch cycle
-                has_room, room_reason = check_resource_headroom()
-                if not has_room:
-                    logger.warning(f"Scheduler paused due to resource headroom policy: {room_reason}")
-                    time.sleep(60)
-                    continue
-
-                for inst in UNIVERSAL_WATCHLIST:
-                    if not self.running:
-                        break
-                    try:
-                        # Strictly 5m timeframe for initial Phase 5 scheduler
-                        self.service.generate_forecast(instrument=inst, timeframe=PHASE_5_INITIAL_SCHEDULER, horizon=10)
-                    except Exception as fe:
-                        logger.error(f"Scheduler forecast failed for {inst}: {fe}")
-                    time.sleep(2.0)
+                self.run_batch_cycle()
             except Exception as e:
                 logger.error(f"Unhandled error in ForecastScheduler loop: {e}")
             time.sleep(self.interval)
