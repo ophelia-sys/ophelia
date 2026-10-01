@@ -1096,20 +1096,39 @@ def execute_autonomous_us_ml_cycle(user_id: int) -> dict:
     executed = []
     blocked = []
 
+    from .slot_allocation_service import SlotAllocationService
+
     for cand in candidates:
         sym = cand["symbol"]
+        cand_spec = {
+            "candidate_id": cand.get("candidate_id"),
+            "asset_class": "US_MARKET",
+            "strategy": "US_OVERNIGHT",
+            "symbol": sym,
+            "direction": cand.get("direction", "LONG"),
+            "entry_price": cand.get("entry_price", 0.0),
+            "sl_price": cand.get("sl_price", 0.0),
+        }
         # Find eligible slot for US_MARKET
-        slot = db.find_eligible_available_slot(asset_class="US_MARKET", strategy="US_OVERNIGHT", symbol=sym, user_id=user_id)
+        slot, slot_reason = SlotAllocationService.find_eligible_slot(
+            candidate=cand_spec,
+            user_id=user_id
+        )
         if not slot:
-            blocked.append({"symbol": sym, "reason": "NO_FREE_AUTONOMOUS_SLOT"})
+            blocked.append({"symbol": sym, "reason": slot_reason})
             continue
 
         slot_id = slot["id"]
         trade_id = cand["candidate_id"]
 
-        # 1. Atomic reservation
-        if not db.reserve_autonomous_trade_slot(slot_id, trade_id, user_id=user_id):
-            blocked.append({"symbol": sym, "reason": "SLOT_RESERVATION_CONFLICT"})
+        # 1. Atomic reservation via SlotAllocationService
+        reserved, resv_id, resv_reason = SlotAllocationService.reserve_slot(
+            slot_id=slot_id,
+            candidate_id=trade_id,
+            user_id=user_id
+        )
+        if not reserved:
+            blocked.append({"symbol": sym, "reason": resv_reason})
             continue
 
         # 2. Extract Admin-authorized margin and leverage (ML margin is ignored)
@@ -1124,8 +1143,25 @@ def execute_autonomous_us_ml_cycle(user_id: int) -> dict:
 
         position_id = f"POS-AUTO-SLOT{slot_id}-{sym}-{int(time.time() * 1000)}"
 
-        # 3. Establish shadow/paper position for authenticated user
+        # Create Execution Intent
         now_ms = int(time.time() * 1000)
+        intent_id = f"intent-us-{uuid.uuid4().hex[:8]}"
+        db.create_execution_intent({
+            "execution_intent_id": intent_id,
+            "candidate_id": trade_id,
+            "slot_id": slot_id,
+            "user_id": user_id,
+            "account_id": user_id,
+            "instrument": sym,
+            "direction": direction,
+            "requested_margin": authorized_margin,
+            "leverage": max_leverage,
+            "entry_policy": {"entry": entry_price, "qty": quantity},
+            "status": "FILLED",
+            "position_id": position_id
+        })
+
+        # 3. Establish shadow/paper position for authenticated user
         try:
             db.audit(
                 actor="us_market",
@@ -1147,8 +1183,8 @@ def execute_autonomous_us_ml_cycle(user_id: int) -> dict:
         except Exception:
             pass
 
-        # 4. Mark slot OCCUPIED
-        db.occupy_autonomous_trade_slot(slot_id, position_id, user_id=user_id)
+        # 4. Mark slot OCCUPIED via SlotAllocationService
+        SlotAllocationService.occupy_slot(slot_id, position_id, user_id=user_id, reservation_id=resv_id)
 
         executed.append({
             "slot_id": slot_id,

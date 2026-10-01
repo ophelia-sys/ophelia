@@ -357,29 +357,43 @@ def dispatch_opportunity_to_user_slot(
     if not db.is_global_autonomous_enabled():
         return {"status": "BLOCKED", "reason": "Global autonomous trading disabled"}
 
-    # 1. Find eligible slot for this asset class and strategy
-    slot = db.find_eligible_available_slot(
-        asset_class=opp.asset_class,
-        strategy=opp.strategy,
-        symbol=opp.symbol,
-        user_id=user_id,
-        slot_mode="AUTONOMOUS"
+    from control_plane.slot_allocation_service import SlotAllocationService
+
+    # 1. Authoritative slot lookup via SlotAllocationService
+    cand_spec = {
+        "candidate_id": opp.candidate_id,
+        "asset_class": opp.asset_class,
+        "symbol": opp.symbol,
+        "direction": opp.direction,
+        "strategy": opp.strategy,
+        "entry_price": opp.entry_price,
+        "sl_price": opp.sl_price,
+        "tp1_price": opp.tp1_price,
+    }
+    slot, slot_reason = SlotAllocationService.find_eligible_slot(
+        candidate=cand_spec,
+        user_id=user_id
     )
     if not slot:
         return {
             "status": "BLOCKED",
             "symbol": opp.symbol,
-            "reason": "NO_FREE_AUTONOMOUS_SLOT"
+            "reason": slot_reason
         }
 
     slot_id = slot["id"]
 
     # 2. Atomic slot reservation
-    if not db.reserve_autonomous_trade_slot(slot_id, opp.candidate_id, user_id=user_id):
+    reserved, resv_id, resv_reason = SlotAllocationService.reserve_slot(
+        slot_id=slot_id,
+        candidate_id=opp.candidate_id,
+        user_id=user_id
+    )
+    if not reserved:
         return {
             "status": "BLOCKED",
             "symbol": opp.symbol,
-            "reason": "SLOT_RESERVATION_CONFLICT"
+            "reason": resv_reason
         }
 
     # 3. Deterministic slot policy authority
@@ -399,7 +413,7 @@ def dispatch_opportunity_to_user_slot(
         # Resize quantity down to satisfy max loss policy
         max_permitted_qty = max_loss_usdt / unit_risk
         if max_permitted_qty * opp.entry_price < 5.0:  # Below BingX minimum notional
-            db.release_autonomous_trade_slot(slot_id, user_id=user_id)
+            SlotAllocationService.release_slot(slot_id, user_id=user_id, reason="MAX_LOSS_EXCEEDED")
             return {
                 "status": "REJECTED",
                 "symbol": opp.symbol,
@@ -408,8 +422,28 @@ def dispatch_opportunity_to_user_slot(
         qty = round(max_permitted_qty, 4 if opp.entry_price < 100 else 2)
         logger.info(f"Resized qty from {raw_qty:.4f} to {qty:.4f} to honor slot max loss {max_loss_usdt:.2f} USDT")
 
-    # 5. Build position in DB
+    # 5. Create immutable Execution Intent
     now_ms = int(time.time() * 1000)
+    intent_id = f"intent-opp-{uuid.uuid4().hex[:8]}"
+    db.create_execution_intent({
+        "execution_intent_id": intent_id,
+        "candidate_id": opp.candidate_id,
+        "slot_id": slot_id,
+        "user_id": user_id,
+        "account_id": user_id,
+        "instrument": opp.bingx_symbol,
+        "direction": opp.direction,
+        "requested_margin": authorized_margin,
+        "leverage": leverage,
+        "entry_policy": {"entry": opp.entry_price, "qty": qty},
+        "stop_policy": {"stops": [{"type": "price", "value": opp.sl_price}]},
+        "tp_policy": {"targets": [{"price": opp.tp1_price, "pct_qty": float(slot.get("tp1_pct") or 50.0)}]},
+        "trailing_policy": {"enabled": slot.get("trailing_enabled"), "pct": slot.get("trailing_pct")},
+        "status": "APPROVED"
+    })
+    db.update_execution_intent_status(intent_id, "SUBMITTING")
+
+    # 6. Build position in DB
     position_data = {
         "symbol": opp.bingx_symbol,
         "direction": opp.direction,
@@ -439,12 +473,14 @@ def dispatch_opportunity_to_user_slot(
 
     try:
         pos_id = db.create_position(position_data, user_id=user_id, account_id=user_id)
+        db.update_execution_intent_status(intent_id, "FILLED", position_id=str(pos_id))
     except Exception as e:
-        db.release_autonomous_trade_slot(slot_id, user_id=user_id)
+        db.update_execution_intent_status(intent_id, "FAILED", error_reason=str(e)[:200])
+        SlotAllocationService.release_slot(slot_id, user_id=user_id, reason="POSITION_CREATION_FAILED")
         return {"status": "ERROR", "reason": f"Failed to create position: {e}"}
 
-    # 6. Mark slot as OCCUPIED
-    db.occupy_autonomous_trade_slot(slot_id, str(pos_id), user_id=user_id)
+    # 7. Mark slot as OCCUPIED
+    SlotAllocationService.occupy_slot(slot_id, str(pos_id), user_id=user_id, reservation_id=resv_id)
 
     db.audit(
         actor="opportunity_bus",

@@ -659,7 +659,41 @@ def get_capacity(user_id: int = Depends(get_current_user_id)):
 
 @app.get("/api/automations")
 def get_automations(status: Optional[str] = None, user_id: int = Depends(get_current_user_id)):
-    return {"automations": db.list_automations(status=status, user_id=user_id)}
+    autos = db.list_automations(status=status, user_id=user_id)
+    enriched = []
+    for a in autos:
+        aid = a["id"]
+        # Check linked candidate
+        cand = db.get_setup_candidate_by_automation(aid)
+        if cand:
+            a["candidate_state"] = cand.get("current_state")
+            a["waiting_reason"] = cand.get("waiting_for") or cand.get("reason")
+        else:
+            a["candidate_state"] = "MONITORING"
+            a["waiting_reason"] = a.get("last_eval_reason")
+
+        # Check linked execution intent and slot
+        intent = db.get_execution_intent_by_automation(aid)
+        if intent:
+            a["execution_intent"] = intent
+            if intent.get("slot_id"):
+                s = db.get_autonomous_trade_slot(intent["slot_id"], user_id=user_id)
+                if s:
+                    a["slot_info"] = {
+                        "id": s["id"],
+                        "name": s["name"],
+                        "scope": s.get("scope") or s.get("asset_scope"),
+                        "allocated_margin_usdt": s["allocated_margin_usdt"],
+                        "max_leverage": s["max_leverage"],
+                        "status": s["status"]
+                    }
+            if intent.get("position_id"):
+                pos = db.get_position(intent["position_id"])
+                if pos:
+                    a["position_status"] = pos.get("status")
+                    a["position_id"] = intent["position_id"]
+        enriched.append(a)
+    return {"automations": enriched}
 
 @app.post("/api/automations")
 def create_automation(req: AutomationCreateRequest, user_id: int = Depends(get_current_user_id)):
@@ -3075,6 +3109,151 @@ def toggle_autonomous_master(req: ToggleAutonomousMasterRequest):
     }
 
 
+class SaveSlotTemplateRequest(BaseModel):
+    scope: str = "CRYPTO"
+    strategy_scope: str = "ALL"
+    margin: float = 50.0
+    leverage: float = 5.0
+    max_loss_pct: float = 2.0
+    tp1_pct: float = 50.0
+    breakeven: bool = True
+    trailing: bool = True
+    trailing_pct: float = 1.5
+    max_slots: int = 5
+    max_autonomous_capital: float = 500.0
+    account_id: Optional[int] = 1
+
+
+@app.get("/api/user/slot-template")
+def get_user_slot_template_endpoint(scope: str = "ALL", user_id: int = Depends(get_current_user_id)):
+    """Retrieve authorized user slot template for deterministic autonomous slot provisioning."""
+    tmpl = db.get_user_slot_template(user_id=user_id, scope=scope)
+    all_tmpls = db.get_user_slot_templates(user_id=user_id)
+    return {
+        "template": tmpl,
+        "templates": all_tmpls,
+        "has_template": bool(tmpl or all_tmpls)
+    }
+
+
+@app.post("/api/user/slot-template")
+def save_user_slot_template_endpoint(req: SaveSlotTemplateRequest, user_id: int = Depends(get_current_user_id)):
+    """Save or update authorized user slot template for deterministic autonomous slot provisioning."""
+    if req.margin <= 0 or req.margin > 1000.0:
+        raise HTTPException(status_code=400, detail="Margin must be between 1 and 1000 USDT")
+    if req.leverage < 1.0 or req.leverage > 10.0:
+        raise HTTPException(status_code=400, detail="Leverage must be between 1x and 10x")
+    if req.max_autonomous_capital <= 0 or req.max_autonomous_capital > 2500.0:
+        raise HTTPException(status_code=400, detail="Max capital must be between 1 and 2500 USDT")
+
+    tmpl_id = db.set_user_slot_template(req.dict(), user_id=user_id)
+    return {
+        "success": True,
+        "template_id": tmpl_id,
+        "message": f"Slot template for {req.scope} saved successfully"
+    }
+
+
+@app.get("/api/admin/diagnostics/automation-pipeline", dependencies=[Depends(require_admin)])
+def get_admin_automation_pipeline_diagnostics():
+    """Authoritative Admin diagnostic drill-down view:
+    AUTOMATION -> CANDIDATE -> SLOT -> EXECUTION INTENT -> POSITION.
+    """
+    autos = db.list_automations()
+    pipeline = []
+
+    for a in autos:
+        aid = a["id"]
+        uid = a.get("user_id") or 1
+        acc_id = a.get("account_id") or 1
+
+        cand = db.get_setup_candidate_by_automation(aid)
+        intent = db.get_execution_intent_by_automation(aid)
+
+        slot = None
+        if intent and intent.get("slot_id"):
+            slot = db.get_autonomous_trade_slot(intent["slot_id"], user_id=uid)
+        elif cand:
+            from .slot_allocation_service import SlotAllocationService
+            cand_spec = {
+                "candidate_id": cand.get("setup_id"),
+                "symbol": a.get("symbol"),
+                "direction": a.get("direction") or a.get("direction_pref") or "LONG",
+                "strategy": a.get("strategy")
+            }
+            eligible, _ = SlotAllocationService.find_eligible_slot(cand_spec, user_id=uid, account_id=acc_id)
+            slot = eligible
+
+        position = None
+        if intent and intent.get("position_id"):
+            position = db.get_position(intent["position_id"])
+
+        cand_state = cand.get("current_state") if cand else "MONITORING"
+        pipeline.append({
+            "automation_id": aid,
+            "user_id": uid,
+            "account_id": acc_id,
+            "status": a.get("status"),
+            "strategy": a.get("strategy"),
+            "symbol": a.get("symbol"),
+            "last_evaluated_ms": a.get("last_evaluated_ms"),
+            "last_eval_reason": a.get("last_eval_reason"),
+            "candidate": {
+                "candidate_id": cand.get("setup_id") if cand else None,
+                "current_state": cand_state,
+                "retest_state": cand.get("retest_state") if cand else None,
+                "waiting_for": cand.get("waiting_for") if cand else None,
+                "direction": cand.get("direction") if cand else a.get("direction"),
+                "entry_price": cand.get("breakout_price") or cand.get("vwap") if cand else None,
+                "suggested_sl": cand.get("suggested_sl") if cand else None,
+                "suggested_tp1": cand.get("suggested_tp1") if cand else None,
+                "confidence_pct": cand.get("confidence_pct") if cand else None,
+            } if cand else None,
+            "slot": {
+                "id": slot["id"],
+                "name": slot["name"],
+                "status": slot["status"],
+                "scope": slot.get("scope") or slot.get("asset_scope"),
+                "allocated_margin_usdt": slot["allocated_margin_usdt"],
+                "max_leverage": slot["max_leverage"],
+                "reservation_id": slot.get("reservation_id")
+            } if slot else None,
+            "execution_intent": {
+                "execution_intent_id": intent["execution_intent_id"],
+                "status": intent["status"],
+                "requested_margin": intent["requested_margin"],
+                "leverage": intent["leverage"],
+                "created_at": intent["created_at"],
+                "error_reason": intent.get("error_reason")
+            } if intent else None,
+            "position": {
+                "position_id": position["id"],
+                "status": position["status"],
+                "symbol": position["symbol"],
+                "direction": position["direction"],
+                "entry": position["entry"],
+                "qty": position["qty"],
+                "margin_usdt": position["margin_usdt"]
+            } if position else None,
+            "waiting_reason": (
+                "WAITING_FOR_RETEST" if cand_state in ("WAITING_FOR_RETEST", "RETEST_TOUCHED", "CONFIRMING_REJECTION")
+                else ("WAITING_FOR_SLOT" if cand_state == "WAITING_FOR_SLOT"
+                else (a.get("last_eval_reason") or "MONITORING"))
+            ),
+            "last_error": intent.get("error_reason") if intent and intent.get("status") in ("FAILED", "REJECTED") else None
+        })
+
+    return {"pipeline": pipeline}
+
+
+@app.post("/api/admin/slots/recover-stale", dependencies=[Depends(require_admin)])
+def admin_recover_stale_slots():
+    """Admin trigger to immediately recover stale slot reservations."""
+    from .slot_allocation_service import SlotAllocationService
+    count = SlotAllocationService.recover_stale_reservations(timeout_s=60)
+    return {"success": True, "recovered_count": count}
+
+
 @app.get("/api/replication/status")
 def get_replication_status(user: dict = Depends(get_current_user)):
     """Summary of replication bus: master status, followers, and active copied trades."""
@@ -3540,6 +3719,81 @@ def api_purge_synthetic():
     """Admin endpoint to strictly purge all fake/demo user records and mock balances."""
     res = db.purge_synthetic_users()
     return res
+
+
+# ============================================================
+# USER SLOT TEMPLATES & AUTOMATION PIPELINE DIAGNOSTICS
+# ============================================================
+@app.get("/api/user/slot-template")
+def get_user_slot_template(asset_class: str = "CRYPTO", current_user: dict = Depends(get_current_user)):
+    """Retrieve authorized user slot template for asset class."""
+    uid = current_user["id"]
+    tmpl = db.get_user_slot_template(user_id=uid, scope=asset_class)
+    all_tmpls = db.get_user_slot_templates(user_id=uid)
+    return {
+        "template": tmpl,
+        "templates": all_tmpls,
+        "has_template": tmpl is not None or len(all_tmpls) > 0
+    }
+
+
+@app.post("/api/user/slot-template")
+def update_user_slot_template(req: dict, current_user: dict = Depends(get_current_user)):
+    """Update or save authorized user slot template."""
+    uid = current_user["id"]
+    db.set_user_slot_template(template_data=req, user_id=uid)
+    return {"success": True, "message": "User slot template updated"}
+
+
+@app.get("/api/admin/diagnostics/automation-pipeline")
+def get_automation_pipeline_diagnostics(current_user: dict = Depends(require_admin)):
+    """Drill-down diagnostic view: AUTOMATION -> CANDIDATE -> SLOT -> EXECUTION INTENT -> POSITION."""
+    automations = db.list_automations()
+    pipeline = []
+    for a in automations:
+        aid = a["id"]
+        uid = a["user_id"]
+        cand = db.get_setup_candidate_by_automation(aid)
+        intent = db.get_execution_intent_by_automation(aid)
+        slot = None
+        if intent and intent.get("slot_id"):
+            slot = db.get_autonomous_trade_slot(intent["slot_id"], user_id=uid)
+        elif a.get("slot_info"):
+            slot = a.get("slot_info")
+
+        pos = None
+        if intent and intent.get("position_id"):
+            try:
+                pos = db.get_position(int(intent["position_id"]), user_id=uid)
+            except Exception:
+                pass
+
+        pipeline.append({
+            "automation_id": aid,
+            "user_id": uid,
+            "account_id": a.get("account_id", 1),
+            "status": a.get("status"),
+            "strategy": a.get("strategy"),
+            "symbol": a.get("symbol"),
+            "last_evaluated_ms": a.get("last_evaluated_ms"),
+            "last_eval_reason": a.get("last_eval_reason"),
+            "candidate": cand,
+            "slot": slot,
+            "execution_intent": intent,
+            "position": pos,
+            "waiting_reason": a.get("waiting_reason"),
+            "last_error": a.get("last_error")
+        })
+    return {"pipeline": pipeline}
+
+
+@app.post("/api/admin/slots/recover-stale")
+def recover_stale_slots(current_user: dict = Depends(require_admin)):
+    """Recover stale reserved slots back to AVAILABLE."""
+    from .slot_allocation_service import SlotAllocationService
+    count = SlotAllocationService.recover_stale_reservations()
+    return {"success": True, "recovered_count": count}
+
 
 
 @app.websocket("/ws/market")

@@ -1999,21 +1999,9 @@ def evaluate_active_automations() -> list[dict]:
                     targets_payload = [{"price": round(target, 4), "pct_qty": 100.0, "qty_pct": 100.0}]
 
 
-                # Sizing
-                lev = float(a.get("leverage") or 15)
-                fixed_margin = float(a.get("margin_usdt") or 0.0)
-                margin_pct = float(a.get("margin_usage_pct") or 0.0)
-                
-                from . import account as _acc
-                cap = _acc.account_capacity(user_id=uid)
-                avail_eq = cap.get("account_available", 100.0)
-                margin_alloc = fixed_margin if fixed_margin > 0 else (avail_eq * margin_pct / 100.0 if margin_pct > 0 else 10.0)
-                margin_alloc = max(1.0, margin_alloc)
-                qty = round((margin_alloc * lev) / entry, 6)
-                
                 authoritative_mode = db.get_mode()
                 coid = f"oph-{aid}-{uuid.uuid4().hex[:8]}"
-                
+
                 # 5.4 Authoritative pre-entry invariant: same user + same symbol active position prevention
                 allow_pyramiding = bool(params.get("allow_pyramiding", False))
                 if not allow_pyramiding and db.has_open_position_for_symbol(sym, user_id=uid):
@@ -2034,11 +2022,133 @@ def evaluate_active_automations() -> list[dict]:
                     )
                     continue
 
+                # 5.6 AUTHORITATIVE SLOT ALLOCATION PIPELINE
+                # ML NEVER dictates margin or leverage. Sizing is governed strictly by authorized slot.
+                from .slot_allocation_service import SlotAllocationService
+                cand_id = setup_id if (curr_strat == "VWAP_STRUCTURE_RETEST" and setup_id) else f"cand-{aid}-{sym}-{strat_ev['candle_ts']}"
+                cand_spec = {
+                    "candidate_id": cand_id,
+                    "symbol": sym,
+                    "direction": direction,
+                    "strategy": curr_strat,
+                    "entry_price": entry,
+                    "sl_price": stop,
+                    "tp1_price": target,
+                    "allow_pyramiding": allow_pyramiding,
+                }
+                slot, slot_reason = SlotAllocationService.find_eligible_slot(
+                    candidate=cand_spec,
+                    user_id=uid,
+                    account_id=a.get("account_id", 1)
+                )
+
+                if not slot:
+                    # Candidate reaches ENTRY_READY but no slot is available -> state becomes WAITING_FOR_SLOT
+                    cand_payload = {
+                        "setup_id": cand_id,
+                        "symbol": sym,
+                        "direction": direction,
+                        "timeframe": tf,
+                        "strategy": curr_strat,
+                        "current_state": "WAITING_FOR_SLOT",
+                        "reason": f"WAITING_FOR_SLOT: {slot_reason}",
+                        "waiting_for": "SLOT",
+                        "user_id": uid,
+                        "account_id": a.get("account_id", 1),
+                        "automation_id": aid,
+                        "suggested_sl": stop,
+                        "suggested_tp1": target,
+                        "entry_price": entry,
+                        "status": "WAITING_FOR_SLOT",
+                        "generated_ms": now_ms
+                    }
+                    db.save_setup_candidate(cand_payload)
+                    db.update_automation_diagnostics(
+                        aid, now_ms,
+                        f"WAITING_FOR_SLOT: {slot_reason} ({sym} {direction})",
+                        signal_ms=now_ms, signal_dir=direction,
+                        exec_status="WAITING_FOR_SLOT"
+                    )
+                    diag_reasons.append(f"{sym}: WAITING_FOR_SLOT ({slot_reason})")
+                    continue
+
+                # Slot Found -> Authoritative Slot Parameters Govern Sizing
+                slot_id = slot["id"]
+                margin_alloc = float(slot["allocated_margin_usdt"])
+                lev = float(slot["max_leverage"])
+                max_loss_usdt = float(slot.get("max_loss_usdt") or 0.0)
+                max_loss_pct = float(slot.get("maximum_loss_percent") or slot.get("max_loss_pct") or 10.0)
+                if max_loss_usdt <= 0.0:
+                    max_loss_usdt = margin_alloc * (max_loss_pct / 100.0)
+
+                notional = margin_alloc * lev
+                qty = round(notional / max(0.0001, entry), 6)
+
+                # Max Loss check & resizing
+                unit_risk = abs(entry - stop)
+                potential_loss = unit_risk * qty
+                if max_loss_usdt > 0.0 and potential_loss > max_loss_usdt:
+                    max_permitted_qty = max_loss_usdt / unit_risk
+                    if max_permitted_qty * entry < 5.0:
+                        db.update_automation_diagnostics(
+                            aid, now_ms,
+                            f"Risk rejected: Potential loss {potential_loss:.2f} > slot max loss {max_loss_usdt:.2f}",
+                            signal_ms=now_ms, signal_dir=direction,
+                            exec_status="RISK_REJECTED"
+                        )
+                        continue
+                    qty = round(max_permitted_qty, 6)
+
+                # 5.7 ATOMIC SLOT RESERVATION
+                reserved, resv_id, resv_reason = SlotAllocationService.reserve_slot(
+                    slot_id=slot_id,
+                    candidate_id=cand_id,
+                    user_id=uid,
+                    account_id=a.get("account_id", 1)
+                )
+                if not reserved:
+                    db.update_automation_diagnostics(
+                        aid, now_ms,
+                        f"Slot reservation failed: {resv_reason}",
+                        signal_ms=now_ms, signal_dir=direction,
+                        exec_status="SLOT_CONFLICT"
+                    )
+                    diag_reasons.append(f"{sym}: Slot reservation conflict ({resv_reason})")
+                    continue
+
+                # 5.8 CREATE PERSISTED IMMUTABLE EXECUTION INTENT
+                intent_id = f"intent-{aid}-{uuid.uuid4().hex[:8]}"
+                db.create_execution_intent({
+                    "execution_intent_id": intent_id,
+                    "candidate_id": cand_id,
+                    "automation_id": aid,
+                    "slot_id": slot_id,
+                    "user_id": uid,
+                    "account_id": a.get("account_id", 1),
+                    "instrument": sym,
+                    "direction": direction,
+                    "requested_margin": margin_alloc,
+                    "leverage": lev,
+                    "entry_policy": {"entry": entry, "qty": qty},
+                    "stop_policy": {"stops": stops_payload, "stop_current": stop},
+                    "tp_policy": {"targets": targets_payload},
+                    "trailing_policy": {"enabled": slot.get("trailing_enabled"), "pct": slot.get("trailing_pct")},
+                    "status": "CREATED",
+                    "idempotency_key": event_id
+                })
+
+                # Risk checking -> APPROVED -> SUBMITTING
+                db.update_execution_intent_status(intent_id, "RISK_CHECKING")
+                db.update_execution_intent_status(intent_id, "APPROVED")
+                db.update_execution_intent_status(intent_id, "SUBMITTING")
+
                 # 6. Execution Branch
                 if authoritative_mode == "LIVE":
                     pf = run_preflight(user_id=uid)
                     if not pf.get("ready_for_live"):
                         err_msg = f"LIVE preflight barrier rejected order: {pf.get('blocking_reasons', ['Check failed'])[0]}"
+                        db.update_execution_intent_status(intent_id, "REJECTED", error_reason=err_msg)
+                        SlotAllocationService.release_slot(slot_id, user_id=uid, reason="PREFLIGHT_FAILED")
                         db.update_automation_diagnostics(aid, now_ms, err_msg, signal_ms=now_ms, signal_dir=direction, exec_status="PREFLIGHT_FAILED")
                         notifications.notify_preflight_failure(pf.get("blocking_reasons", [err_msg]), user_id=uid)
                         continue
@@ -2074,14 +2184,18 @@ def evaluate_active_automations() -> list[dict]:
                                         "stops_json": json.dumps(stops_payload),
                                         "targets_json": json.dumps(targets_payload),
                                         "user_id": uid,
-                                        "detail": {"automation_id": aid, "strategy": curr_strat, "reconciled_after_ambiguous_error": True}
+                                        "detail": {"automation_id": aid, "strategy": curr_strat, "slot_id": slot_id, "reconciled_after_ambiguous_error": True}
                                     })
                                     db.event_record(event_id, "SIGNAL", pid)
+                                    db.update_execution_intent_status(intent_id, "FILLED", position_id=str(pid))
+                                    SlotAllocationService.occupy_slot(slot_id, position_id=str(pid), user_id=uid, reservation_id=resv_id)
                                     db.audit("core", "LIVE_ENTRY_RECONCILED", {"automation_id": aid, "position_id": pid, "symbol": sym}, user_id=uid)
                                     continue
                             except Exception as recon_err:
                                 db.audit("core", "RECONCILIATION_FAILED", {"automation_id": aid, "error": str(recon_err)[:200]}, user_id=uid)
 
+                        db.update_execution_intent_status(intent_id, "FAILED", error_reason=str(e)[:200])
+                        SlotAllocationService.release_slot(slot_id, user_id=uid, reason=f"LIVE_ORDER_FAILED: {str(e)[:50]}")
                         db.audit("core", "LIVE_ENTRY_FAILED", {"automation_id": aid, "symbol": sym, "error": str(e)[:200]}, user_id=uid)
                         db.update_automation_diagnostics(aid, now_ms, f"Live order error: {str(e)[:100]}", signal_ms=now_ms, signal_dir=direction, exec_status="ORDER_ERROR")
                         notifications.notify_system_connectivity(f"Live order failed for {sym}", severity="CRITICAL", details=str(e), user_id=uid)
@@ -2098,11 +2212,14 @@ def evaluate_active_automations() -> list[dict]:
                         "targets": targets_payload,
                         "targets_json": json.dumps(targets_payload),
                         "user_id": uid,
-                        "detail": {"automation_id": aid, "strategy": curr_strat, "order_id": str(order_id or ""), "exchange_resp": str(resp)[:200], "be_after_partial": True}
+                        "detail": {"automation_id": aid, "strategy": curr_strat, "slot_id": slot_id, "order_id": str(order_id or ""), "exchange_resp": str(resp)[:200], "be_after_partial": True}
                     })
                     db.event_record(event_id, "SIGNAL", pid)
+                    db.update_execution_intent_status(intent_id, "FILLED", position_id=str(pid))
+                    SlotAllocationService.occupy_slot(slot_id, position_id=str(pid), user_id=uid, reservation_id=resv_id)
+                    db.save_setup_candidate({"setup_id": cand_id, "symbol": sym, "direction": direction, "timeframe": tf, "strategy": curr_strat, "current_state": "TRIGGERED", "status": "TRIGGERED", "user_id": uid, "account_id": a.get("account_id", 1), "automation_id": aid})
                     db.audit("core", "LIVE_ENTRY", {"automation_id": aid, "position_id": pid, "symbol": sym, "qty": live_qty, "client_order_id": coid, "order_id": str(order_id or "")}, user_id=uid)
-                    db.update_automation_diagnostics(aid, now_ms, f"LIVE Trade Executed #{pid} ({sym} {direction})", signal_ms=now_ms, signal_dir=direction, exec_status="EXECUTED_LIVE")
+                    db.update_automation_diagnostics(aid, now_ms, f"LIVE Trade Executed #{pid} in Slot {slot['name']} ({sym} {direction})", signal_ms=now_ms, signal_dir=direction, exec_status="EXECUTED_LIVE")
                     
                 else: # SHADOW MODE
                     pid = db.create_position({
@@ -2115,11 +2232,14 @@ def evaluate_active_automations() -> list[dict]:
                         "targets": targets_payload,
                         "targets_json": json.dumps(targets_payload),
                         "user_id": uid,
-                        "detail": {"automation_id": aid, "strategy": curr_strat, "be_after_partial": True}
+                        "detail": {"automation_id": aid, "strategy": curr_strat, "slot_id": slot_id, "be_after_partial": True}
                     })
                     db.event_record(event_id, "SIGNAL", pid)
-                    db.audit("core", "SHADOW_ENTRY", {"automation_id": aid, "position_id": pid, "symbol": sym, "qty": qty}, user_id=uid)
-                    db.update_automation_diagnostics(aid, now_ms, f"SHADOW Trade Executed #{pid} ({sym} {direction})", signal_ms=now_ms, signal_dir=direction, exec_status="EXECUTED_SHADOW")
+                    db.update_execution_intent_status(intent_id, "FILLED", position_id=str(pid))
+                    SlotAllocationService.occupy_slot(slot_id, position_id=str(pid), user_id=uid, reservation_id=resv_id)
+                    db.save_setup_candidate({"setup_id": cand_id, "symbol": sym, "direction": direction, "timeframe": tf, "strategy": curr_strat, "current_state": "TRIGGERED", "status": "TRIGGERED", "user_id": uid, "account_id": a.get("account_id", 1), "automation_id": aid})
+                    db.audit("core", "SHADOW_ENTRY", {"automation_id": aid, "position_id": pid, "symbol": sym, "qty": qty, "slot_id": slot_id}, user_id=uid)
+                    db.update_automation_diagnostics(aid, now_ms, f"SHADOW Trade Executed #{pid} in Slot {slot['name']} ({sym} {direction})", signal_ms=now_ms, signal_dir=direction, exec_status="EXECUTED_SHADOW")
 
                 
                 # Lifecycle handling
@@ -2128,7 +2248,7 @@ def evaluate_active_automations() -> list[dict]:
                     db.set_automation_status(aid, "STOPPED", user_id=uid)
                     
                 triggered_for_this_auto = True
-                events_triggered.append({"automation_id": aid, "symbol": sym, "direction": direction, "strategy": curr_strat, "mode": authoritative_mode})
+                events_triggered.append({"automation_id": aid, "symbol": sym, "direction": direction, "strategy": curr_strat, "slot_id": slot_id, "mode": authoritative_mode})
                 break
                 
         if not triggered_for_this_auto:
@@ -2203,9 +2323,22 @@ def automation_worker_loop(stop_event: threading.Event | None = None) -> None:
         
     print(f"[automation-engine] worker lease acquired (PID {os.getpid()}) | polling every 5s", flush=True)
     try:
+        from .slot_allocation_service import SlotAllocationService
+        recovered = SlotAllocationService.recover_stale_reservations(timeout_s=60)
+        if recovered > 0:
+            print(f"[automation-engine] startup recovery: recovered {recovered} stale slot reservations", flush=True)
+    except Exception as rec_err:
+        print(f"[automation-engine] recovery warning: {rec_err}", flush=True)
+
+    try:
         while stop_event is None or not stop_event.is_set():
             try:
                 lease.heartbeat()
+                try:
+                    from .slot_allocation_service import SlotAllocationService
+                    SlotAllocationService.recover_stale_reservations(timeout_s=60)
+                except Exception:
+                    pass
                 evaluate_active_automations()
                 evaluate_open_positions_with_execution()
             except Exception as e:

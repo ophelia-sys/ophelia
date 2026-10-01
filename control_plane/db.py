@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+_j = json
 import os
 import sqlite3
 import threading
@@ -501,6 +502,9 @@ def _auto_conn() -> sqlite3.Connection:
             ("actionability_score", "REAL DEFAULT 0.0"),
             ("zone_json", "TEXT"),
             ("structural_invalidation", "TEXT"),
+            ("user_id", "INTEGER DEFAULT 1"),
+            ("account_id", "INTEGER DEFAULT 1"),
+            ("automation_id", "INTEGER DEFAULT NULL"),
         ]:
             try:
                 c.execute(f"ALTER TABLE setup_candidates ADD COLUMN {col_name} {col_type}")
@@ -3072,10 +3076,147 @@ def _init_us_market_and_slot_tables(conn: sqlite3.Connection) -> None:
             ("breakeven_enabled", "INTEGER DEFAULT 1"),
             ("breakeven_mode", "TEXT DEFAULT 'AFTER_TP1'"),
             ("slot_mode", "TEXT DEFAULT 'BOTH'"),
+            ("account_id", "INTEGER DEFAULT 1"),
+            ("scope", "TEXT DEFAULT 'ALL'"),
+            ("strategy_scope", "TEXT DEFAULT 'ALL_STRATEGIES'"),
+            ("mode", "TEXT DEFAULT 'BOTH'"),
+            ("maximum_loss_percent", "REAL DEFAULT 10.0"),
+            ("trailing_configuration", "TEXT DEFAULT ''"),
+            ("tp1_percent", "REAL DEFAULT 50.0"),
+            ("move_sl_to_cost", "INTEGER DEFAULT 1"),
+            ("reserved_at", "INTEGER DEFAULT NULL"),
+            ("released_at", "INTEGER DEFAULT NULL"),
+            ("reservation_id", "TEXT DEFAULT NULL"),
+            ("last_error", "TEXT DEFAULT NULL"),
+            ("last_error_reason", "TEXT DEFAULT NULL"),
         ]
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE autonomous_trade_slots ADD COLUMN {col_name} {col_type}")
+    except Exception:
+        pass
+
+    # Table for authorized user slot templates (Autonomous Slot Provisioning)
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_slot_templates(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        account_id INTEGER DEFAULT 1,
+        scope TEXT NOT NULL DEFAULT 'CRYPTO',
+        strategy_scope TEXT NOT NULL DEFAULT 'ALL',
+        margin REAL NOT NULL DEFAULT 50.0,
+        leverage REAL NOT NULL DEFAULT 5.0,
+        max_loss_pct REAL NOT NULL DEFAULT 2.0,
+        tp1_pct REAL NOT NULL DEFAULT 50.0,
+        breakeven INTEGER NOT NULL DEFAULT 1,
+        trailing INTEGER NOT NULL DEFAULT 1,
+        trailing_pct REAL NOT NULL DEFAULT 1.5,
+        max_slots INTEGER NOT NULL DEFAULT 5,
+        max_autonomous_capital REAL NOT NULL DEFAULT 500.0,
+        created_at INTEGER,
+        updated_at INTEGER,
+        UNIQUE(user_id, scope)
+    )""")
+
+    # Table for immutable execution intents
+    conn.execute("""CREATE TABLE IF NOT EXISTS execution_intents(
+        execution_intent_id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        automation_id INTEGER,
+        slot_id INTEGER,
+        user_id INTEGER NOT NULL,
+        account_id INTEGER DEFAULT 1,
+        instrument TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        requested_margin REAL NOT NULL,
+        leverage REAL NOT NULL,
+        entry_policy TEXT,
+        stop_policy TEXT,
+        tp_policy TEXT,
+        trailing_policy TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'CREATED',
+        idempotency_key TEXT UNIQUE,
+        error_reason TEXT,
+        position_id TEXT
+    )""")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS setup_candidates(
+        setup_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        timeframe INTEGER NOT NULL DEFAULT 5,
+        strategy TEXT NOT NULL DEFAULT 'ALL',
+        current_state TEXT NOT NULL DEFAULT 'IDLE',
+        reason TEXT,
+        vwap REAL,
+        breakout_price REAL,
+        retest_state TEXT,
+        cvd_confirmed INTEGER DEFAULT 0,
+        rvol_confirmed INTEGER DEFAULT 0,
+        fvg_confirmed INTEGER DEFAULT 0,
+        entry_conditions_json TEXT,
+        confirmation_conditions_json TEXT,
+        invalidation_json TEXT,
+        suggested_sl REAL,
+        tp1 REAL,
+        tp2 REAL,
+        tp3 REAL,
+        rr_ratio REAL,
+        created_at INTEGER,
+        updated_at INTEGER,
+        user_id INTEGER DEFAULT 1,
+        account_id INTEGER DEFAULT 1,
+        automation_id INTEGER DEFAULT NULL,
+        waiting_for TEXT,
+        next_required_event TEXT,
+        distance_pct REAL,
+        distance_atr REAL,
+        priority TEXT,
+        priority_reasons_json TEXT,
+        conditions_json TEXT,
+        data_freshness_json TEXT,
+        actionability_score REAL DEFAULT 0.0,
+        zone_json TEXT,
+        structural_invalidation TEXT,
+        suggested_tp1 REAL,
+        suggested_tp2 REAL,
+        risk_reward REAL,
+        confidence_pct REAL,
+        thesis TEXT,
+        generated_ms INTEGER,
+        expires_ms INTEGER,
+        status TEXT DEFAULT 'ACTIVE'
+    )""")
+    try:
+        cand_cols = {row[1] for row in conn.execute("PRAGMA table_info(setup_candidates)").fetchall()}
+        cand_add_cols = [
+            ("user_id", "INTEGER DEFAULT 1"),
+            ("account_id", "INTEGER DEFAULT 1"),
+            ("automation_id", "INTEGER DEFAULT NULL"),
+            ("waiting_for", "TEXT"),
+            ("next_required_event", "TEXT"),
+            ("distance_pct", "REAL"),
+            ("distance_atr", "REAL"),
+            ("priority", "TEXT"),
+            ("priority_reasons_json", "TEXT"),
+            ("conditions_json", "TEXT"),
+            ("data_freshness_json", "TEXT"),
+            ("actionability_score", "REAL DEFAULT 0.0"),
+            ("zone_json", "TEXT"),
+            ("structural_invalidation", "TEXT"),
+            ("suggested_tp1", "REAL"),
+            ("suggested_tp2", "REAL"),
+            ("risk_reward", "REAL"),
+            ("confidence_pct", "REAL"),
+            ("thesis", "TEXT"),
+            ("generated_ms", "INTEGER"),
+            ("expires_ms", "INTEGER"),
+            ("status", "TEXT DEFAULT 'ACTIVE'"),
+        ]
+        for col_name, col_type in cand_add_cols:
+            if col_name not in cand_cols:
+                conn.execute(f"ALTER TABLE setup_candidates ADD COLUMN {col_name} {col_type}")
     except Exception:
         pass
 
@@ -3205,7 +3346,10 @@ _SLOT_COLUMNS = [
     "asset_scope", "allowed_asset_classes", "allowed_symbols", "strategy_scope",
     "current_trade_id", "current_position_id", "created_at", "updated_at", "last_used_at",
     "user_id", "max_loss_usdt", "max_loss_pct", "trailing_enabled", "trailing_pct",
-    "tp1_enabled", "tp1_pct", "breakeven_enabled", "breakeven_mode", "slot_mode"
+    "tp1_enabled", "tp1_pct", "breakeven_enabled", "breakeven_mode", "slot_mode",
+    "account_id", "scope", "mode", "maximum_loss_percent", "trailing_configuration",
+    "tp1_percent", "move_sl_to_cost", "reserved_at", "released_at", "reservation_id",
+    "last_error", "last_error_reason"
 ]
 
 def _row_to_slot(r: tuple) -> dict:
@@ -3215,19 +3359,28 @@ def _row_to_slot(r: tuple) -> dict:
     d["tp1_enabled"] = bool(d.get("tp1_enabled", 1))
     d["breakeven_enabled"] = bool(d.get("breakeven_enabled", 1))
     d["user_id"] = int(d.get("user_id") or 1)
+    d["account_id"] = int(d.get("account_id") or 1)
     d["max_loss_usdt"] = float(d.get("max_loss_usdt") or 0.0)
     d["max_loss_pct"] = float(d.get("max_loss_pct") or 10.0)
+    d["maximum_loss_percent"] = float(d.get("maximum_loss_percent") or d.get("max_loss_pct") or 10.0)
     d["trailing_pct"] = float(d.get("trailing_pct") or 1.5)
     d["tp1_pct"] = float(d.get("tp1_pct") or 50.0)
+    d["tp1_percent"] = float(d.get("tp1_percent") or d.get("tp1_pct") or 50.0)
     d["breakeven_mode"] = str(d.get("breakeven_mode") or "AFTER_TP1")
     d["slot_mode"] = str(d.get("slot_mode") or "BOTH")
+    d["mode"] = str(d.get("mode") or d.get("slot_mode") or "BOTH")
+    d["scope"] = str(d.get("scope") or d.get("asset_scope") or "ALL")
+    d["strategy_scope"] = str(d.get("strategy_scope") or "ALL_STRATEGIES")
+    d["move_sl_to_cost"] = bool(d.get("move_sl_to_cost") if d.get("move_sl_to_cost") is not None else d.get("breakeven_enabled", 1))
+    d["trailing_configuration"] = str(d.get("trailing_configuration") or f"trail={d.get('trailing_pct', 1.5)}%")
     return d
 
 def ensure_root_admin() -> None:
-    """Ensure root admin user (id=1, ophelia-sys) exists with valid password hash for Vishalnaik@1994."""
+    """Ensure root admin user (id=1, ophelia-sys) exists with valid password hash."""
+    admin_pass = os.environ.get("OPHELIA_ADMIN_PASSWORD", "Vishalnaik@1994")
     try:
         import bcrypt
-        admin_pwd_hash = bcrypt.hashpw(b"Vishalnaik@1994", bcrypt.gensalt()).decode("utf-8")
+        admin_pwd_hash = bcrypt.hashpw(admin_pass.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     except Exception:
         admin_pwd_hash = "$2b$12$e0c0P9eZ1mO/Esm6N4uP4O47lJ0ZgG1NnIeNZZH0B6hI.W6wI2u5m"
     now_ms = int(time.time() * 1000)
@@ -3510,12 +3663,19 @@ def delete_autonomous_trade_slot(slot_id: int, user_id: int | None = None) -> tu
 
 def reserve_autonomous_trade_slot(slot_id: int, trade_id: str, user_id: int | None = None) -> bool:
     """Atomic conditional reservation of an available slot. Zero race condition / double allocation."""
+    try:
+        from .slot_allocation_service import SlotAllocationService
+        if user_id is not None and user_id > 0:
+            ok, _, _ = SlotAllocationService.reserve_slot(slot_id, str(trade_id), user_id=user_id)
+            return ok
+    except Exception:
+        pass
     c = _connect()
     now_ms = int(time.time() * 1000)
     q = """UPDATE autonomous_trade_slots
-        SET status='RESERVED', current_trade_id=?, updated_at=?
+        SET status='RESERVED', current_trade_id=?, reserved_at=?, updated_at=?
         WHERE id=? AND status='AVAILABLE' AND enabled=1"""
-    args = [trade_id, now_ms, slot_id]
+    args = [str(trade_id), now_ms, now_ms, slot_id]
     if user_id is not None:
         q += " AND user_id=?"
         args.append(user_id)
@@ -3526,12 +3686,19 @@ def reserve_autonomous_trade_slot(slot_id: int, trade_id: str, user_id: int | No
 
 def occupy_autonomous_trade_slot(slot_id: int, position_id: str, user_id: int | None = None) -> bool:
     """Mark slot as OCCUPIED once trade/position is successfully confirmed."""
+    try:
+        from .slot_allocation_service import SlotAllocationService
+        if user_id is not None and user_id > 0:
+            ok, _ = SlotAllocationService.occupy_slot(slot_id, str(position_id), user_id=user_id)
+            return ok
+    except Exception:
+        pass
     c = _connect()
     now_ms = int(time.time() * 1000)
     q = """UPDATE autonomous_trade_slots
-        SET status='OCCUPIED', current_position_id=?, updated_at=?
+        SET status='OCCUPIED', current_position_id=?, last_used_at=?, updated_at=?
         WHERE id=? AND status IN ('RESERVED', 'AVAILABLE')"""
-    args = [str(position_id), now_ms, slot_id]
+    args = [str(position_id), now_ms, now_ms, slot_id]
     if user_id is not None:
         q += " AND user_id=?"
         args.append(user_id)
@@ -3542,11 +3709,17 @@ def occupy_autonomous_trade_slot(slot_id: int, position_id: str, user_id: int | 
 
 def release_autonomous_trade_slot(slot_id: int, user_id: int | None = None) -> bool:
     """Release occupied/reserved slot back to AVAILABLE state after position close or failure."""
+    try:
+        from .slot_allocation_service import SlotAllocationService
+        ok, _ = SlotAllocationService.release_slot(slot_id, user_id=user_id, reason="DIRECT_RELEASE")
+        return ok
+    except Exception:
+        pass
     c = _connect()
     now_ms = int(time.time() * 1000)
     q = """UPDATE autonomous_trade_slots
         SET status='AVAILABLE', current_trade_id=NULL, current_position_id=NULL,
-            last_used_at=?, updated_at=?
+            reservation_id=NULL, released_at=?, updated_at=?
         WHERE id=?"""
     args = [now_ms, now_ms, slot_id]
     if user_id is not None:
@@ -3578,7 +3751,18 @@ def find_eligible_available_slot(
     user_id: int = 0,
     slot_mode: str = "AUTONOMOUS"
 ) -> dict | None:
-    """Find the first matching AVAILABLE and ENABLED autonomous trade slot for the user."""
+    """Find matching AVAILABLE and ENABLED autonomous trade slot via SlotAllocationService."""
+    try:
+        from .slot_allocation_service import SlotAllocationService
+        slot, _ = SlotAllocationService.find_eligible_slot(
+            candidate={"asset_class": asset_class, "strategy": strategy, "symbol": symbol},
+            user_id=user_id
+        )
+        if slot:
+            return slot
+    except Exception:
+        pass
+
     if not is_global_autonomous_enabled():
         return None
     if not user_id or user_id < 1:
@@ -3595,7 +3779,7 @@ def find_eligible_available_slot(
         s_mode = (s.get("slot_mode") or "BOTH").strip().upper()
         if mode_upper != "ANY" and s_mode != "BOTH" and s_mode != mode_upper:
             continue
-        scope = s["asset_scope"]
+        scope = s.get("scope") or s["asset_scope"]
         allowed_classes = [x.strip() for x in (s.get("allowed_asset_classes") or "ALL").split(",") if x.strip()]
         if scope != "ALL" and asset_upper not in scope and asset_upper not in allowed_classes and "ALL" not in allowed_classes:
             continue
@@ -3643,6 +3827,302 @@ def is_global_autonomous_enabled() -> bool:
 
 def set_global_autonomous_enabled(enabled: bool) -> None:
     set_meta("global_autonomous_trading_enabled", "1" if enabled else "0")
+
+
+# ============================================================
+# USER SLOT TEMPLATES & EXECUTION INTENTS HELPERS
+# ============================================================
+def get_user_slot_template(user_id: int, scope: str = "ALL") -> dict | None:
+    """Retrieve authorized user slot template for a given asset scope or ALL."""
+    if not user_id or user_id < 1:
+        return None
+    c = _connect()
+    scope_upper = (scope or "ALL").strip().upper()
+    with _lock:
+        row = c.execute("""
+            SELECT id, user_id, account_id, scope, strategy_scope, margin, leverage,
+                   max_loss_pct, tp1_pct, breakeven, trailing, trailing_pct, max_slots,
+                   max_autonomous_capital, created_at, updated_at
+            FROM user_slot_templates
+            WHERE user_id=? AND (scope=? OR scope='ALL')
+            ORDER BY CASE WHEN scope=? THEN 1 ELSE 2 END ASC
+            LIMIT 1
+        """, (user_id, scope_upper, scope_upper)).fetchone()
+    if not row:
+        return None
+    cols = [
+        "id", "user_id", "account_id", "scope", "strategy_scope", "margin", "leverage",
+        "max_loss_pct", "tp1_pct", "breakeven", "trailing", "trailing_pct", "max_slots",
+        "max_autonomous_capital", "created_at", "updated_at"
+    ]
+    d = dict(zip(cols, row))
+    d["breakeven"] = bool(d["breakeven"])
+    d["trailing"] = bool(d["trailing"])
+    return d
+
+
+def get_user_slot_templates(user_id: int) -> list[dict]:
+    """Retrieve all authorized user slot templates for a user."""
+    if not user_id or user_id < 1:
+        return []
+    c = _connect()
+    with _lock:
+        rows = c.execute("""
+            SELECT id, user_id, account_id, scope, strategy_scope, margin, leverage,
+                   max_loss_pct, tp1_pct, breakeven, trailing, trailing_pct, max_slots,
+                   max_autonomous_capital, created_at, updated_at
+            FROM user_slot_templates
+            WHERE user_id=?
+            ORDER BY id ASC
+        """, (user_id,)).fetchall()
+    cols = [
+        "id", "user_id", "account_id", "scope", "strategy_scope", "margin", "leverage",
+        "max_loss_pct", "tp1_pct", "breakeven", "trailing", "trailing_pct", "max_slots",
+        "max_autonomous_capital", "created_at", "updated_at"
+    ]
+    res = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        d["breakeven"] = bool(d["breakeven"])
+        d["trailing"] = bool(d["trailing"])
+        res.append(d)
+    return res
+
+
+def set_user_slot_template(template_data: dict | None = None, user_id: int | None = None, **kwargs) -> int:
+    """Set or update an authorized user slot template within server safety envelope."""
+    if template_data is None:
+        template_data = kwargs
+    elif kwargs:
+        template_data = dict(template_data, **kwargs)
+    effective_uid = user_id or template_data.get("user_id")
+    if not effective_uid or effective_uid < 1:
+        raise ValueError("Valid user_id required")
+    user_id = int(effective_uid)
+    now_ms = int(time.time() * 1000)
+    c = _connect()
+    scope = (template_data.get("scope") or "CRYPTO").strip().upper()
+    strat_scope = (template_data.get("strategy_scope") or "ALL").strip().upper()
+    margin = float(template_data.get("margin", 50.0))
+    leverage = min(float(template_data.get("leverage", 5.0)), 10.0)
+    max_loss_pct = min(float(template_data.get("max_loss_pct", 2.0)), 10.0)
+    tp1_pct = float(template_data.get("tp1_pct", 50.0))
+    breakeven = 1 if template_data.get("breakeven", True) else 0
+    trailing = 1 if template_data.get("trailing", True) else 0
+    trailing_pct = float(template_data.get("trailing_pct", 1.5))
+    max_slots = min(int(template_data.get("max_slots", 5)), 10)
+    max_capital = min(float(template_data.get("max_autonomous_capital", 500.0)), 2500.0)
+    account_id = int(template_data.get("account_id") or 1)
+
+    with _lock:
+        cur = c.execute("""
+            INSERT INTO user_slot_templates(
+                user_id, account_id, scope, strategy_scope, margin, leverage, max_loss_pct,
+                tp1_pct, breakeven, trailing, trailing_pct, max_slots, max_autonomous_capital,
+                created_at, updated_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, scope) DO UPDATE SET
+                account_id=excluded.account_id,
+                strategy_scope=excluded.strategy_scope,
+                margin=excluded.margin,
+                leverage=excluded.leverage,
+                max_loss_pct=excluded.max_loss_pct,
+                tp1_pct=excluded.tp1_pct,
+                breakeven=excluded.breakeven,
+                trailing=excluded.trailing,
+                trailing_pct=excluded.trailing_pct,
+                max_slots=excluded.max_slots,
+                max_autonomous_capital=excluded.max_autonomous_capital,
+                updated_at=excluded.updated_at
+        """, (user_id, account_id, scope, strat_scope, margin, leverage, max_loss_pct,
+              tp1_pct, breakeven, trailing, trailing_pct, max_slots, max_capital, now_ms, now_ms))
+        c.commit()
+        return cur.lastrowid
+
+
+def create_execution_intent(intent: dict) -> str:
+    """Create a persisted immutable execution intent record."""
+    c = _connect()
+    now_ms = int(time.time() * 1000)
+    intent_id = intent.get("execution_intent_id") or f"intent-{uuid.uuid4().hex[:12]}"
+    idempotency_key = intent.get("idempotency_key") or intent_id
+    with _lock:
+        c.execute("""
+            INSERT INTO execution_intents(
+                execution_intent_id, candidate_id, automation_id, slot_id, user_id,
+                account_id, instrument, direction, requested_margin, leverage,
+                entry_policy, stop_policy, tp_policy, trailing_policy, created_at,
+                updated_at, status, idempotency_key, error_reason, position_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            intent_id,
+            intent.get("candidate_id"),
+            intent.get("automation_id"),
+            intent.get("slot_id"),
+            intent["user_id"],
+            intent.get("account_id", 1),
+            intent["instrument"],
+            intent["direction"],
+            float(intent["requested_margin"]),
+            float(intent["leverage"]),
+            _j.dumps(intent.get("entry_policy") or {}),
+            _j.dumps(intent.get("stop_policy") or {}),
+            _j.dumps(intent.get("tp_policy") or {}),
+            _j.dumps(intent.get("trailing_policy") or {}),
+            now_ms,
+            now_ms,
+            intent.get("status", "CREATED"),
+            idempotency_key,
+            intent.get("error_reason"),
+            intent.get("position_id")
+        ))
+        c.commit()
+    return intent_id
+
+
+def update_execution_intent_status(
+    intent_id: str,
+    status: str,
+    error_reason: str | None = None,
+    position_id: str | None = None
+) -> bool:
+    """Update execution intent state machine status atomically."""
+    c = _connect()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        cur = c.execute("""
+            UPDATE execution_intents
+            SET status=?,
+                error_reason=COALESCE(?, error_reason),
+                position_id=COALESCE(?, position_id),
+                updated_at=?
+            WHERE execution_intent_id=?
+        """, (status, error_reason, position_id, now_ms, intent_id))
+        c.commit()
+        return cur.rowcount > 0
+
+
+def get_execution_intent(intent_id: str) -> dict | None:
+    """Retrieve execution intent by ID."""
+    c = _connect()
+    with _lock:
+        row = c.execute("""
+            SELECT execution_intent_id, candidate_id, automation_id, slot_id, user_id,
+                   account_id, instrument, direction, requested_margin, leverage,
+                   entry_policy, stop_policy, tp_policy, trailing_policy, created_at,
+                   updated_at, status, idempotency_key, error_reason, position_id
+            FROM execution_intents WHERE execution_intent_id=?
+        """, (intent_id,)).fetchone()
+    if not row:
+        return None
+    cols = [
+        "execution_intent_id", "candidate_id", "automation_id", "slot_id", "user_id",
+        "account_id", "instrument", "direction", "requested_margin", "leverage",
+        "entry_policy", "stop_policy", "tp_policy", "trailing_policy", "created_at",
+        "updated_at", "status", "idempotency_key", "error_reason", "position_id"
+    ]
+    d = dict(zip(cols, row))
+    for k in ("entry_policy", "stop_policy", "tp_policy", "trailing_policy"):
+        if d.get(k):
+            try:
+                d[k] = _j.loads(d[k])
+            except Exception:
+                pass
+    return d
+
+
+def get_execution_intent_by_automation(automation_id: int) -> dict | None:
+    """Retrieve most recent execution intent for an automation ID."""
+    c = _connect()
+    with _lock:
+        row = c.execute("""
+            SELECT execution_intent_id, candidate_id, automation_id, slot_id, user_id,
+                   account_id, instrument, direction, requested_margin, leverage,
+                   entry_policy, stop_policy, tp_policy, trailing_policy, created_at,
+                   updated_at, status, idempotency_key, error_reason, position_id
+            FROM execution_intents WHERE automation_id=?
+            ORDER BY created_at DESC LIMIT 1
+        """, (automation_id,)).fetchone()
+    if not row:
+        return None
+    cols = [
+        "execution_intent_id", "candidate_id", "automation_id", "slot_id", "user_id",
+        "account_id", "instrument", "direction", "requested_margin", "leverage",
+        "entry_policy", "stop_policy", "tp_policy", "trailing_policy", "created_at",
+        "updated_at", "status", "idempotency_key", "error_reason", "position_id"
+    ]
+    d = dict(zip(cols, row))
+    for k in ("entry_policy", "stop_policy", "tp_policy", "trailing_policy"):
+        if d.get(k):
+            try:
+                d[k] = _j.loads(d[k])
+            except Exception:
+                pass
+    return d
+
+
+def list_execution_intents(user_id: int | None = None, limit: int = 50) -> list[dict]:
+    """List execution intents optionally filtered by user_id."""
+    c = _connect()
+    q = """
+        SELECT execution_intent_id, candidate_id, automation_id, slot_id, user_id,
+               account_id, instrument, direction, requested_margin, leverage,
+               entry_policy, stop_policy, tp_policy, trailing_policy, created_at,
+               updated_at, status, idempotency_key, error_reason, position_id
+        FROM execution_intents
+    """
+    args = []
+    if user_id is not None:
+        q += " WHERE user_id=?"
+        args.append(user_id)
+    q += " ORDER BY created_at DESC LIMIT ?"
+    args.append(limit)
+    with _lock:
+        rows = c.execute(q, args).fetchall()
+    cols = [
+        "execution_intent_id", "candidate_id", "automation_id", "slot_id", "user_id",
+        "account_id", "instrument", "direction", "requested_margin", "leverage",
+        "entry_policy", "stop_policy", "tp_policy", "trailing_policy", "created_at",
+        "updated_at", "status", "idempotency_key", "error_reason", "position_id"
+    ]
+    res = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        for k in ("entry_policy", "stop_policy", "tp_policy", "trailing_policy"):
+            if d.get(k):
+                try:
+                    d[k] = _j.loads(d[k])
+                except Exception:
+                    pass
+        res.append(d)
+    return res
+
+
+def get_setup_candidate_by_automation(automation_id: int) -> dict | None:
+    """Retrieve setup candidate linked to an automation."""
+    c = _connect()
+    with _lock:
+        row = c.execute("""
+            SELECT setup_id, symbol, direction, timeframe, strategy, current_state,
+                   reason, vwap, breakout_price, retest_state, suggested_sl,
+                   suggested_tp1, suggested_tp2, risk_reward, confidence_pct,
+                   thesis, generated_ms, expires_ms, status, waiting_for,
+                   next_required_event, priority, user_id, account_id, automation_id
+            FROM setup_candidates
+            WHERE automation_id=?
+            ORDER BY generated_ms DESC LIMIT 1
+        """, (automation_id,)).fetchone()
+    if not row:
+        return None
+    cols = [
+        "setup_id", "symbol", "direction", "timeframe", "strategy", "current_state",
+        "reason", "vwap", "breakout_price", "retest_state", "suggested_sl",
+        "suggested_tp1", "suggested_tp2", "risk_reward", "confidence_pct",
+        "thesis", "generated_ms", "expires_ms", "status", "waiting_for",
+        "next_required_event", "priority", "user_id", "account_id", "automation_id"
+    ]
+    return dict(zip(cols, row))
+
 
 
 # ============================================================

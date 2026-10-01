@@ -45,10 +45,10 @@ def run_migration(db_path: str):
         print(f"Purged {orphan_notifs} orphan notifications without user owner.")
 
     # 4. Release stuck autonomous_trade_slots (e.g. RESERVED without open position)
-    cur.execute("SELECT id, name, status, reserved_by_trade_id FROM autonomous_trade_slots WHERE status='RESERVED'")
+    cur.execute("SELECT id, name, status, current_trade_id FROM autonomous_trade_slots WHERE status='RESERVED'")
     reserved_slots = cur.fetchall()
     for s_id, s_name, s_status, s_trade_id in reserved_slots:
-        print(f"Checking reserved slot #{s_id} ({s_name}), reserved_by_trade_id={s_trade_id}")
+        print(f"Checking reserved slot #{s_id} ({s_name}), current_trade_id={s_trade_id}")
         # Verify if an actual open position exists for this trade/slot
         cur.execute(
             "SELECT count(*) FROM positions WHERE status IN ('OPEN','PARTIAL','TRAILING') AND (detail_json LIKE ? OR client_order_id = ?)",
@@ -58,7 +58,7 @@ def run_migration(db_path: str):
         if not has_pos:
             print(f"Slot #{s_id} is stuck RESERVED without open position. Releasing to AVAILABLE.")
             cur.execute(
-                "UPDATE autonomous_trade_slots SET status='AVAILABLE', reserved_by_trade_id=NULL, current_position_id=NULL WHERE id=?",
+                "UPDATE autonomous_trade_slots SET status='AVAILABLE', current_trade_id=NULL, current_position_id=NULL WHERE id=?",
                 (s_id,)
             )
 
