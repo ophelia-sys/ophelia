@@ -1641,6 +1641,11 @@ data class AutomationPipelineDiagnosticsResponse(
     val pipeline: List<AutomationPipelineItemDto> = emptyList()
 )
 
+data class RecoverStaleReservationsResponse(
+    val success: Boolean = true,
+    @SerializedName("recovered_count") val recoveredCount: Int = 0
+)
+
 data class AutonomousSlotsSummaryResponse(
     @SerializedName("global_enabled") val globalEnabled: Boolean,
     @SerializedName("total_slots") val totalSlots: Int,

@@ -381,7 +381,7 @@ interface OpheliaApiService {
     suspend fun getAutomationPipelineDiagnostics(): AutomationPipelineDiagnosticsResponse
 
     @POST("/api/admin/slots/recover-stale")
-    suspend fun recoverStaleReservations(): GenericSuccessResponse
+    suspend fun recoverStaleReservations(): RecoverStaleReservationsResponse
 
     // --- US Market Subsystem ---
     @GET("/api/us/overview")
