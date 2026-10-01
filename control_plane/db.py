@@ -532,7 +532,7 @@ def _auto_conn() -> sqlite3.Connection:
     return c
 
 
-def create_automation(spec: dict, user_id: int, account_id: int = 1) -> int:
+def create_automation(spec: dict, user_id: int, account_id: int | None = None) -> int:
     c = _auto_conn()
     canonical_dir = (
         spec.get("direction")
@@ -543,12 +543,13 @@ def create_automation(spec: dict, user_id: int, account_id: int = 1) -> int:
     effective_uid = spec.get("user_id") or user_id
     if not effective_uid or effective_uid <= 0:
         raise ValueError("Valid user_id required to create automation")
+    effective_acc_id = spec.get("account_id") or account_id
     with _lock:
         cur = c.execute(
             "INSERT INTO automations(user_id,account_id,created_ms,status,strategy,symbol,timeframe,"
             "direction_pref,direction,margin_usage_pct,leverage,margin_usdt,mode,params_json,note)"
             " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (effective_uid, account_id, int(time.time() * 1000), spec.get("status", "ACTIVE"),
+            (effective_uid, effective_acc_id, int(time.time() * 1000), spec.get("status", "ACTIVE"),
              spec["strategy"], spec["symbol"], spec.get("timeframe") or spec.get("timeframe_min"),
              canonical_dir, canonical_dir, spec.get("margin_usage_pct"),
              spec.get("leverage"), spec.get("margin_usdt"), spec.get("mode", "SHADOW"),
@@ -760,17 +761,18 @@ def set_user_automation_allocation(user_id: int, automation_id: int, allocated_a
 
 
 
-def record_shadow_trade(row: dict, user_id: int | None = None, account_id: int = 1) -> int:
+def record_shadow_trade(row: dict, user_id: int | None = None, account_id: int | None = None) -> int:
     effective_uid = row.get("user_id") or user_id
     if not effective_uid or effective_uid <= 0:
         raise ValueError("Valid user_id required to record shadow trade")
+    effective_acc_id = row.get("account_id") or account_id
     c = _auto_conn()
     with _lock:
         cur = c.execute(
             "INSERT INTO shadow_trades(user_id,account_id,automation_id,ts_open_ms,direction,entry,stop,"
             "target,qty,status,ts_close_ms,exit_price,pnl_usdt,detail_json)"
             " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (effective_uid, account_id, row.get("automation_id"), row["ts_open_ms"], row["direction"],
+            (effective_uid, effective_acc_id, row.get("automation_id"), row["ts_open_ms"], row["direction"],
              row["entry"], row["stop"], row["target"], row.get("qty"),
              row["status"], row.get("ts_close_ms"), row.get("exit_price"),
              row.get("pnl_usdt"), json_dumps(row.get("detail", {}))))
@@ -1011,7 +1013,7 @@ def get_mode() -> str:
     return mode
 
 
-def get_exchange_account(account_id: int = 1) -> dict | None:
+def get_exchange_account(account_id: int) -> dict | None:
     c = _auto_conn()
     with _lock:
         try:
@@ -1132,10 +1134,11 @@ def _parse_position_row(r: tuple, keys: tuple = _POSITION_COLUMNS) -> dict:
     return d
 
 
-def create_position(row: dict, user_id: int | None = None, account_id: int = 1) -> int:
+def create_position(row: dict, user_id: int | None = None, account_id: int | None = None) -> int:
     effective_uid = row.get("user_id") or user_id
     if not effective_uid or effective_uid <= 0:
         raise ValueError("Valid user_id required to create position")
+    effective_acc_id = row.get("account_id") or account_id
     c = _wl_conn()
     now_ms = int(time.time() * 1000)
     with _lock:
@@ -1182,7 +1185,7 @@ def create_position(row: dict, user_id: int | None = None, account_id: int = 1) 
                 reconciliation_status, lifecycle_history_json, last_management_event, last_exchange_response
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                effective_uid, account_id, now_ms, row["symbol"], row["direction"],
+                effective_uid, effective_acc_id, now_ms, row["symbol"], row["direction"],
                 entry_val, qty_val, row.get("leverage"), row.get("margin_usdt"),
                 stops_val, targets_val,
                 row.get("trailing_pct"), row.get("trailing_ref"), stop_current_val,
@@ -1380,9 +1383,9 @@ def update_position(pid: int | str, **fields) -> None:
             row = c.execute(f"SELECT detail_json, user_id FROM positions {where}", (target,)).fetchone()
             if row and row[0]:
                 d = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                uid = row[1] or 1
-                if isinstance(d, dict) and d.get("slot_id"):
-                    SlotAllocationService.release_slot(int(d["slot_id"]), user_id=uid, reason="POSITION_CLOSED")
+                uid = row[1]
+                if uid and int(uid) > 0 and isinstance(d, dict) and d.get("slot_id"):
+                    SlotAllocationService.release_slot(int(d["slot_id"]), user_id=int(uid), reason="POSITION_CLOSED")
         except Exception:
             pass
 
@@ -3231,7 +3234,7 @@ def _init_us_market_and_slot_tables(conn: sqlite3.Connection) -> None:
         created_at INTEGER,
         updated_at INTEGER,
         last_used_at INTEGER,
-        user_id INTEGER DEFAULT 1,
+        user_id INTEGER DEFAULT NULL,
         max_loss_usdt REAL DEFAULT 0.0,
         max_loss_pct REAL DEFAULT 10.0,
         trailing_enabled INTEGER DEFAULT 1,
@@ -3247,7 +3250,7 @@ def _init_us_market_and_slot_tables(conn: sqlite3.Connection) -> None:
     try:
         existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(autonomous_trade_slots)").fetchall()}
         new_cols = [
-            ("user_id", "INTEGER DEFAULT 1"),
+            ("user_id", "INTEGER DEFAULT NULL"),
             ("max_loss_usdt", "REAL DEFAULT 0.0"),
             ("max_loss_pct", "REAL DEFAULT 10.0"),
             ("trailing_enabled", "INTEGER DEFAULT 1"),
@@ -3257,7 +3260,7 @@ def _init_us_market_and_slot_tables(conn: sqlite3.Connection) -> None:
             ("breakeven_enabled", "INTEGER DEFAULT 1"),
             ("breakeven_mode", "TEXT DEFAULT 'AFTER_TP1'"),
             ("slot_mode", "TEXT DEFAULT 'BOTH'"),
-            ("account_id", "INTEGER DEFAULT 1"),
+            ("account_id", "INTEGER DEFAULT NULL"),
             ("scope", "TEXT DEFAULT 'ALL'"),
             ("strategy_scope", "TEXT DEFAULT 'ALL_STRATEGIES'"),
             ("mode", "TEXT DEFAULT 'BOTH'"),
@@ -3281,7 +3284,7 @@ def _init_us_market_and_slot_tables(conn: sqlite3.Connection) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS user_slot_templates(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
-        account_id INTEGER DEFAULT 1,
+        account_id INTEGER DEFAULT NULL,
         scope TEXT NOT NULL DEFAULT 'CRYPTO',
         strategy_scope TEXT NOT NULL DEFAULT 'ALL',
         margin REAL NOT NULL DEFAULT 50.0,
@@ -3539,8 +3542,8 @@ def _row_to_slot(r: tuple) -> dict:
     d["trailing_enabled"] = bool(d.get("trailing_enabled", 1))
     d["tp1_enabled"] = bool(d.get("tp1_enabled", 1))
     d["breakeven_enabled"] = bool(d.get("breakeven_enabled", 1))
-    d["user_id"] = int(d.get("user_id") or 1)
-    d["account_id"] = int(d.get("account_id") or 1)
+    d["user_id"] = int(d["user_id"]) if d.get("user_id") is not None else None
+    d["account_id"] = int(d["account_id"]) if d.get("account_id") is not None else None
     d["max_loss_usdt"] = float(d.get("max_loss_usdt") or 0.0)
     d["max_loss_pct"] = float(d.get("max_loss_pct") or 10.0)
     d["maximum_loss_percent"] = float(d.get("maximum_loss_percent") or d.get("max_loss_pct") or 10.0)
@@ -4093,7 +4096,7 @@ def set_user_slot_template(template_data: dict | None = None, user_id: int | Non
     trailing_pct = float(template_data.get("trailing_pct", 1.5))
     max_slots = min(int(template_data.get("max_slots", 5)), 10)
     max_capital = min(float(template_data.get("max_autonomous_capital", 500.0)), 2500.0)
-    account_id = int(template_data.get("account_id") or 1)
+    account_id = int(template_data["account_id"]) if template_data.get("account_id") is not None else None
 
     with _lock:
         cur = c.execute("""

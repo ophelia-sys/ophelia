@@ -2300,7 +2300,10 @@ def evaluate_open_positions_with_execution() -> list[dict]:
         if not p:
             continue
             
-        uid = p.get("user_id") or 1
+        uid = p.get("user_id")
+        if not uid or int(uid) <= 0:
+            continue
+        uid = int(uid)
         
         # Notifications dispatch
         if action == "exit_all":

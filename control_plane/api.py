@@ -3164,9 +3164,23 @@ def get_admin_automation_pipeline_diagnostics():
 
     for a in autos:
         aid = a["id"]
-        uid = a.get("user_id") or 1
-        acc_id = a.get("account_id") or 1
+        uid = a.get("user_id")
+        acc_id = a.get("account_id")
         sym = a.get("symbol")
+
+        if not uid or int(uid) <= 0:
+            pipeline.append({
+                "automation_id": aid,
+                "user_id": None,
+                "account_id": acc_id,
+                "symbol": sym,
+                "status": "INVALID_OWNERSHIP",
+                "error": "MISSING_USER_ID"
+            })
+            continue
+
+        uid = int(uid)
+        acc_id = int(acc_id) if acc_id is not None else None
 
         cand = db.get_setup_candidate_by_automation(aid)
         intent = db.get_execution_intent_by_automation(aid)
@@ -3174,7 +3188,7 @@ def get_admin_automation_pipeline_diagnostics():
         slot = None
         if intent and intent.get("slot_id"):
             slot = db.get_autonomous_trade_slot(intent["slot_id"], user_id=uid)
-        elif cand:
+        elif cand and acc_id is not None:
             from .slot_allocation_service import SlotAllocationService
             cand_spec = {
                 "candidate_id": cand.get("setup_id"),

@@ -17,9 +17,107 @@ Invariants:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, asdict
 import math
 import time
 from typing import Any, Dict, Optional
+
+
+@dataclass(frozen=True)
+class FeeModel:
+    """Authoritative fee configuration governance model.
+    
+    Decouples fee accounting from hidden constants, enabling explicit
+    auditability across SHADOW, PAPER, and LIVE execution scopes.
+    """
+    fee_source: str             # e.g. "SHADOW_CONFIG", "BINGX_STANDARD", "BINGX_VIP", "ACCOUNT_OVERRIDE"
+    fee_type: str               # "PERCENTAGE", "FIXED", "TIERED"
+    maker_fee: float            # e.g. 0.0002 (0.02%)
+    taker_fee: float            # e.g. 0.0005 (0.05%)
+    effective_at: int = 0       # timestamp_ms
+    instrument_scope: str = "ALL"  # "ALL", "CRYPTO", or specific symbol "BTC-USDT"
+    account_scope: str = "ALL"     # "ALL" or specific account_id
+    mode: str = "SHADOW"           # "SHADOW", "PAPER", "LIVE"
+
+    def get_taker_fee_rate(self) -> float:
+        return self.taker_fee
+
+    def get_maker_fee_rate(self) -> float:
+        return self.maker_fee
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+SHADOW_FEE_MODEL = FeeModel(
+    fee_source="SHADOW_CONFIG",
+    fee_type="PERCENTAGE",
+    maker_fee=0.0002,
+    taker_fee=0.0005,
+    effective_at=0,
+    instrument_scope="ALL",
+    account_scope="ALL",
+    mode="SHADOW"
+)
+
+PAPER_FEE_MODEL = FeeModel(
+    fee_source="PAPER_SIMULATED",
+    fee_type="PERCENTAGE",
+    maker_fee=0.0002,
+    taker_fee=0.0005,
+    effective_at=0,
+    instrument_scope="ALL",
+    account_scope="ALL",
+    mode="PAPER"
+)
+
+LIVE_STANDARD_FEE_MODEL = FeeModel(
+    fee_source="BINGX_STANDARD",
+    fee_type="PERCENTAGE",
+    maker_fee=0.0002,
+    taker_fee=0.0005,
+    effective_at=0,
+    instrument_scope="ALL",
+    account_scope="ALL",
+    mode="LIVE"
+)
+
+_active_fee_models: Dict[str, FeeModel] = {
+    "SHADOW": SHADOW_FEE_MODEL,
+    "PAPER": PAPER_FEE_MODEL,
+    "LIVE": LIVE_STANDARD_FEE_MODEL
+}
+
+
+def register_fee_model(model: FeeModel) -> None:
+    """Register or override a fee model for a specific mode or instrument scope."""
+    key = f"{model.mode.upper()}:{model.instrument_scope.upper()}:{str(model.account_scope).upper()}"
+    _active_fee_models[key] = model
+    _active_fee_models[model.mode.upper()] = model
+
+
+def resolve_fee_model(mode: str = "SHADOW", symbol: str = "ALL", account_id: Any = "ALL") -> FeeModel:
+    """Resolve the authoritative configured fee model for the given mode, symbol, and account."""
+    m = (mode or "SHADOW").upper()
+    sym = (symbol or "ALL").upper()
+    acc = str(account_id or "ALL").upper()
+
+    k1 = f"{m}:{sym}:{acc}"
+    if k1 in _active_fee_models:
+        return _active_fee_models[k1]
+
+    k2 = f"{m}:{sym}:ALL"
+    if k2 in _active_fee_models:
+        return _active_fee_models[k2]
+
+    k3 = f"{m}:ALL:ALL"
+    if k3 in _active_fee_models:
+        return _active_fee_models[k3]
+
+    if m in _active_fee_models:
+        return _active_fee_models[m]
+
+    return SHADOW_FEE_MODEL
 
 
 DEFAULT_TAKER_FEE_RATE = 0.0005  # 0.05% BingX standard futures taker fee
@@ -55,11 +153,22 @@ def get_instrument_precision(symbol: str) -> Dict[str, float]:
         return {"tick_size": 0.01, "qty_precision": 2, "price_precision": 2}
 
 
-def calculate_actual_fee(price: float, qty: float, fee_rate: float = DEFAULT_TAKER_FEE_RATE) -> float:
-    """Calculate actual transaction fee for a fill."""
+def calculate_actual_fee(
+    price: float,
+    qty: float,
+    fee_rate: Optional[float] = None,
+    fee_model: Optional[FeeModel] = None
+) -> float:
+    """Calculate actual transaction fee for a fill using explicit FeeModel or rate."""
     if price <= 0 or qty <= 0:
         return 0.0
-    return round(price * qty * fee_rate, 6)
+    if fee_rate is not None:
+        rate = fee_rate
+    elif fee_model is not None:
+        rate = fee_model.get_taker_fee_rate()
+    else:
+        rate = resolve_fee_model().get_taker_fee_rate()
+    return round(price * qty * rate, 8)
 
 
 def calculate_realized_pnl(
@@ -99,7 +208,8 @@ def calculate_net_breakeven_stop(
     tp1_realized_pnl: float,
     tp1_fee: float,
     funding_accrued: float = 0.0,
-    fee_rate: float = DEFAULT_TAKER_FEE_RATE,
+    fee_rate: Optional[float] = None,
+    fee_model: Optional[FeeModel] = None,
     tick_size: float = 0.01,
     previous_stop: Optional[float] = None
 ) -> Dict[str, Any]:
@@ -121,6 +231,17 @@ def calculate_net_breakeven_stop(
     is_long = direction.upper() == "LONG"
     now_ms = int(time.time() * 1000)
 
+    # Resolve effective fee model and rate
+    if fee_model is not None:
+        effective_fee_model = fee_model
+        effective_rate = fee_model.get_taker_fee_rate() if fee_rate is None else fee_rate
+    elif fee_rate is not None:
+        effective_fee_model = resolve_fee_model()
+        effective_rate = fee_rate
+    else:
+        effective_fee_model = resolve_fee_model()
+        effective_rate = effective_fee_model.get_taker_fee_rate()
+
     if remaining_qty <= 0 or entry_price <= 0:
         return {
             "breakeven_stop": previous_stop or entry_price,
@@ -131,15 +252,15 @@ def calculate_net_breakeven_stop(
 
     # 1. Cost basis of remaining position covering its roundtrip entry & exit fees
     if is_long:
-        cost_basis = entry_price * ((1.0 + fee_rate) / (1.0 - fee_rate))
+        cost_basis = entry_price * ((1.0 + effective_rate) / (1.0 - effective_rate))
     else:
-        cost_basis = entry_price * ((1.0 - fee_rate) / (1.0 + fee_rate))
+        cost_basis = entry_price * ((1.0 - effective_rate) / (1.0 + effective_rate))
 
     # 2. Total trade breakeven price (accounting for TP1 profit and all fees)
     prior_net_cash = tp1_realized_pnl - (entry_fee + tp1_fee + funding_accrued)
     if is_long:
-        # (P_be - P_entry) * remaining_qty - P_be * remaining_qty * fee_rate + prior_net_cash >= 0
-        denom = remaining_qty * (1.0 - fee_rate)
+        # (P_be - P_entry) * remaining_qty - P_be * remaining_qty * effective_rate + prior_net_cash >= 0
+        denom = remaining_qty * (1.0 - effective_rate)
         if denom > 0:
             total_be_price = (entry_price * remaining_qty - prior_net_cash) / denom
         else:
@@ -156,8 +277,8 @@ def calculate_net_breakeven_stop(
         else:
             final_stop = candidate_stop
     else:
-        # (P_entry - P_be) * remaining_qty - P_be * remaining_qty * fee_rate + prior_net_cash >= 0
-        denom = remaining_qty * (1.0 + fee_rate)
+        # (P_entry - P_be) * remaining_qty - P_be * remaining_qty * effective_rate + prior_net_cash >= 0
+        denom = remaining_qty * (1.0 + effective_rate)
         if denom > 0:
             total_be_price = (entry_price * remaining_qty + prior_net_cash) / denom
         else:
@@ -183,7 +304,9 @@ def calculate_net_breakeven_stop(
         "tp1_realized_pnl": tp1_realized_pnl,
         "tp1_fee": tp1_fee,
         "funding_accrued": funding_accrued,
-        "fee_rate": fee_rate,
+        "fee_rate": effective_rate,
+        "fee_model": effective_fee_model.to_dict() if effective_fee_model else None,
+        "fee_source": effective_fee_model.fee_source if effective_fee_model else "CUSTOM",
         "tick_size": tick_size,
         "previous_stop": previous_stop,
         "cost_basis_raw": round(cost_basis, 6),

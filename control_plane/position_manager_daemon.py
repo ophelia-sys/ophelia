@@ -47,12 +47,19 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
     """Authoritative deterministic evaluation of a single position against market tick."""
     actions: list[dict] = []
     pid = p["id"]
-    user_id = p.get("user_id") or 1
+    user_id = p.get("user_id")
+    if not user_id or int(user_id) <= 0:
+        logger.error(f"[POS_EVAL] Missing or invalid user_id for position {pid}. Failing closed.")
+        db.update_position(pid, reconciliation_status="REQUIRES_RECONCILIATION", last_management_event="INVALID_OWNERSHIP_FAIL_CLOSED")
+        db.record_position_lifecycle_transition(pid, "ERROR", "INVALID_OWNERSHIP_FAIL_CLOSED", {"reason": "missing_or_invalid_user_id"})
+        return []
+    user_id = int(user_id)
     sym = p.get("symbol", "")
     direction = (p.get("direction") or "LONG").upper()
     is_long = direction == "LONG"
     mode = p.get("mode", "SHADOW")
     now_ms = int(time.time() * 1000)
+    fee_model = position_math.resolve_fee_model(mode=mode, symbol=sym, account_id=p.get("account_id"))
 
     entry = float(p.get("actual_entry_price") or p.get("entry") or 0.0)
     qty = float(p.get("qty") or 0.0)
@@ -98,7 +105,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
 
     if max_loss_usdt > 0.0 and total_est_pnl <= -max_loss_usdt:
         db.record_position_lifecycle_transition(pid, "EXITING", "MAX_LOSS_EXCEEDED", {"loss": total_est_pnl, "limit": max_loss_usdt})
-        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty)
+        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty, fee_model=fee_model)
         final_leg_pnl = position_math.calculate_realized_pnl(entry, current_price, remaining_qty, direction, fee=exit_fee)
         total_realized_pnl = round(prior_realized + final_leg_pnl, 4)
         total_fees = float(p.get("total_fees") or 0.0) + exit_fee
@@ -131,7 +138,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
     sl_hit = (is_long and current_price <= stop_current) or (not is_long and current_price >= stop_current)
     if stop_current > 0 and sl_hit:
         db.record_position_lifecycle_transition(pid, "EXITING", "STOP_LOSS_HIT", {"stop": stop_current, "hit_price": current_price})
-        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty)
+        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty, fee_model=fee_model)
         final_leg_pnl = position_math.calculate_realized_pnl(entry, current_price, remaining_qty, direction, fee=exit_fee)
         total_realized_pnl = round(prior_realized + final_leg_pnl, 4)
         total_fees = float(p.get("total_fees") or 0.0) + exit_fee
@@ -210,7 +217,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
                 return actions
 
         # Fill accounting
-        tp1_fee = position_math.calculate_actual_fee(tp1_fill_price, close_qty)
+        tp1_fee = position_math.calculate_actual_fee(tp1_fill_price, close_qty, fee_model=fee_model)
         tp1_realized_pnl = position_math.calculate_realized_pnl(entry, tp1_fill_price, close_qty, direction, fee=tp1_fee)
         new_total_fees = round(float(p.get("total_fees") or 0.0) + tp1_fee, 6)
         new_total_realized_pnl = round(prior_realized + tp1_realized_pnl, 4)
@@ -222,7 +229,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
 
         # Calculate Mathematically Correct Net Breakeven Stop
         initial_qty = float(p.get("qty") or remaining_qty)
-        entry_fee = float(p.get("entry_fee") or position_math.calculate_actual_fee(entry, initial_qty))
+        entry_fee = float(p.get("entry_fee") or position_math.calculate_actual_fee(entry, initial_qty, fee_model=fee_model))
         funding_accrued = float(p.get("funding_accrued") or 0.0)
 
         be_calc = position_math.calculate_net_breakeven_stop(
@@ -234,6 +241,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
             tp1_realized_pnl=tp1_realized_pnl,
             tp1_fee=tp1_fee,
             funding_accrued=funding_accrued,
+            fee_model=fee_model,
             tick_size=tick_size,
             previous_stop=stop_current
         )
@@ -300,7 +308,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
     tp2_reached = (is_long and current_price >= tp2_price) or (not is_long and current_price <= tp2_price)
     if tp2_price > 0 and tp2_reached and tp1_already_done:
         db.record_position_lifecycle_transition(pid, "EXITING", "TP2_FINAL_TARGET_HIT", {"tp2_price": tp2_price, "current_price": current_price})
-        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty)
+        exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty, fee_model=fee_model)
         final_leg_pnl = position_math.calculate_realized_pnl(entry, current_price, remaining_qty, direction, fee=exit_fee)
         total_realized_pnl = round(prior_realized + final_leg_pnl, 4)
         total_fees = float(p.get("total_fees") or 0.0) + exit_fee
@@ -399,7 +407,7 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
 
         if trailing_hit and (tp1_already_done or lifecycle_state in ("BREAKEVEN", "TRAILING")):
             db.record_position_lifecycle_transition(pid, "EXITING", "TRAILING_STOP_BREACHED", {"trailing_stop": active_stop, "current_price": current_price})
-            exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty)
+            exit_fee = position_math.calculate_actual_fee(current_price, remaining_qty, fee_model=fee_model)
             final_leg_pnl = position_math.calculate_realized_pnl(entry, current_price, remaining_qty, direction, fee=exit_fee)
             total_realized_pnl = round(prior_realized + final_leg_pnl, 4)
             total_fees = float(p.get("total_fees") or 0.0) + exit_fee
@@ -440,20 +448,88 @@ def evaluate_single_position(p: dict, current_price: float) -> list[dict]:
     return actions
 
 
-def reconcile_all_positions_with_exchange(client: Any = None) -> Dict[str, Any]:
+def reconcile_all_positions_with_exchange(client: Any = None, user_id: Optional[int] = None) -> Dict[str, Any]:
     """Authoritative reconciliation loop repairing inconsistent local vs exchange position states."""
     reconciled_events: List[Dict[str, Any]] = []
     repaired: List[Dict[str, Any]] = []
-    open_pos = db.open_positions()
+    open_pos = db.open_positions(user_id=user_id)
 
     for p in open_pos:
         pid = p["id"]
-        uid = p.get("user_id") or 1
+        uid = p.get("user_id")
         sym = p.get("symbol", "")
         mode = p.get("mode", "SHADOW")
         slot_id = (p.get("detail") or {}).get("slot_id")
 
+        # Invariant 1: Missing or invalid user_id -> Fail closed immediately!
+        if not uid or int(uid) <= 0:
+            logger.error(f"[RECON] Missing/invalid user_id for position #{pid}. Failing closed.")
+            db.update_position(
+                pid,
+                reconciliation_status="REQUIRES_RECONCILIATION",
+                last_management_event="INVALID_OWNERSHIP_FAIL_CLOSED"
+            )
+            db.record_position_lifecycle_transition(
+                pid, "ERROR", "INVALID_OWNERSHIP_FAIL_CLOSED",
+                {"reason": "missing_or_invalid_user_id"}
+            )
+            reconciled_events.append({
+                "position_id": pid,
+                "state": "REQUIRES_RECONCILIATION",
+                "error": "MISSING_USER_ID"
+            })
+            continue
+
+        uid = int(uid)
+
+        # Invariant 2: If scoped to a specific user, never process another user's position
+        if user_id is not None and uid != user_id:
+            continue
+
+        # Invariant 3: If slot_id is attached, verify slot ownership
+        if slot_id:
+            slot = db.get_autonomous_trade_slot(int(slot_id), user_id=uid)
+            if not slot:
+                unscoped_slot = db.get_autonomous_trade_slot(int(slot_id))
+                if unscoped_slot and unscoped_slot.get("user_id") != uid:
+                    logger.error(f"[RECON] Cross-user ownership mismatch: pos #{pid} (user {uid}) references slot #{slot_id} (user {unscoped_slot.get('user_id')}).")
+                    db.update_position(
+                        pid,
+                        reconciliation_status="REQUIRES_RECONCILIATION",
+                        last_management_event="CROSS_USER_OWNERSHIP_MISMATCH"
+                    )
+                    db.record_position_lifecycle_transition(
+                        pid, "ERROR", "CROSS_USER_OWNERSHIP_MISMATCH",
+                        {"slot_id": slot_id, "pos_user_id": uid, "slot_user_id": unscoped_slot.get("user_id")}
+                    )
+                    reconciled_events.append({
+                        "position_id": pid,
+                        "state": "REQUIRES_RECONCILIATION",
+                        "error": "CROSS_USER_OWNERSHIP_MISMATCH"
+                    })
+                    continue
+
         if mode == "LIVE" or client is not None:
+            acc_id = p.get("account_id")
+            # Invariant 4: Missing account_id in LIVE mode -> no exchange call!
+            if not acc_id and client is None:
+                logger.error(f"[RECON] Missing account_id for LIVE position #{pid} (user {uid}). Refusing exchange call.")
+                db.update_position(
+                    pid,
+                    reconciliation_status="REQUIRES_RECONCILIATION",
+                    last_management_event="MISSING_ACCOUNT_ID"
+                )
+                db.record_position_lifecycle_transition(
+                    pid, "ERROR", "MISSING_ACCOUNT_ID",
+                    {"reason": "missing_account_id"}
+                )
+                reconciled_events.append({
+                    "position_id": pid,
+                    "state": "REQUIRES_RECONCILIATION",
+                    "error": "MISSING_ACCOUNT_ID"
+                })
+                continue
+
             try:
                 cli = client if client is not None else _get_live_client(uid)
                 if hasattr(cli, "positions"):
@@ -496,10 +572,21 @@ def reconcile_all_positions_with_exchange(client: Any = None) -> Dict[str, Any]:
             reconciled_events.append({"position_id": pid, "state": "LOCAL_OPEN_SHADOW_SYNCED"})
 
     try:
-        all_slots = db.get_autonomous_trade_slots()
+        all_slots = db.get_autonomous_trade_slots(user_id=user_id)
         for s in all_slots:
             sid = s["id"]
-            s_uid = s.get("user_id") or 1
+            s_uid = s.get("user_id")
+
+            # Invariant 5: Missing slot user_id -> Fail closed, do NOT mutate!
+            if not s_uid or int(s_uid) <= 0:
+                logger.error(f"[RECON] Missing user_id on slot #{sid}. Refusing mutation.")
+                repaired.append({"slot_id": sid, "state": "REQUIRES_RECONCILIATION", "error": "MISSING_USER_ID"})
+                continue
+
+            s_uid = int(s_uid)
+            if user_id is not None and s_uid != user_id:
+                continue
+
             s_status = s.get("status")
 
             if s_status == "OCCUPIED":
@@ -509,17 +596,29 @@ def reconcile_all_positions_with_exchange(client: Any = None) -> Dict[str, Any]:
                     repaired.append({"slot_id": sid, "state": "LOCAL_OCCUPIED_NO_POSITION"})
                 else:
                     pos_obj = db.get_position(c_pos_id, user_id=s_uid)
-                    if not pos_obj or pos_obj.get("status") in ("CLOSED", "STOPPED", "TRAILING_STOPPED", "DESYNC_CLOSED") or pos_obj.get("lifecycle_state") == "CLOSED":
+                    if not pos_obj:
+                        unscoped_pos = db.get_position(c_pos_id)
+                        if unscoped_pos and unscoped_pos.get("user_id") != s_uid:
+                            # Invariant 6: Slot occupied by another user's position -> Cross-user mismatch!
+                            logger.error(f"[RECON] Cross-user slot #{sid} (user {s_uid}) occupied by position #{c_pos_id} (user {unscoped_pos.get('user_id')}).")
+                            repaired.append({"slot_id": sid, "state": "REQUIRES_RECONCILIATION", "error": "CROSS_USER_OWNERSHIP_MISMATCH"})
+                            continue
+                        SlotAllocationService.release_slot(sid, user_id=s_uid, reason="POSITION_NOT_FOUND")
+                        repaired.append({"slot_id": sid, "state": "LOCAL_OCCUPIED_NO_POSITION"})
+                    elif pos_obj.get("status") in ("CLOSED", "STOPPED", "TRAILING_STOPPED", "DESYNC_CLOSED") or pos_obj.get("lifecycle_state") == "CLOSED":
                         SlotAllocationService.release_slot(sid, user_id=s_uid, reason="POSITION_ALREADY_CLOSED")
                         repaired.append({"slot_id": sid, "state": "LOCAL_OCCUPIED_CLOSED_POSITION"})
             elif s_status == "RESERVED":
                 recon_res = SlotAllocationService.reconcile_slot(sid, user_id=s_uid)
                 if recon_res.get("action") == "RELEASED_STALE_RESERVATION":
                     repaired.append({"slot_id": sid, "state": "LOCAL_RESERVED_NO_POSITION"})
+                elif recon_res.get("action") == "REQUIRES_RECONCILIATION":
+                    repaired.append({"slot_id": sid, "state": "REQUIRES_RECONCILIATION", "error": recon_res.get("error")})
     except Exception as e:
         logger.warning(f"Slot sweep error: {e}")
 
     return {"repaired": repaired, "reconciled": reconciled_events}
+
 
 
 

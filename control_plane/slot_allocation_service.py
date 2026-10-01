@@ -344,6 +344,10 @@ class SlotAllocationService:
         
         Transitions OCCUPIED / RESERVED / RECONCILING -> AVAILABLE.
         """
+        if not user_id or int(user_id) <= 0:
+            return False, "INVALID_OWNERSHIP_USER_ID_REQUIRED"
+
+        uid = int(user_id)
         now_ms = int(time.time() * 1000)
         c = db._connect()
         with db._lock:
@@ -356,12 +360,9 @@ class SlotAllocationService:
                     released_at=?,
                     updated_at=?,
                     last_error_reason=?
-                WHERE id=?
+                WHERE id=? AND user_id=?
             """
-            args = [now_ms, now_ms, reason or None, slot_id]
-            if user_id is not None:
-                q += " AND user_id=?"
-                args.append(user_id)
+            args = [now_ms, now_ms, reason or None, slot_id, uid]
 
             cur = c.execute(q, args)
             c.commit()
@@ -371,7 +372,7 @@ class SlotAllocationService:
                     "slot_allocation_service",
                     "SLOT_RELEASED",
                     {"slot_id": slot_id, "reason": reason},
-                    user_id=user_id or 1
+                    user_id=uid
                 )
                 return True, "OK"
 
@@ -383,6 +384,11 @@ class SlotAllocationService:
         slot = db.get_autonomous_trade_slot(slot_id, user_id=user_id)
         if not slot:
             return {"action": "NOT_FOUND", "slot_id": slot_id}
+
+        slot_uid = slot.get("user_id")
+        if not slot_uid or int(slot_uid) <= 0:
+            return {"action": "REQUIRES_RECONCILIATION", "slot_id": slot_id, "error": "MISSING_USER_ID"}
+        slot_uid = int(slot_uid)
 
         status = slot.get("status", "AVAILABLE")
         now_ms = int(time.time() * 1000)
@@ -407,7 +413,7 @@ class SlotAllocationService:
                 if not is_submitting:
                     SlotAllocationService.release_slot(
                         slot_id,
-                        user_id=slot.get("user_id"),
+                        user_id=slot_uid,
                         reason="STALE_RESERVATION_TIMEOUT"
                     )
                     return {"action": "RELEASED_STALE_RESERVATION", "slot_id": slot_id}
@@ -416,12 +422,19 @@ class SlotAllocationService:
         elif status == "OCCUPIED":
             pos_id = slot.get("current_position_id")
             if not pos_id:
-                SlotAllocationService.release_slot(slot_id, user_id=slot.get("user_id"), reason="OCCUPIED_WITHOUT_POSITION")
+                SlotAllocationService.release_slot(slot_id, user_id=slot_uid, reason="OCCUPIED_WITHOUT_POSITION")
                 return {"action": "RELEASED_MISSING_POSITION", "slot_id": slot_id}
 
-            pos = db.get_position(pos_id)
-            if not pos or pos.get("status") in ("CLOSED", "CANCELLED", "LIQUIDATED"):
-                SlotAllocationService.release_slot(slot_id, user_id=slot.get("user_id"), reason="POSITION_CLOSED")
+            pos = db.get_position(pos_id, user_id=slot_uid)
+            if not pos:
+                unscoped_pos = db.get_position(pos_id)
+                if unscoped_pos and unscoped_pos.get("user_id") != slot_uid:
+                    return {"action": "REQUIRES_RECONCILIATION", "slot_id": slot_id, "error": "CROSS_USER_OWNERSHIP_MISMATCH"}
+                SlotAllocationService.release_slot(slot_id, user_id=slot_uid, reason="POSITION_NOT_FOUND")
+                return {"action": "RELEASED_MISSING_POSITION", "slot_id": slot_id}
+
+            if pos.get("status") in ("CLOSED", "CANCELLED", "LIQUIDATED") or pos.get("lifecycle_state") == "CLOSED":
+                SlotAllocationService.release_slot(slot_id, user_id=slot_uid, reason="POSITION_CLOSED")
                 return {"action": "RELEASED_CLOSED_POSITION", "slot_id": slot_id}
 
             return {"action": "CONFIRMED_OCCUPIED", "slot_id": slot_id, "position_id": pos_id}
