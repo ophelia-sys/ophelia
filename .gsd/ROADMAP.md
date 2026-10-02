@@ -17,6 +17,7 @@
 | **Phase 4** | **Position Manager Daemon Hardening** | PENDING | TP1 50% partial exit, exact net breakeven with fees/funding, monotonic trailing, restart recovery. |
 | **Phase 5** | **TimesFM 3.0 Forecasting Subsystem Integration** | COMPLETE | PyTorch TimesFM 3.0 pinned, `ForecastService` running shadow forecasts with $q_{10}-q_{90}$ quantiles. |
 | **Phase 5.5** | **Resource / CPU Optimization Gate** | COMPLETE | TimesFM retained; VPS baseline, sub-component profiling, thread/batch benchmarking, redundancy reduction, critical path protection verified. |
+| **Phase 5.6** | **Unified Manual Order Terminal + Venue Instrument Resolution** | IN_PROGRESS | Canonical instrument model across Crypto/US/Commodities; dynamic BingX discovery; Netflix resolution bug fixed; full lifecycle order acknowledgement & persistence; multi-user scoped submission. |
 | **Phase 6** | **Microstructure Research Engine** | PENDING | Modules A–E operational, calibrated metrics, normalized toxicity score, ADAOT research score. |
 | **Phase 7** | **Multi-Market Parity (US Market & Gold)** | PENDING | Real data feeds, Top 100/Sectors/Movers, dynamic Gold resolution, honest freshness flags. |
 | **Phase 8** | **Software Update, Android APKs & Telegram Distribution** | PENDING | Admin & User APKs compiled, SHA-256 verified, uploaded to VPS static and Telegram bot, tested on emulator. |
@@ -89,6 +90,18 @@
      - Admin diagnostics role auth (`ADMIN` only) and User forecast/eval auth.
      - Admin UI (System Health vs Forecast Quality bifurcation) & User UI (`CALIBRATING` status badge, uncalibrated confidence disabled).
 - **Done Criteria:** Benchmark script runs TimesFM 3.0 inference on real historical data, produces valid quantiles $q_{10} \le q_{50} \le q_{90}$, confirms zero lookahead, and passes all 22 hardening gate criteria. (VERIFIED ON VPS: p50=1342ms, peak RAM=1530MB, all 23 Phase 5 tests PASSED, 29 Phase 1-4 tests PASSED, total 52 PASSED in 24.90s). Status: `PHASE_5 = REAL_RUNTIME_VERIFIED`, `PREDICTIVE_QUALITY = NOT_YET_VALIDATED`.
+
+### Phase 5.6: Unified Manual Order Terminal + Venue Instrument Resolution
+- **Objective:** Fix the manual order execution defect and implement a canonical multi-asset instrument resolution architecture across Crypto, US Equities, and Commodities without hardcoded symbol hacks.
+- **Tasks:**
+  1. Perform Phase 5.5 corrections: rename numerical tolerance (`0.0039`), update contention claim to `MATERIALLY_REDUCED`, restore `DEFAULT_MAX_OPEN_TRADES = 4`, and audit Ollama (`RETAINED_AND_ISOLATED`).
+  2. Implement `CanonicalInstrument` model with 17 authoritative fields in `models/instrument.py` and `control_plane/instruments.py`.
+  3. Implement `InstrumentResolver` querying live BingX quote contracts dynamically, caching with 10-minute TTL, invalidating safely, and resolving user symbols across asset classes without mixing paths.
+  4. Fix Netflix resolution defect (`NFLX` -> `NCSKNETFLIX2USD-USDT`) via generic alias and contract metadata discovery.
+  5. Refactor `/api/orders/manual` with strict pre-submit validation pipeline, full order lifecycle states (`ACKNOWLEDGED`, `FILLED`, etc.), and persistence in `manual_orders`.
+  6. Update Android `ManualOrderTerminalContent` to display resolved venue attributes and require `RESOLVED && TRADABLE && VALIDATED` before enabling submission.
+  7. Deploy and verify across Local, VPS, and App with multi-user isolation and regression testing.
+- **Done Criteria:** Dynamic discovery correctly resolves Netflix, Apple, Nvidia, Bitcoin, Gold, and Silver to authoritative BingX venue symbols; manual order pipeline persists full lifecycle states with user-scoped credentials; all regressions pass. (VERIFIED ON VPS & LOCAL: Real runtime probe confirmed live search and order submission for NFLX -> NCSKNETFLIX2USD-USDT, all 19 Phase 5.6 and master tests PASSED, Android APKs compiled cleanly. Status: `PHASE_5_6 = REAL_RUNTIME_VERIFIED`).
 
 ### Phase 6: Microstructure Research Suite
 - **Objective:** Implement the research paper modules as a structured market intelligence layer without turning unvalidated formulas into uncontrolled trading triggers.

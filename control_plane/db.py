@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 _j = json
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -48,6 +49,7 @@ def _connect() -> sqlite3.Connection:
         
         _init_user_and_copy_tables(_conn)
         _init_us_market_and_slot_tables(_conn)
+        _init_manual_order_tables(_conn)
         _conn.commit()
     return _conn
 
@@ -5327,6 +5329,181 @@ def save_model_forecast_evaluation(evaluation: dict) -> None:
             int(evaluation.get("created_at") or now_ms)
         ))
         c.commit()
+
+
+# ---------------------------------------------------------------- manual_orders (Phase 5.6)
+
+def _init_manual_order_tables(conn: sqlite3.Connection) -> None:
+    """Initialize manual orders schema and indexes for Phase 5.6 Manual Terminal."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS manual_orders(
+        internal_order_id TEXT PRIMARY KEY,
+        venue TEXT NOT NULL,
+        venue_product TEXT NOT NULL,
+        venue_symbol TEXT NOT NULL,
+        venue_order_id TEXT,
+        client_order_id TEXT,
+        asset_class TEXT NOT NULL,
+        side TEXT NOT NULL,
+        order_type TEXT NOT NULL,
+        requested_quantity REAL NOT NULL,
+        requested_price REAL,
+        submitted_at INTEGER NOT NULL,
+        acknowledged_at INTEGER,
+        filled_quantity REAL DEFAULT 0.0,
+        average_fill_price REAL DEFAULT 0.0,
+        fees REAL DEFAULT 0.0,
+        status TEXT NOT NULL,
+        reconciliation_status TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_mo_user ON manual_orders(user_id, status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_mo_client ON manual_orders(client_order_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_mo_submitted ON manual_orders(submitted_at)")
+
+
+def create_manual_order(order_data: dict) -> str:
+    """Create and persist a new manual order record. Returns internal_order_id."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    internal_id = order_data.get("internal_order_id") or f"mo_{now_ms}_{secrets.token_hex(4)}"
+    detail_raw = order_data.get("detail_json")
+    if isinstance(detail_raw, (dict, list)):
+        detail_str = json.dumps(detail_raw)
+    elif detail_raw is not None:
+        detail_str = str(detail_raw)
+    else:
+        detail_str = "{}"
+    
+    with _lock:
+        c.execute("""
+            INSERT INTO manual_orders(
+                internal_order_id, venue, venue_product, venue_symbol, venue_order_id,
+                client_order_id, asset_class, side, order_type, requested_quantity,
+                requested_price, submitted_at, acknowledged_at, filled_quantity,
+                average_fill_price, fees, status, reconciliation_status, user_id, detail_json
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            internal_id,
+            order_data.get("venue", "BINGX"),
+            order_data.get("venue_product", "STANDARD"),
+            order_data.get("venue_symbol", ""),
+            order_data.get("venue_order_id"),
+            order_data.get("client_order_id") or f"cli_{internal_id}",
+            order_data.get("asset_class", "CRYPTO"),
+            order_data.get("side", "BUY"),
+            order_data.get("order_type", "MARKET"),
+            float(order_data.get("requested_quantity") or 0.0),
+            float(order_data["requested_price"]) if order_data.get("requested_price") is not None else None,
+            int(order_data.get("submitted_at") or now_ms),
+            int(order_data["acknowledged_at"]) if order_data.get("acknowledged_at") is not None else None,
+            float(order_data.get("filled_quantity") or 0.0),
+            float(order_data.get("average_fill_price") or 0.0),
+            float(order_data.get("fees") or 0.0),
+            order_data.get("status", "SUBMITTED"),
+            order_data.get("reconciliation_status", "RECONCILED"),
+            int(order_data.get("user_id") or 1),
+            detail_str,
+        ))
+        c.commit()
+    return internal_id
+
+
+def get_manual_order(internal_order_id: str, user_id: int | None = None) -> dict | None:
+    """Retrieve manual order by internal_order_id, optionally enforcing user_id ownership."""
+    c = _wl_conn()
+    with _lock:
+        if user_id is not None:
+            r = c.execute("SELECT * FROM manual_orders WHERE internal_order_id=? AND user_id=?", (internal_order_id, user_id)).fetchone()
+        else:
+            r = c.execute("SELECT * FROM manual_orders WHERE internal_order_id=?", (internal_order_id,)).fetchone()
+        if not r:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM manual_orders LIMIT 0").description]
+    res = dict(zip(cols, r))
+    if res.get("detail_json"):
+        try:
+            res["detail"] = json.loads(res["detail_json"])
+        except Exception:
+            res["detail"] = {}
+    return res
+
+
+def update_manual_order_status(
+    internal_order_id: str,
+    status: str,
+    venue_order_id: str | None = None,
+    fill_qty: float | None = None,
+    fill_px: float | None = None,
+    user_id: int | None = None,
+    acknowledged_at: int | None = None,
+    fees: float | None = None,
+    reconciliation_status: str | None = None,
+) -> bool:
+    """Update manual order lifecycle status, venue identifiers, and fill stats."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    clauses = ["status = ?"]
+    params = [status]
+    if venue_order_id is not None:
+        clauses.append("venue_order_id = ?")
+        params.append(venue_order_id)
+    if fill_qty is not None:
+        clauses.append("filled_quantity = ?")
+        params.append(fill_qty)
+    if fill_px is not None:
+        clauses.append("average_fill_price = ?")
+        params.append(fill_px)
+    if acknowledged_at is not None:
+        clauses.append("acknowledged_at = ?")
+        params.append(acknowledged_at)
+    elif status in ("ACKNOWLEDGED", "PARTIALLY_FILLED", "FILLED"):
+        clauses.append("acknowledged_at = COALESCE(acknowledged_at, ?)")
+        params.append(now_ms)
+    if fees is not None:
+        clauses.append("fees = ?")
+        params.append(fees)
+    if reconciliation_status is not None:
+        clauses.append("reconciliation_status = ?")
+        params.append(reconciliation_status)
+
+    where = "WHERE internal_order_id = ?"
+    params.append(internal_order_id)
+    if user_id is not None:
+        where += " AND user_id = ?"
+        params.append(user_id)
+
+    query = f"UPDATE manual_orders SET {', '.join(clauses)} {where}"
+    with _lock:
+        cur = c.execute(query, params)
+        c.commit()
+        return cur.rowcount > 0
+
+
+def list_manual_orders(user_id: int, limit: int = 50) -> list[dict]:
+    """List recent manual orders for a specific authenticated user."""
+    c = _wl_conn()
+    with _lock:
+        rows = c.execute(
+            "SELECT * FROM manual_orders WHERE user_id=? ORDER BY submitted_at DESC LIMIT ?",
+            (user_id, limit)
+        ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM manual_orders LIMIT 0").description]
+    out = []
+    for r in rows:
+        item = dict(zip(cols, r))
+        if item.get("detail_json"):
+            try:
+                item["detail"] = json.loads(item["detail_json"])
+            except Exception:
+                item["detail"] = {}
+        out.append(item)
+    return out
+
+
+def init_db() -> sqlite3.Connection:
+    """Ensure database connection and all tables are initialized."""
+    return _connect()
 
 
 

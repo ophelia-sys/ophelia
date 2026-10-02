@@ -243,14 +243,15 @@ Subsystem is operationally correct, resource-safe, fail-closed, and non-authorit
 ### Architectural Commitment:
 TimesFM is permanently retained as a foundational component of Ophelia's intelligence architecture.
 In Phase 5.5, comprehensive resource profiling and benchmarking established that:
-1. **Thread Optimization**: Setting PyTorch CPU threads to 2 (`torch.set_num_threads(2)`) reduces p50 latency from 1,683 ms (at 4 threads) to **673 ms**, completely eliminating multi-core lock contention.
+1. **Thread Optimization**: Setting PyTorch CPU threads to 2 (`torch.set_num_threads(2)`) reduces p50 latency from 1,683 ms (at 4 threads) to **673 ms**, resolving multi-core lock contention. Output numerical equivalence is verified with `NUMERICAL_EQUIVALENCE_TOLERANCE = 0.0039` (relative difference $4.6 \times 10^{-8}$, within multi-threaded linear algebra reduction order tolerance).
 2. **Batching Efficiency**: Batching all 5 universal watchlist instruments yields **184.4 ms per series** (2.56x speedup) and slashes CPU time by 65%.
-3. **Database Contention Elimination**: SQLite DDL migrations are guarded with process-lifetime flags (`_auto_inited`, `_wl_inited`), eliminating schema-lock stalls on every query.
+3. **Database Contention Reduction**: SQLite DDL migrations are guarded with process-lifetime flags (`_auto_inited`, `_wl_inited`), eliminating schema-lock stalls on every query.
 4. **Trading Critical Path Protection**: API, automation, position manager, and reconciliation latencies remain well within strict operational SLAs during peak multi-symbol inference bursts.
 5. **Permanent Retention**: TimesFM remains actively maintained in `SHADOW_ONLY` mode.
 
 ```python
 PHASE_5_5_RESOURCE_GATE = "PASSED"
+RESOURCE_CONTENTION = "MATERIALLY_REDUCED"
 TIMESFM_STATUS = "PERMANENTLY_RETAINED_SHADOW_ONLY"
 ```
 

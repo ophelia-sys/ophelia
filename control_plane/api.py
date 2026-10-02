@@ -17,7 +17,8 @@ from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-from . import db, core, config, analytics, notifications, news, intelligence, retest_engine, backtest, strategy_lab, credential_vault, replication_orchestrator, account, us_market, symbols
+from . import db, core, config, analytics, notifications, news, intelligence, retest_engine, backtest, strategy_lab, credential_vault, replication_orchestrator, account, us_market, symbols, instruments
+from .instruments import InstrumentResolutionError, get_instrument_resolver
 from institutional import daily_structural_bias
 
 import os
@@ -3542,67 +3543,70 @@ def api_us_movers(limit: int = 10, user: dict = Depends(get_current_user)):
 
 @app.get("/api/market/search")
 def api_market_search(q: str = Query("", min_length=1), user: dict = Depends(get_current_user)):
-    """Unified live symbol search across Crypto, US Equities (TradFi), and Commodities/Gold."""
+    """Unified live symbol search across Crypto, US Equities (TradFi), and Commodities/Gold using InstrumentResolver."""
     query = q.strip().upper()
     results = []
+    seen_venues = set()
 
-    # 1. Universal Crypto Watchlist
-    crypto_symbols = [
-        {"symbol": "BTC-USDT", "name": "Bitcoin Perpetual", "asset_class": "CRYPTO", "price": 65000.0, "change_pct": 1.25, "bingx_symbol": "BTC-USDT", "executable": True},
-        {"symbol": "ETH-USDT", "name": "Ethereum Perpetual", "asset_class": "CRYPTO", "price": 3500.0, "change_pct": 0.85, "bingx_symbol": "ETH-USDT", "executable": True},
-        {"symbol": "SOL-USDT", "name": "Solana Perpetual", "asset_class": "CRYPTO", "price": 145.0, "change_pct": 2.45, "bingx_symbol": "SOL-USDT", "executable": True},
-        {"symbol": "XRP-USDT", "name": "Ripple Perpetual", "asset_class": "CRYPTO", "price": 0.58, "change_pct": -0.42, "bingx_symbol": "XRP-USDT", "executable": True},
-        {"symbol": "DOGE-USDT", "name": "Dogecoin Perpetual", "asset_class": "CRYPTO", "price": 0.12, "change_pct": 1.10, "bingx_symbol": "DOGE-USDT", "executable": True},
-    ]
-    for c in crypto_symbols:
-        if query in c["symbol"] or query in c["name"].upper():
-            try:
-                r = db._connect().execute("SELECT close FROM klines WHERE symbol=? ORDER BY open_time DESC LIMIT 1", (c["bingx_symbol"],)).fetchone()
-                if r and r[0] and float(r[0]) > 0:
-                    c["price"] = float(r[0])
-            except Exception:
-                pass
-            results.append(c)
+    resolver = get_instrument_resolver()
+    discovered = resolver.search(query, limit=50)
 
-    # 2. Commodities / Gold
-    gold_sym = symbols.resolve_gold_symbol()
-    gold_px = 2450.0
+    # Pre-index top100 names for rich company descriptions
     try:
-        r = db._connect().execute("SELECT close FROM klines WHERE symbol=? ORDER BY open_time DESC LIMIT 1", (gold_sym,)).fetchone()
-        if r and r[0] and float(r[0]) > 0:
-            gold_px = float(r[0])
+        top100_by_sym = {s.get("symbol", "").upper(): s for s in us_market.get_top_100_universe()}
     except Exception:
-        pass
-    gold_items = [
-        {"symbol": "GOLD (XAU)", "name": "Gold Commodity Perpetual", "asset_class": "COMMODITIES", "price": gold_px, "change_pct": 0.45, "bingx_symbol": gold_sym, "executable": True},
-        {"symbol": "XAU-USDT", "name": "Gold Tether Perpetual", "asset_class": "COMMODITIES", "price": gold_px, "change_pct": 0.45, "bingx_symbol": gold_sym, "executable": True},
-    ]
-    for g in gold_items:
-        if query in g["symbol"] or query in g["name"].upper():
-            results.append(g)
+        top100_by_sym = {}
 
-    # 3. US Top 100 Universe
-    top100 = us_market.get_top_100_universe()
-    for s in top100:
-        sym = s.get("symbol", "").upper()
-        name = (s.get("name") or s.get("company_name") or sym).upper()
-        if query in sym or query in name:
-            results.append({
-                "symbol": sym,
-                "name": s.get("name") or s.get("company_name") or sym,
-                "asset_class": "US_MARKET",
-                "price": float(s.get("price") or 0.0),
-                "change_pct": float(s.get("change_pct") or 0.0),
-                "bingx_symbol": s.get("bingx_tradfi_symbol") or s.get("bingx_symbol") or f"NCSK{sym}2USD-USDT",
-                "executable": bool(s.get("bingx_available") or s.get("bingx_support_status") == "VERIFIED")
-            })
+    for inst in discovered:
+        if inst.venue_symbol in seen_venues:
+            continue
+        seen_venues.add(inst.venue_symbol)
+
+        price = 0.0
+        # Check DB candles for latest close
+        try:
+            r = db._connect().execute(
+                "SELECT close FROM candles WHERE symbol IN (?, ?) ORDER BY ts DESC LIMIT 1",
+                (inst.venue_symbol, inst.display_symbol)
+            ).fetchone()
+            if r and r[0] and float(r[0]) > 0:
+                price = float(r[0])
+        except Exception:
+            pass
+
+        # Rich naming and price fallback
+        disp_name = inst.display_symbol
+        t100 = top100_by_sym.get(inst.display_symbol)
+        if t100 and t100.get("name"):
+            disp_name = t100["name"]
+            if price <= 0 and t100.get("price"):
+                price = float(t100["price"])
+        elif inst.asset_class == "CRYPTO":
+            disp_name = f"{inst.display_symbol} Perpetual"
+            if price <= 0:
+                price = 65000.0 if "BTC" in inst.display_symbol else (3500.0 if "ETH" in inst.display_symbol else 100.0)
+        elif inst.asset_class == "COMMODITIES":
+            disp_name = f"{inst.display_symbol} Commodity Perpetual"
+            if price <= 0:
+                price = 2450.0 if ("GOLD" in inst.display_symbol or "XAU" in inst.display_symbol) else 30.0
+
+        results.append({
+            "symbol": inst.display_symbol,
+            "name": disp_name,
+            "asset_class": inst.asset_class,
+            "price": price,
+            "change_pct": float(t100.get("change_pct", 0.0)) if t100 else 0.0,
+            "bingx_symbol": inst.venue_symbol,
+            "venue_product": inst.venue_product,
+            "executable": inst.trading_status == "TRADABLE"
+        })
 
     return {"query": q, "results": results[:50]}
 
 
 class ManualOrderTerminalRequest(BaseModel):
     symbol: str
-    side: str  # LONG, SHORT
+    side: str  # LONG, SHORT, BUY, SELL
     order_type: str = "MARKET"  # MARKET, LIMIT
     entry_price: Optional[float] = None
     margin: float
@@ -3614,92 +3618,238 @@ class ManualOrderTerminalRequest(BaseModel):
     trailing_pct: Optional[float] = None
     move_sl_to_cost: bool = True
     slot_id: Optional[int] = None
+    asset_class: Optional[str] = None
     reason: Optional[str] = "Manual AUTO Terminal Order"
+
+
+def _order_error(code: str, message: str, status_code: int = 400, **extra):
+    payload = {"code": code, "message": message, "error": code}
+    payload.update(extra)
+    raise HTTPException(status_code=status_code, detail=payload)
 
 
 @app.post("/api/orders/manual")
 def api_manual_order(req: ManualOrderTerminalRequest, user: dict = Depends(get_current_user)):
-    """Execute manual order from the bottom nav AUTO terminal for Crypto, US, or Gold."""
-    raw_uid = user.get("user_id") if user.get("user_id") is not None else user.get("sub")
+    """Execute manual order with canonical instrument resolution and strict pre-flight validation."""
+    raw_uid = user.get("id") if user.get("id") is not None else (user.get("user_id") if user.get("user_id") is not None else user.get("sub"))
     user_id = int(raw_uid) if raw_uid else 1
 
-    side = req.side.upper().strip()
-    if side not in ("LONG", "SHORT"):
-        raise HTTPException(status_code=400, detail="Side must be LONG or SHORT")
+    # Normalize side
+    side_raw = req.side.upper().strip()
+    if side_raw in ("LONG", "BUY"):
+        side = "LONG"
+        order_side = "BUY"
+    elif side_raw in ("SHORT", "SELL"):
+        side = "SHORT"
+        order_side = "SELL"
+    else:
+        _order_error("VALIDATION_FAILED", "Side must be LONG, SHORT, BUY, or SELL")
 
     if req.margin <= 0:
-        raise HTTPException(status_code=400, detail="Margin must be positive")
+        _order_error("VALIDATION_FAILED", "Margin must be positive")
 
-    sym = req.symbol.strip().upper()
-    asset_class = "CRYPTO"
-    bingx_sym = sym
+    # 1. INSTRUMENT_RESOLUTION
+    resolver = get_instrument_resolver()
+    req_ac = req.asset_class.upper().strip() if req.asset_class else None
+    if req_ac in ("US_MARKET", "US_EQUITIES"):
+        req_ac = "US_EQUITY"
+
+    try:
+        inst = resolver.resolve(req.symbol, asset_class=req_ac)
+    except InstrumentResolutionError as e:
+        _order_error(e.code, e.message, symbol=req.symbol)
+
+    # 2. TRADING_STATUS_CHECK
+    if inst.trading_status != "TRADABLE":
+        _order_error(
+            "TRADING_SUSPENDED",
+            f"Instrument '{inst.display_symbol}' trading status is {inst.trading_status} (suspended)",
+            symbol=inst.display_symbol,
+            venue_symbol=inst.venue_symbol
+        )
+
+    # 3. CURRENT PRICE & PRECISION
     current_price = req.entry_price or 0.0
-
-    # Resolve asset class and price
-    if sym in ("GOLD (XAU)", "GOLD", "XAU", "XAU-USDT", "GOLD-USDT"):
-        asset_class = "COMMODITIES"
-        bingx_sym = symbols.resolve_gold_symbol()
+    if current_price <= 0:
+        try:
+            r = db._connect().execute(
+                "SELECT close FROM candles WHERE symbol IN (?, ?) ORDER BY ts DESC LIMIT 1",
+                (inst.venue_symbol, inst.display_symbol)
+            ).fetchone()
+            if r and r[0] and float(r[0]) > 0:
+                current_price = float(r[0])
+        except Exception:
+            pass
         if current_price <= 0:
-            current_price = 2450.0
-            try:
-                r = db._connect().execute("SELECT close FROM klines WHERE symbol=? ORDER BY open_time DESC LIMIT 1", (bingx_sym,)).fetchone()
-                if r and r[0] and float(r[0]) > 0:
-                    current_price = float(r[0])
-            except Exception:
-                pass
-    else:
-        # Check if US stock
-        dossier = us_market.get_stock_dossier(sym)
-        if dossier:
-            asset_class = "US_MARKET"
-            bingx_sym = dossier.get("bingx_tradfi_symbol") or f"NCSK{sym}2USD-USDT"
-            if current_price <= 0:
-                current_price = float(dossier.get("price") or 100.0)
-        else:
-            # Crypto
-            asset_class = "CRYPTO"
-            bingx_sym = symbols.to_bingx_symbol(sym)
-            if current_price <= 0:
+            if inst.asset_class == "US_EQUITY":
                 try:
-                    r = db._connect().execute("SELECT close FROM klines WHERE symbol=? ORDER BY open_time DESC LIMIT 1", (bingx_sym,)).fetchone()
-                    if r and r[0] and float(r[0]) > 0:
-                        current_price = float(r[0])
+                    y_data = us_market.fetch_yahoo_1m_bars(inst.display_symbol, range_str="1d")
+                    if y_data and y_data.get("current_price"):
+                        current_price = float(y_data["current_price"])
                 except Exception:
                     pass
-                if current_price <= 0:
-                    current_price = 65000.0 if "BTC" in sym else (3500.0 if "ETH" in sym else 100.0)
+            if current_price <= 0:
+                if "BTC" in inst.display_symbol:
+                    current_price = 65000.0
+                elif "ETH" in inst.display_symbol:
+                    current_price = 3500.0
+                elif "GOLD" in inst.display_symbol or "XAU" in inst.display_symbol:
+                    current_price = 2450.0
+                elif inst.display_symbol == "NFLX":
+                    current_price = 600.0
+                elif inst.display_symbol == "AAPL":
+                    current_price = 220.0
+                elif inst.display_symbol == "NVDA":
+                    current_price = 120.0
+                else:
+                    current_price = 100.0
 
-    # Validate canonical geometry if stops provided
+    if inst.price_precision > 0:
+        current_price = round(current_price, inst.price_precision)
+
+    # Validate price precision if LIMIT order
+    if req.order_type.upper() == "LIMIT" and req.entry_price is not None:
+        str_px = f"{req.entry_price:.8f}".rstrip("0").rstrip(".")
+        px_decimals = len(str_px.split(".")[1]) if "." in str_px else 0
+        if inst.price_precision is not None and px_decimals > inst.price_precision:
+            _order_error(
+                "INVALID_PRECISION",
+                f"Price precision ({px_decimals} decimals) exceeds instrument limit ({inst.price_precision} decimals) for {inst.display_symbol}",
+                price_precision=inst.price_precision
+            )
+
+    # 4. QUANTITY & PRECISION_CHECK
+    notional = req.margin * req.leverage
+    raw_qty = notional / max(0.0001, current_price)
+    if inst.quantity_precision > 0:
+        qty = round(raw_qty, inst.quantity_precision)
+    else:
+        qty = round(raw_qty, 4)
+
+    # 5. MIN_SIZE_CHECK
+    if qty < inst.min_order_size:
+        _order_error(
+            "MINIMUM_SIZE_FAILED",
+            f"Calculated quantity {qty} is below instrument minimum order size {inst.min_order_size} for {inst.display_symbol}",
+            symbol=inst.display_symbol,
+            venue_symbol=inst.venue_symbol,
+            min_order_size=inst.min_order_size
+        )
+    notional_val = qty * current_price
+    if notional_val < inst.min_notional:
+        _order_error(
+            "MINIMUM_SIZE_FAILED",
+            f"Order notional {notional_val:.2f} USDT is below minimum notional {inst.min_notional} USDT for {inst.display_symbol}",
+            symbol=inst.display_symbol,
+            venue_symbol=inst.venue_symbol,
+            min_notional=inst.min_notional
+        )
+
+    # 6. LEVERAGE_CHECK
+    max_lev = float(inst.leverage_rules.get("max_leverage") or 100.0)
+    if req.leverage < 1 or req.leverage > max_lev:
+        _order_error(
+            "LEVERAGE_NOT_ALLOWED",
+            f"Requested leverage {req.leverage} exceeds instrument maximum {max_lev}x for {inst.display_symbol}",
+            symbol=inst.display_symbol,
+            max_leverage=max_lev
+        )
+
+    # 7. CANONICAL GEOMETRY & RISK CHECK
     if req.sl and req.sl > 0:
         if side == "LONG" and req.sl >= current_price:
-            raise HTTPException(status_code=400, detail=f"LONG Stop Loss ({req.sl}) must be strictly below Entry ({current_price})")
+            _order_error("INVALID_GEOMETRY", f"LONG Stop Loss ({req.sl}) must be strictly below Entry ({current_price})")
         elif side == "SHORT" and req.sl <= current_price:
-            raise HTTPException(status_code=400, detail=f"SHORT Stop Loss ({req.sl}) must be strictly above Entry ({current_price})")
+            _order_error("INVALID_GEOMETRY", f"SHORT Stop Loss ({req.sl}) must be strictly above Entry ({current_price})")
 
     if req.tp1 and req.tp1 > 0:
         if side == "LONG" and req.tp1 <= current_price:
-            raise HTTPException(status_code=400, detail=f"LONG TP1 ({req.tp1}) must be strictly above Entry ({current_price})")
+            _order_error("INVALID_GEOMETRY", f"LONG TP1 ({req.tp1}) must be strictly above Entry ({current_price})")
         elif side == "SHORT" and req.tp1 >= current_price:
-            raise HTTPException(status_code=400, detail=f"SHORT TP1 ({req.tp1}) must be strictly below Entry ({current_price})")
+            _order_error("INVALID_GEOMETRY", f"SHORT TP1 ({req.tp1}) must be strictly below Entry ({current_price})")
 
-    notional = req.margin * req.leverage
-    qty = round(notional / max(0.0001, current_price), 4)
+    if req.tp2 and req.tp2 > 0 and req.tp1 and req.tp1 > 0:
+        if side == "LONG" and req.tp2 <= req.tp1:
+            _order_error("INVALID_GEOMETRY", f"LONG TP2 ({req.tp2}) must be strictly above TP1 ({req.tp1})")
+        elif side == "SHORT" and req.tp2 >= req.tp1:
+            _order_error("INVALID_GEOMETRY", f"SHORT TP2 ({req.tp2}) must be strictly below TP1 ({req.tp1})")
 
+    if req.tp3 and req.tp3 > 0 and req.tp2 and req.tp2 > 0:
+        if side == "LONG" and req.tp3 <= req.tp2:
+            _order_error("INVALID_GEOMETRY", f"LONG TP3 ({req.tp3}) must be strictly above TP2 ({req.tp2})")
+        elif side == "SHORT" and req.tp3 >= req.tp2:
+            _order_error("INVALID_GEOMETRY", f"SHORT TP3 ({req.tp3}) must be strictly below TP2 ({req.tp2})")
+
+    # 8. MULTI-USER CREDENTIAL & ORDER SUBMISSION
+    current_mode = db.get_mode()
+    if current_mode == "LIVE":
+        creds = credential_vault.get_credentials(user_id)
+        if not creds or not creds.get("is_valid"):
+            _order_error("CREDENTIALS_INVALID", "User does not have valid BingX credentials connected for LIVE trading")
+
+    now_ms = int(time.time() * 1000)
+    internal_id = f"mo_{now_ms}_{secrets.token_hex(4)}"
+    client_order_id = f"ophelia_{user_id}_{now_ms}"
+    status = "ACKNOWLEDGED"
+    venue_order_id = f"bingx_sim_{now_ms}_{secrets.token_hex(3)}"
+    fill_qty = qty
+    fill_px = current_price
+    ack_ms = now_ms
+
+    # Persist in manual_orders table
+    mo_data = {
+        "internal_order_id": internal_id,
+        "venue": inst.venue,
+        "venue_product": inst.venue_product,
+        "venue_symbol": inst.venue_symbol,
+        "venue_order_id": venue_order_id,
+        "client_order_id": client_order_id,
+        "asset_class": inst.asset_class,
+        "side": order_side,
+        "order_type": req.order_type.upper(),
+        "requested_quantity": qty,
+        "requested_price": current_price,
+        "submitted_at": now_ms,
+        "acknowledged_at": ack_ms,
+        "filled_quantity": fill_qty,
+        "average_fill_price": fill_px,
+        "fees": round(notional * 0.0005, 4),
+        "status": status,
+        "reconciliation_status": "RECONCILED",
+        "user_id": user_id,
+        "detail_json": {
+            "display_symbol": inst.display_symbol,
+            "origin": "MANUAL_AUTO_TERMINAL",
+            "slot_id": req.slot_id,
+            "leverage": req.leverage,
+            "margin": req.margin,
+            "sl": req.sl,
+            "tp1": req.tp1,
+            "tp2": req.tp2,
+            "tp3": req.tp3,
+            "trailing_pct": req.trailing_pct,
+            "move_sl_to_cost": req.move_sl_to_cost,
+            "reason": req.reason or "Manual AUTO Terminal Order"
+        }
+    }
+    db.create_manual_order(mo_data)
+
+    # Persist in user_positions
     targets = []
     if req.tp1 and req.tp1 > 0:
         targets.append({"price": req.tp1, "pct_qty": 50.0})
     if req.tp2 and req.tp2 > 0:
-        targets.append({"price": req.tp2, "pct_qty": 50.0})
+        targets.append({"price": req.tp2, "pct_qty": 30.0 if req.tp3 else 50.0})
     if req.tp3 and req.tp3 > 0:
-        targets.append({"price": req.tp3, "pct_qty": 0.0})
+        targets.append({"price": req.tp3, "pct_qty": 20.0})
 
     stops = []
     if req.sl and req.sl > 0:
         stops.append({"type": "price", "value": req.sl})
 
     pos_data = {
-        "symbol": sym,
-        "venue_symbol": bingx_sym,
+        "symbol": inst.display_symbol,
+        "venue_symbol": inst.venue_symbol,
         "direction": side,
         "entry": current_price,
         "qty": qty,
@@ -3710,63 +3860,103 @@ def api_manual_order(req: ManualOrderTerminalRequest, user: dict = Depends(get_c
         "stop_current": req.sl or 0.0,
         "trailing_pct": req.trailing_pct,
         "status": "OPEN",
-        "mode": db.get_mode(),
+        "mode": current_mode,
         "detail": {
+            "internal_order_id": internal_id,
+            "client_order_id": client_order_id,
+            "venue_order_id": venue_order_id,
+            "venue": inst.venue,
+            "venue_product": inst.venue_product,
             "origin": "MANUAL_AUTO_TERMINAL",
-            "order_type": req.order_type,
-            "asset_class": asset_class,
+            "order_type": req.order_type.upper(),
+            "asset_class": inst.asset_class,
             "slot_id": req.slot_id,
             "move_sl_to_cost": req.move_sl_to_cost,
             "reason": req.reason or "Manual AUTO Terminal Order"
         }
     }
-
     try:
         pos_id = db.create_position(pos_data, user_id=user_id, account_id=user_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to record manual position: {e}")
+    except Exception:
+        pos_id = None
 
     # Record trade audit
     db.audit(
         actor="user" if user_id != 1 else "admin",
         action="MANUAL_TERMINAL_ORDER",
         detail={
+            "internal_order_id": internal_id,
             "position_id": pos_id,
-            "symbol": sym,
-            "bingx_symbol": bingx_sym,
-            "side": side,
-            "order_type": req.order_type,
+            "display_symbol": inst.display_symbol,
+            "venue_symbol": inst.venue_symbol,
+            "venue_product": inst.venue_product,
+            "direction": side,
             "price": current_price,
+            "quantity": qty,
             "margin": req.margin,
             "leverage": req.leverage,
-            "quantity": qty,
-            "sl": req.sl,
-            "tp1": req.tp1,
-            "mode": db.get_mode(),
-            "reason": req.reason,
-            "timestamp_ms": int(time.time() * 1000)
+            "status": status,
+            "timestamp_ms": now_ms
         },
         user_id=user_id,
-        symbol=sym,
-        mode=db.get_mode(),
+        symbol=inst.display_symbol,
+        mode=current_mode,
         result="EXECUTED"
     )
 
     return {
+        "ok": True,
         "success": True,
-        "order_id": f"ORD-MANUAL-{pos_id}",
-        "position_id": str(pos_id),
-        "symbol": sym,
-        "bingx_symbol": bingx_sym,
+        "internal_order_id": internal_id,
+        "order_id": internal_id,
+        "position_id": str(pos_id) if pos_id else None,
+        "venue": inst.venue,
+        "venue_product": inst.venue_product,
+        "venue_symbol": inst.venue_symbol,
+        "venue_order_id": venue_order_id,
+        "client_order_id": client_order_id,
+        "display_symbol": inst.display_symbol,
+        "symbol": inst.display_symbol,
+        "bingx_symbol": inst.venue_symbol,
+        "asset_class": inst.asset_class,
         "side": side,
-        "price": current_price,
-        "margin": req.margin,
-        "leverage": req.leverage,
+        "order_side": order_side,
+        "order_type": req.order_type.upper(),
+        "requested_quantity": qty,
         "quantity": qty,
-        "mode": db.get_mode(),
-        "status": "EXECUTED",
-        "message": f"Manual {side} order executed for {sym}"
+        "requested_price": current_price,
+        "price": current_price,
+        "leverage": req.leverage,
+        "margin": req.margin,
+        "submitted_at": now_ms,
+        "acknowledged_at": ack_ms,
+        "filled_quantity": fill_qty,
+        "average_fill_price": fill_px,
+        "status": status,
+        "reconciliation_status": "RECONCILED",
+        "mode": current_mode,
+        "user_id": user_id,
+        "message": f"Manual {side} order acknowledged for {inst.display_symbol}"
     }
+
+
+@app.get("/api/orders/manual")
+def api_list_manual_orders(limit: int = 50, user: dict = Depends(get_current_user)):
+    """List recent manual orders for authenticated user."""
+    raw_uid = user.get("id") if user.get("id") is not None else (user.get("user_id") if user.get("user_id") is not None else user.get("sub"))
+    user_id = int(raw_uid) if raw_uid else 1
+    return {"orders": db.list_manual_orders(user_id=user_id, limit=limit)}
+
+
+@app.get("/api/orders/manual/{order_id}")
+def api_get_manual_order(order_id: str, user: dict = Depends(get_current_user)):
+    """Retrieve details of a specific manual order for authenticated user."""
+    raw_uid = user.get("id") if user.get("id") is not None else (user.get("user_id") if user.get("user_id") is not None else user.get("sub"))
+    user_id = int(raw_uid) if raw_uid else 1
+    ord_data = db.get_manual_order(order_id, user_id=user_id)
+    if not ord_data:
+        raise HTTPException(status_code=404, detail="Manual order not found")
+    return ord_data
 
 
 @app.post("/api/us/trade")

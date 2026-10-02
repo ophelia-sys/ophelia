@@ -1230,6 +1230,9 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
     var selectedSymbol by remember { mutableStateOf("BTC-USDT") }
     var selectedBingxSymbol by remember { mutableStateOf("BTC-USDT") }
     var selectedAssetClass by remember { mutableStateOf("CRYPTO") }
+    var selectedVenueProduct by remember { mutableStateOf("STANDARD_PERPETUAL") }
+    var isResolved by remember { mutableStateOf(true) }
+    var isTradable by remember { mutableStateOf(true) }
     var side by remember { mutableStateOf("LONG") }
     var orderType by remember { mutableStateOf("MARKET") }
 
@@ -1313,6 +1316,9 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                                             selectedSymbol = item.symbol
                                             selectedBingxSymbol = item.bingxSymbol
                                             selectedAssetClass = item.assetClass
+                                            selectedVenueProduct = item.venueProduct ?: (if (item.assetClass == "CRYPTO") "STANDARD_PERPETUAL" else "TRADFI_PERPETUAL")
+                                            isResolved = item.bingxSymbol.isNotEmpty()
+                                            isTradable = item.executable
                                             if (item.price > 0) {
                                                 entryPriceStr = item.price.toString()
                                             }
@@ -1383,29 +1389,62 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                                 Spacer(Modifier.width(8.dp))
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
-                                    color = AccentCyan.copy(alpha = 0.2f)
+                                    color = when (selectedAssetClass) {
+                                        "US_MARKET", "US_EQUITY" -> Color(0xFF38BDF8).copy(alpha = 0.2f)
+                                        "COMMODITIES" -> Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                        else -> AccentGreen.copy(alpha = 0.2f)
+                                    }
                                 ) {
                                     Text(
-                                        selectedAssetClass,
+                                        selectedAssetClass.replace("_", " "),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = AccentCyan,
+                                        color = when (selectedAssetClass) {
+                                            "US_MARKET", "US_EQUITY" -> Color(0xFF38BDF8)
+                                            "COMMODITIES" -> Color(0xFFF59E0B)
+                                            else -> AccentGreen
+                                        },
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = CardBackground,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-                        ) {
+                            Spacer(Modifier.height(2.dp))
                             Text(
-                                "Venue: $selectedBingxSymbol",
+                                "BINGX ${selectedVenueProduct.replace("_", " ")}",
                                 fontSize = 10.sp,
-                                color = SecondaryText,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                fontWeight = FontWeight.SemiBold,
+                                color = AccentCyan
                             )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isTradable) CardBackground else Color(0xFFEF4444).copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isTradable) BorderColor else Color(0xFFEF4444).copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    "VENUE SYMBOL: $selectedBingxSymbol",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isTradable) PrimaryText else Color(0xFFEF4444),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = if (isResolved && isTradable) AccentGreen else Color(0xFFEF4444),
+                                    modifier = Modifier.size(6.dp)
+                                ) {}
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    if (isResolved && isTradable) "TRADABLE" else if (!isResolved) "UNRESOLVED" else "SUSPENDED",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isResolved && isTradable) AccentGreen else Color(0xFFEF4444)
+                                )
+                            }
                         }
                     }
 
@@ -1582,12 +1621,19 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Submit Button
+                    Spacer(Modifier.height(16.dp))
+
+                    // Submit Button with Strict Gating: RESOLVED && TRADABLE && VALIDATED
+                    val mVal = marginStr.toDoubleOrNull() ?: 0.0
+                    val isValidated = mVal > 0.0 && isResolved && isTradable
+
                     Button(
                         onClick = {
-                            val m = marginStr.toDoubleOrNull()
-                            if (m == null || m <= 0) {
-                                Toast.makeText(context, "Please enter a valid margin", Toast.LENGTH_SHORT).show()
+                            if (!isValidated) {
+                                val reason = if (!isResolved) "Instrument not resolved"
+                                    else if (!isTradable) "Venue instrument suspended"
+                                    else "Please enter a valid margin"
+                                Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             val px = entryPriceStr.toDoubleOrNull()
@@ -1605,7 +1651,7 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                                         side = side,
                                         orderType = orderType,
                                         entryPrice = px,
-                                        margin = m,
+                                        margin = mVal,
                                         leverage = leverage,
                                         sl = sl,
                                         tp1 = tp1,
@@ -1613,11 +1659,13 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                                         tp3 = tp3,
                                         trailingPct = trail,
                                         moveSlToCost = moveSlToCost,
+                                        assetClass = selectedAssetClass,
                                         reason = "Manual AUTO Terminal Order"
                                     )
                                     val res = RetrofitClient.api.executeManualOrder(req)
                                     orderResult = res
-                                    Toast.makeText(context, "Order Executed: ${res.positionId}", Toast.LENGTH_LONG).show()
+                                    val oid = res.internalOrderId ?: res.orderId ?: "OK"
+                                    Toast.makeText(context, "Order ${res.status}: $oid", Toast.LENGTH_LONG).show()
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "Order failed: ${e.message}", Toast.LENGTH_LONG).show()
                                 } finally {
@@ -1625,20 +1673,24 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                                 }
                             }
                         },
-                        enabled = !isSubmitting,
+                        enabled = !isSubmitting && isValidated,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (side == "LONG") AccentGreen else Color(0xFFEF4444)
+                            containerColor = if (side == "LONG") AccentGreen else Color(0xFFEF4444),
+                            disabledContainerColor = Color(0xFF374151)
                         )
                     ) {
                         if (isSubmitting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                         } else {
+                            val btnText = if (!isResolved) "INSTRUMENT NOT RESOLVED"
+                                else if (!isTradable) "VENUE TRADING SUSPENDED"
+                                else "SUBMIT ${side} ORDER (${orderType})"
                             Text(
-                                "SUBMIT ${side} ORDER (${orderType})",
-                                fontSize = 14.sp,
+                                btnText,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (side == "LONG") BackgroundDark else Color.White
+                                color = if (isValidated && side == "LONG") BackgroundDark else Color.White
                             )
                         }
                     }
@@ -1646,21 +1698,40 @@ fun ManualOrderTerminalContent(isAdmin: Boolean = true) {
                     // Order Result Feedback Card
                     orderResult?.let { res ->
                         Spacer(Modifier.height(14.dp))
+                        val isAck = res.status == "ACKNOWLEDGED" || res.status == "FILLED"
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
-                            color = AccentGreen.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.5f))
+                            color = (if (isAck) AccentGreen else Color(0xFFEF4444)).copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, (if (isAck) AccentGreen else Color(0xFFEF4444)).copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
+                                    Icon(
+                                        if (isAck) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = if (isAck) AccentGreen else Color(0xFFEF4444),
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                     Spacer(Modifier.width(6.dp))
-                                    Text("EXCHANGE STATUS: ${res.status}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                                    Text(
+                                        "EXCHANGE STATUS: ${res.status}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isAck) AccentGreen else Color(0xFFEF4444)
+                                    )
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text("Position ID: ${res.positionId} • Symbol: ${res.symbol}", fontSize = 11.sp, color = PrimaryText)
-                                Text("Price: $${res.price} • Margin: $${res.margin} • Qty: ${res.quantity} (${res.mode})", fontSize = 11.sp, color = SecondaryText)
+                                Text(
+                                    "Order ID: ${res.internalOrderId ?: res.orderId} • Venue Symbol: ${res.venueSymbol ?: res.bingxSymbol}",
+                                    fontSize = 11.sp,
+                                    color = PrimaryText
+                                )
+                                Text(
+                                    "Price: $${res.price} • Margin: $${res.margin} • Qty: ${res.quantity} (${res.mode})",
+                                    fontSize = 11.sp,
+                                    color = SecondaryText
+                                )
                             }
                         }
                     }

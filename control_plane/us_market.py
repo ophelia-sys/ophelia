@@ -677,12 +677,40 @@ def refresh_bingx_tradfi_registry() -> dict[str, dict]:
 
 
 def map_stock_to_bingx(symbol: str) -> Tuple[str, str, dict | None]:
-    """Map a US stock ticker to its verified BingX perpetual contract.
+    """Map a US stock ticker to its verified BingX perpetual contract using generic InstrumentResolver.
     
     Returns:
     (bingx_status, bingx_symbol, contract_specs)
     where bingx_status is 'VERIFIED' or 'NOT_AVAILABLE'.
     """
+    try:
+        from .instruments import get_instrument_resolver
+        resolver = get_instrument_resolver()
+        inst = resolver.resolve(symbol, asset_class="US_EQUITY")
+        if not inst:
+            inst = resolver.resolve(symbol, asset_class="COMMODITIES")
+        if inst and inst.trading_status == "TRADABLE":
+            tick_size = round(10 ** (-inst.price_precision), inst.price_precision) if inst.price_precision > 0 else 0.01
+            qty_step = round(10 ** (-inst.quantity_precision), inst.quantity_precision) if inst.quantity_precision > 0 else 0.01
+            specs = {
+                "underlying_symbol": inst.display_symbol,
+                "bingx_symbol": inst.venue_symbol,
+                "status": "VERIFIED",
+                "tick_size": tick_size,
+                "quantity_step": qty_step,
+                "minimum_quantity": inst.min_order_size,
+                "minimum_notional": inst.min_notional,
+                "contract_size": 1.0,
+                "max_leverage": float(inst.leverage_rules.get("max_leverage") or 20.0),
+                "funding_rate": 0.0001,
+                "price_precision": inst.price_precision,
+                "quantity_precision": inst.quantity_precision,
+                "last_verified": inst.last_refreshed,
+            }
+            return "VERIFIED", inst.venue_symbol, specs
+    except Exception as e:
+        logger.warning("InstrumentResolver resolution failed for %s: %s", symbol, e)
+
     registry = refresh_bingx_tradfi_registry()
     sym_upper = symbol.strip().upper()
     if sym_upper in registry:

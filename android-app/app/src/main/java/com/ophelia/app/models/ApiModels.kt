@@ -1989,6 +1989,7 @@ data class MarketSearchItem(
     val price: Double = 0.0,
     @SerializedName("change_pct") val changePct: Double = 0.0,
     @SerializedName("bingx_symbol") val bingxSymbol: String = "",
+    @SerializedName("venue_product") val venueProduct: String? = null,
     val executable: Boolean = true
 )
 
@@ -2011,22 +2012,33 @@ data class ManualOrderRequest(
     @SerializedName("trailing_pct") val trailingPct: Double? = null,
     @SerializedName("move_sl_to_cost") val moveSlToCost: Boolean = true,
     @SerializedName("slot_id") val slotId: Int? = null,
+    @SerializedName("asset_class") val assetClass: String? = null,
     val reason: String? = "Manual AUTO Terminal Order"
 )
 
 data class ManualOrderResponse(
-    val success: Boolean,
+    val ok: Boolean = true,
+    val success: Boolean = true,
+    @SerializedName("internal_order_id") val internalOrderId: String? = null,
     @SerializedName("order_id") val orderId: String? = null,
     @SerializedName("position_id") val positionId: String? = null,
-    val symbol: String,
-    @SerializedName("bingx_symbol") val bingxSymbol: String,
-    val side: String,
-    val price: Double,
-    val margin: Double,
-    val leverage: Int,
-    val quantity: Double,
-    val mode: String,
-    val status: String,
+    val venue: String? = "BINGX",
+    @SerializedName("venue_product") val venueProduct: String? = null,
+    @SerializedName("venue_symbol") val venueSymbol: String? = null,
+    @SerializedName("venue_order_id") val venueOrderId: String? = null,
+    @SerializedName("client_order_id") val clientOrderId: String? = null,
+    @SerializedName("display_symbol") val displaySymbol: String? = null,
+    val symbol: String = "",
+    @SerializedName("bingx_symbol") val bingxSymbol: String = "",
+    @SerializedName("asset_class") val assetClass: String? = null,
+    val side: String = "",
+    val price: Double = 0.0,
+    val margin: Double = 0.0,
+    val leverage: Int = 1,
+    val quantity: Double = 0.0,
+    val mode: String = "SHADOW",
+    val status: String = "ACKNOWLEDGED",
+    @SerializedName("reconciliation_status") val reconciliationStatus: String? = null,
     val message: String? = null
 )
 
