@@ -1,11 +1,10 @@
 # GSD SESSION STATE
 
 **Project:** Ophelia Autonomous Trading Platform  
-**Current Phase:** Phase 5.6 (Unified Manual Order Terminal + Venue Instrument Resolution)  
-**Task:** Unified Manual Order Terminal & Venue Instrument Resolution Gate  
-**Status:** COMPLETE (`PHASE_5_5 = COMPLETE`, `PHASE_5_6 = REAL_RUNTIME_VERIFIED`)  
+**Current Phase:** Phase 6C (Microstructure Research: Empirical Price Impact + Toxicity / Adverse Flow) + Phase 6B.1 Statistical Baseline Correction  
+**Task:** Empirical Price Impact + Toxicity Research Gate  
+**Status:** COMPLETE (`PHASE_6C = REAL_RUNTIME_VERIFIED`)  
 **Last Updated:** 2026-10-02  
-
 
 ---
 
@@ -14,32 +13,27 @@
 - **Roadmap:** ESTABLISHED ([.gsd/ROADMAP.md](file:///c:/Users/dopa.mine/Desktop/ophelia/.gsd/ROADMAP.md) defines 9 phases)
 - **Phase 4 Status:** ACCEPTED & SIGNED OFF (`PHASE_4 = REAL_RUNTIME_VERIFIED`)
 - **Phase 5 Status:** ACCEPTED & SIGNED OFF (`PHASE_5 = REAL_RUNTIME_VERIFIED`)
-  - **Phase 5 Integration (Plans 5.1–5.5):** TimesFM 3.0.2 PyTorch CPU integration in SHADOW mode (`trading_authority = false`).
-  - **Phase 5 Hardening Gate (22 Verification Criteria):**
-    1. **Authoritative Diagnostics State:** Cross-process state synchronization between `ophelia-api` and `ophelia-control` via `model_subsystem_state` SQLite table. Live diagnostics returns `model_loaded: true`, `lifecycle_state: "READY"`, `provider_pid: 1130654`.
-    2. **Real Health Check:** `TimesFMProvider.run_health_check()` validates PyTorch model, checkpoint, generates actual 64-step sequence inference, validates output shape and quantile monotonicity ($q_{10} \le q_{50} \le q_{90}$).
-    3. **Resource Isolation & VPS Benchmarking:** Controlled 5-stage VPS stress benchmark executed (`timesfm_stress_benchmark.json`): Idle, Single Inference, Repeated Inferences, Scheduler Batch, Peak Concurrent Load (Inference + 10 API calls + Automation + Position Mgr). Core trading services maintained sub-second latencies (<50ms automation, <10ms position manager, 27ms API avg).
-    4. **Resource Policy:** SWAP ENABLED FOR MEMORY-PRESSURE MITIGATION (explicitly not a zero-OOM guarantee). Headroom check enforces >500MB available RAM and 1m load < 8.0.
-    5. **Process Isolation:** Independent systemd daemons (`ophelia-api`, `ophelia-control`). Worker failure cannot terminate execution supervisor.
-    6. **Scheduler Scope:** Pinned to `PHASE_5_INITIAL_SCHEDULER = "5m"`. Deduplication per `(instrument, timeframe, forecast_ts)` verified.
-    7. **Evaluation Sample Tiers:** Explicit tiers (`NO_DATA`, `INSUFFICIENT_SAMPLE`, `CALIBRATING`, `PRELIMINARY`, `SUFFICIENT_SAMPLE`). Today $N=2 \rightarrow$ `INSUFFICIENT_SAMPLE`. Never labeled VALIDATED.
-    8. **Shadow Data Accumulation:** Chronological persistence of forecasts and realized outcomes across universal watchlist.
-    9. **Baseline Comparison:** Matched chronological evaluation against Naive Persistence, EMA, and VWAP on identical timestamps.
-    10. **Zero Lookahead Integration:** Database query cutoff (`WHERE ts <= ?`) verified by end-to-end integration test (`test_timesfm_no_lookahead_integration.py`).
-    11. **Database Migration Discipline:** Zero `DROP TABLE` on model tables. Idempotent DDL verified on Local and VPS DBs.
-    12. **Forecast Cache Key:** 5-part key `(instrument, timeframe, validity_bucket, model_version, feature_schema_version)` verified.
-    13. **User-Scoped vs Market-Wide:** User ownership strictly enforced on user-scoped data; public market forecasts shared only without private data.
-    14. **API Role Authorization:** Admin diagnostics requires `ADMIN` role (403 for user, 401 unauthenticated, 200 admin). Verified in `test_timesfm_api_auth.py`.
-    15. **Admin UI:** Bifurcated `SYSTEM MODEL HEALTH` and `FORECAST QUALITY & EVALUATION` panels on `AutonomousTradingScreen.kt`. Live verified on emulator.
-    16. **User UI:** `TIMESFM 3.0 (SHADOW)` card on `MlScreen.kt` with `CALIBRATING` status badge, uncertainty spread, timestamp, data freshness, confidence metric disabled pending calibration. Live verified on emulator.
-    17. **Documentation:** `OPHELIA_TIMESFM.md` updated with hardening gate results and swap/headroom policies.
-    18. **Credential Safety:** Verified zero secrets or tokens in logs or git history.
-    19. **Local/VPS/Admin/User Parity:** Commit `f1afb09` deployed to VPS; both APKs compiled, installed, verified on `emulator-5554`.
-    20. **Full Regression:** 52 tests passing on VPS in 24.90s (Phases 1–5).
-- **Exact Local / VPS Parity:** Git commit `f1afb09` on both Local and VPS.
+- **Phase 5.6 Status:** ACCEPTED & PROVISIONALLY SIGNED OFF (`PHASE_5_6 = REAL_RUNTIME_VERIFIED`)
+- **Phase 6A Status:** ACCEPTED & SIGNED OFF (`PHASE_6A = REAL_RUNTIME_VERIFIED`)
+- **Phase 6B Status:** ACCEPTED & SIGNED OFF (`PHASE_6B = REAL_RUNTIME_VERIFIED`)
+- **Phase 6B.1 Status:** ACCEPTED & REAL RUNTIME VERIFIED (`PHASE_6B_1 = REAL_RUNTIME_VERIFIED`)
+  - OrderBookImbalanceEngine: persistence returns `None` for $N < 5$.
+  - SpreadLiquidityStressEngine: raw observables calculate immediately at $N=1$, baseline statistics return `None` and `"NOT_AVAILABLE"` with `INSUFFICIENT_SAMPLE` until $N \ge 5$.
+- **Phase 6C Status:** ACCEPTED & REAL RUNTIME VERIFIED (`PHASE_6C = REAL_RUNTIME_VERIFIED`)
+  - **Module 5 (Empirical Price Impact):** `KYLE_INSPIRED_EMPIRICAL_IMPACT`. Strict forward causality pairing flow at $t$ with forward return over $(t, t+h]$. Zero contemporaneous or future leakage. Kyle slope $\lambda$, $R^2$ stability, buy impact, sell impact, and asymmetry ($\lambda_{\text{buy}} - \lambda_{\text{sell}}$). Min sample threshold (20 pairs total, 5 per side for asymmetry).
+  - **Module 6 (Toxicity & Adverse Flow):** `VPIN_INSPIRED_RESEARCH`. Interpretable submetrics exposed first (`flow_intensity`, `adverse_price_response`, `spread_stress_context`, `depth_stress_context`, `trade_arrival_stress`). VPIN volume imbalance fraction bounded $[0, 1]$. Zero trader psychology/intent speculation.
+  - **Execution Barrier Hard Invariants:** Strictly `RESEARCH` mode. Zero live order routing, zero slot reservations, zero position or P&L mutations.
+  - **Storage & Schema:** Additive tables `microstructure_price_impact` and `microstructure_toxicity` in `market_1m.db` on VPS.
+  - **FastAPI Read-Only Endpoints:** `GET /api/microstructure/price-impact`, `GET /api/microstructure/toxicity`, and extended `GET /api/microstructure/summary` with JWT auth gating.
+  - **Android Apps:** Admin & User APKs compiled (`assembleAdminDebug`, `assembleUserDebug` pass) with Microstructure Research card labeled `RESEARCH ONLY • ZERO TRADING AUTHORITY`. Deployed and hosted on VPS (`https://15.235.193.47/static/ophelia-admin-latest.apk`, `https://15.235.193.47/static/ophelia-user-latest.apk`).
+  - **Test Coverage:** All 25 Phase 6C acceptance tests passing locally and on VPS. 100% Phase 6A (20 tests), Phase 6B (25 tests), and TimesFM regression passing. Total 70 tests passing on VPS.
+  - **VPS Real Live Runtime Probe:** Real BingX BTC-USDT trades ingested and processed in 370.84 ms with zero errors and zero resource regressions.
 
 ---
 
 ## Next Steps
-1. Phase 5 Hardening Gate passed. Ready to begin Phase 6 (Microstructure Research Suite).
+1. Phase 6C passed. Strict stop after Phase 6C. Do NOT implement Hasbrouck VAR / VECM without explicit user instruction.
+
+
+
 

@@ -260,6 +260,38 @@ interface OpheliaApiService {
         @Query("horizon") horizon: Int = 10
     ): TimesFmForecastResponse
 
+    // --- Phase 6A, 6B & 6C: Microstructure Research ---
+    @GET("/api/microstructure/summary")
+    suspend fun getMicrostructureSummary(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): MicrostructureSummaryResponse
+
+    @GET("/api/microstructure/order-book")
+    suspend fun getMicrostructureOrderBook(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): OrderBookObservationModel
+
+    @GET("/api/microstructure/liquidity-stress")
+    suspend fun getMicrostructureLiquidityStress(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): LiquidityStressObservationModel
+
+    @GET("/api/microstructure/price-impact")
+    suspend fun getMicrostructurePriceImpact(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): PriceImpactObservationModel
+
+    @GET("/api/microstructure/toxicity")
+    suspend fun getMicrostructureToxicity(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): ToxicityObservationModel
+
+
     // --- 48-Hour Historical Backtest ---
     @GET("/api/backtest/48h")
     suspend fun get48hBacktest(): BacktestResponseDto

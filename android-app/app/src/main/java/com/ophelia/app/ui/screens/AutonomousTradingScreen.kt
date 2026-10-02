@@ -56,6 +56,8 @@ fun AutonomousTradingScreen(
     var isLoadingPipeline by remember { mutableStateOf(false) }
     var timesfmDiagnostics by remember { mutableStateOf<TimesFmDiagnosticsResponse?>(null) }
     var isTimesfmExpanded by remember { mutableStateOf(false) }
+    var microstructureSummary by remember { mutableStateOf<MicrostructureSummaryResponse?>(null) }
+    var isMicrostructureExpanded by remember { mutableStateOf(false) }
 
     fun refreshPipeline() {
         scope.launch {
@@ -81,6 +83,9 @@ fun AutonomousTradingScreen(
                 } catch (_: Exception) {}
                 try {
                     timesfmDiagnostics = RetrofitClient.api.getTimesFmDiagnostics()
+                } catch (_: Exception) {}
+                try {
+                    microstructureSummary = RetrofitClient.api.getMicrostructureSummary("BTC-USDT")
                 } catch (_: Exception) {}
             } catch (e: Exception) {
                 Toast.makeText(context, "Error loading autonomous status: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -535,6 +540,189 @@ fun AutonomousTradingScreen(
                                         fontSize = 11.sp,
                                         color = BearishRed
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // COLLAPSIBLE 4: MICROSTRUCTURE RESEARCH (PHASE 6A & 6B)
+                item {
+                    val tf = microstructureSummary?.tradeFlow
+                    val td = microstructureSummary?.tradeDuration
+                    val ob = microstructureSummary?.orderBook
+                    val ls = microstructureSummary?.liquidityStress
+                    val pi = microstructureSummary?.priceImpact
+                    val tox = microstructureSummary?.toxicity
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isMicrostructureExpanded = !isMicrostructureExpanded },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (isMicrostructureExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = SecondaryText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            "MICROSTRUCTURE RESEARCH (PHASE 6A, 6B & 6C)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryText,
+                                            letterSpacing = 1.sp
+                                        )
+                                        Text(
+                                            "BTC-USDT • RESEARCH ONLY • ZERO TRADING AUTHORITY",
+                                            fontSize = 10.sp,
+                                            color = AccentCyan
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF3B82F6).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        pi?.qualityState ?: tox?.qualityState ?: ob?.qualityState ?: tf?.qualityState ?: "RESEARCH",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF60A5FA)
+                                    )
+                                }
+                            }
+
+                            if (isMicrostructureExpanded) {
+                                Spacer(Modifier.height(12.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("TRADE-FLOW INNOVATION (MODULE 1)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("SIGNED FLOW", "${tf?.signedFlow ?: 0.0}", PrimaryText)
+                                    MetricColumn("INNOVATION", "${tf?.flowInnovation ?: 0.0}", if ((tf?.flowInnovation ?: 0.0) >= 0) AccentGreen else BearishRed)
+                                    MetricColumn("Z-SCORE", "${tf?.flowZscore ?: 0.0}", AccentCyan)
+                                    MetricColumn("PERSIST", "${tf?.flowPersistence ?: 0.0}", SecondaryText)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Aggressor: ${tf?.aggressorSource ?: "DIRECT"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Freshness: ${tf?.freshnessState ?: "FRESH"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Samples: ${tf?.sampleCount ?: 0}", fontSize = 10.sp, color = SecondaryText)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("TRADE DURATION & ARRIVAL (MODULE 2 - NON-DIRECTIONAL)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentPurple)
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("DURATION", "${td?.durationMs ?: 0.0}ms", PrimaryText)
+                                    MetricColumn("EXPECTED", "${td?.expectedDurationMs ?: 0.0}ms", SecondaryText)
+                                    MetricColumn("INTENSITY", "${td?.arrivalIntensity ?: 0.0}/ms", AccentPurple)
+                                    MetricColumn("PRESSURE", "${td?.durationPressure ?: 0.0}", AccentCyan)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Z-Score: ${td?.durationZscore ?: 0.0}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Persistence: ${td?.persistence ?: 0.0}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Quality: ${td?.qualityState ?: "VALID"}", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("ORDER-BOOK IMBALANCE (MODULE 3)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("BID DEPTH", "${ob?.bidDepth ?: 0.0}", AccentGreen)
+                                    MetricColumn("ASK DEPTH", "${ob?.askDepth ?: 0.0}", BearishRed)
+                                    MetricColumn("OBI (TOP)", "${ob?.obiTop ?: "N/A"}", Color(0xFFF59E0B))
+                                    MetricColumn("OBI (L${ob?.depthUsed ?: 10})", "${ob?.obiDepthN ?: "N/A"}", PrimaryText)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Levels: L1/L5/L10", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Persistence: ${ob?.imbalancePersistence ?: "N/A"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Freshness: ${ob?.freshnessState ?: "FRESH"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Quality: ${ob?.qualityState ?: "VALID"}", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("SPREAD & LIQUIDITY STRESS (MODULE 4 - NON-DIRECTIONAL)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEC4899))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("SPREAD", "${ls?.spread ?: "N/A"}", PrimaryText)
+                                    MetricColumn("REL SPREAD", "${if (ls?.relativeSpread != null) String.format("%.5f", ls.relativeSpread) else "N/A"}", SecondaryText)
+                                    MetricColumn("SPREAD STRESS", "${ls?.spreadStress ?: "N/A"}", if ((ls?.spreadStress ?: 0.0) > 1.0) BearishRed else AccentGreen)
+                                    MetricColumn("DEPTH STRESS", "${ls?.depthStress ?: "N/A"}", AccentCyan)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Thinning: ${if (ls?.bookThinning == true) "YES" else if (ls?.bookThinning == false) "NO" else "N/A"}", fontSize = 10.sp, color = if (ls?.bookThinning == true) BearishRed else SecondaryText)
+                                    Text("Recovery: ${ls?.liquidityRecoveryState ?: "NOT_AVAILABLE"}", fontSize = 10.sp, color = Color(0xFFEC4899))
+                                    Text("Freshness: ${ls?.freshnessState ?: "FRESH"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Quality: ${ls?.qualityState ?: "VALID"}", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("EMPIRICAL PRICE IMPACT (MODULE 5 - KYLE-INSPIRED)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("IMPACT (λ)", "${pi?.impactCoefficient?.let { String.format("%.6f", it) } ?: "N/A"}", PrimaryText)
+                                    MetricColumn("R² STABILITY", "${pi?.impactStability?.let { String.format("%.3f", it) } ?: "N/A"}", AccentCyan)
+                                    MetricColumn("ASYMMETRY", "${pi?.impactAsymmetry?.let { String.format("%.6f", it) } ?: "N/A"}", Color(0xFFF59E0B))
+                                    MetricColumn("FLOW RESP", "${pi?.flowResponse?.let { String.format("%.6f", it) } ?: "N/A"}", SecondaryText)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Horizon: ${pi?.horizonSteps ?: 1} step", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Buy λ: ${pi?.buyImpact?.let { String.format("%.5f", it) } ?: "N/A"}", fontSize = 10.sp, color = AccentGreen)
+                                    Text("Sell λ: ${pi?.sellImpact?.let { String.format("%.5f", it) } ?: "N/A"}", fontSize = 10.sp, color = BearishRed)
+                                    Text("Quality: ${pi?.qualityState ?: "INSUFFICIENT_SAMPLE"}", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("TOXICITY & ADVERSE FLOW (MODULE 6 - VPIN-INSPIRED)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA78BFA))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("TOXICITY (VPIN)", "${tox?.toxicityMetric?.let { String.format("%.3f", it) } ?: "N/A"}", if ((tox?.toxicityMetric ?: 0.0) > 0.5) BearishRed else AccentGreen)
+                                    MetricColumn("STATE", "${tox?.toxicityState ?: "NOT_AVAILABLE"}", if (tox?.toxicityState in listOf("TOXIC", "ELEVATED")) BearishRed else AccentGreen)
+                                    MetricColumn("FLOW INTENSITY", "${tox?.flowIntensity?.let { String.format("%.3f", it) } ?: "N/A"}", AccentCyan)
+                                    MetricColumn("ADVERSE RESP", "${tox?.adversePriceResponse?.let { String.format("%.5f", it) } ?: "N/A"}", SecondaryText)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Arrival Stress: ${tox?.tradeArrivalStress?.let { String.format("%.2f", it) } ?: "N/A"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Spread Ctx: ${tox?.spreadStressContext?.let { String.format("%.2f", it) } ?: "N/A"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Samples: ${tox?.sampleCount ?: 0}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Quality: ${tox?.qualityState ?: "INSUFFICIENT_SAMPLE"}", fontSize = 10.sp, color = AccentGreen)
                                 }
                             }
                         }

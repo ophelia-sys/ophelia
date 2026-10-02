@@ -2095,6 +2095,140 @@ data class TimesFmForecastResponse(
     val direction: String = "NEUTRAL"
 )
 
+// --- Phase 6A: Microstructure Research Models ---
+data class TradeFlowObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("signed_flow") val signedFlow: Double = 0.0,
+    @SerializedName("expected_flow") val expectedFlow: Double = 0.0,
+    @SerializedName("flow_innovation") val flowInnovation: Double = 0.0,
+    @SerializedName("flow_zscore") val flowZscore: Double = 0.0,
+    @SerializedName("flow_direction") val flowDirection: Int = 0,
+    @SerializedName("flow_persistence") val flowPersistence: Double = 0.0,
+    @SerializedName("aggressor_source") val aggressorSource: String = "NOT_AVAILABLE",
+    val mode: String = "RESEARCH"
+)
+
+data class TradeDurationObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("duration_ms") val durationMs: Double = 0.0,
+    @SerializedName("expected_duration_ms") val expectedDurationMs: Double = 0.0,
+    @SerializedName("duration_pressure") val durationPressure: Double = 0.0,
+    @SerializedName("arrival_intensity") val arrivalIntensity: Double = 0.0,
+    @SerializedName("duration_zscore") val durationZscore: Double = 0.0,
+    val persistence: Double = 0.0,
+    val mode: String = "RESEARCH"
+)
+
+data class MicrostructureSummaryResponse(
+    val instrument: String = "",
+    @SerializedName("venue_symbol") val venueSymbol: String = "",
+    @SerializedName("methodology_version") val methodologyVersion: String = "1.0.0",
+    val mode: String = "RESEARCH",
+    @SerializedName("trade_flow") val tradeFlow: TradeFlowObservationModel? = null,
+    @SerializedName("trade_duration") val tradeDuration: TradeDurationObservationModel? = null,
+    @SerializedName("order_book") val orderBook: OrderBookObservationModel? = null,
+    @SerializedName("liquidity_stress") val liquidityStress: LiquidityStressObservationModel? = null,
+    @SerializedName("price_impact") val priceImpact: PriceImpactObservationModel? = null,
+    @SerializedName("toxicity") val toxicity: ToxicityObservationModel? = null,
+    @SerializedName("timestamp_ms") val timestampMs: Long = 0L
+)
+
+// --- Phase 6B: Order Book & Liquidity Stress Models ---
+data class OrderBookObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("depth_requested") val depthRequested: Int = 10,
+    @SerializedName("depth_available") val depthAvailable: Int = 10,
+    @SerializedName("depth_used") val depthUsed: Int = 10,
+    @SerializedName("obi_top") val obiTop: Double? = null,
+    @SerializedName("obi_depth_N") val obiDepthN: Double? = null,
+    @SerializedName("bid_depth") val bidDepth: Double = 0.0,
+    @SerializedName("ask_depth") val askDepth: Double = 0.0,
+    @SerializedName("imbalance_direction") val imbalanceDirection: Int = 0,
+    @SerializedName("imbalance_persistence") val imbalancePersistence: Double? = null,
+    @SerializedName("obi_level_1") val obiLevel1: Double? = null,
+    @SerializedName("obi_level_5") val obiLevel5: Double? = null,
+    @SerializedName("obi_level_10") val obiLevel10: Double? = null,
+    @SerializedName("cancellation_flow") val cancellationFlow: String = "NOT_AVAILABLE",
+    @SerializedName("hidden_liquidity") val hiddenLiquidity: String = "NOT_AVAILABLE",
+    @SerializedName("book_snapshot_age_ms") val bookSnapshotAgeMs: Long = 0L,
+    @SerializedName("sequence_state") val sequenceState: String = "VALID",
+    val mode: String = "RESEARCH"
+)
+
+data class LiquidityStressObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    val spread: Double? = null,
+    @SerializedName("mid_price") val midPrice: Double? = null,
+    @SerializedName("relative_spread") val relativeSpread: Double? = null,
+    @SerializedName("expected_spread") val expectedSpread: Double? = null,
+    @SerializedName("spread_zscore") val spreadZscore: Double? = null,
+    @SerializedName("spread_percentile") val spreadPercentile: Double? = null,
+    @SerializedName("spread_stress") val spreadStress: Double? = null,
+    @SerializedName("depth_stress") val depthStress: Double? = null,
+    @SerializedName("book_thinning") val bookThinning: Boolean? = null,
+    @SerializedName("liquidity_stress") val liquidityStress: Double? = null,
+    @SerializedName("liquidity_recovery_state") val liquidityRecoveryState: String = "NOT_AVAILABLE",
+    val mode: String = "RESEARCH"
+)
+
+// --- Phase 6C: Price Impact & Toxicity Models ---
+data class PriceImpactObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("impact_coefficient") val impactCoefficient: Double? = null,
+    @SerializedName("impact_direction") val impactDirection: Int = 0,
+    @SerializedName("impact_stability") val impactStability: Double? = null,
+    @SerializedName("impact_asymmetry") val impactAsymmetry: Double? = null,
+    @SerializedName("buy_impact") val buyImpact: Double? = null,
+    @SerializedName("sell_impact") val sellImpact: Double? = null,
+    @SerializedName("flow_response") val flowResponse: Double? = null,
+    @SerializedName("horizon_steps") val horizonSteps: Int = 1,
+    @SerializedName("methodology_version") val methodologyVersion: String = "KYLE_INSPIRED_EMPIRICAL_IMPACT",
+    val mode: String = "RESEARCH"
+)
+
+data class ToxicityObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("flow_intensity") val flowIntensity: Double? = null,
+    @SerializedName("adverse_price_response") val adversePriceResponse: Double? = null,
+    @SerializedName("spread_stress_context") val spreadStressContext: Double? = null,
+    @SerializedName("depth_stress_context") val depthStressContext: Double? = null,
+    @SerializedName("trade_arrival_stress") val tradeArrivalStress: Double? = null,
+    @SerializedName("toxicity_metric") val toxicityMetric: Double? = null,
+    @SerializedName("toxicity_state") val toxicityState: String = "NOT_AVAILABLE",
+    @SerializedName("methodology_version") val methodologyVersion: String = "VPIN_INSPIRED_RESEARCH",
+    val mode: String = "RESEARCH"
+)
+
 
 
 

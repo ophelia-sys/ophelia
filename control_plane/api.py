@@ -4204,8 +4204,374 @@ def get_timesfm_evaluations(
     user: dict = Depends(require_authenticated_user)
 ):
     """Retrieve TimesFM out-of-sample evaluation performance metrics."""
-    return db.get_model_forecast_evaluation_metrics(model_name="timesfm", instrument=instrument, timeframe=timeframe)
+    return db.get_model_forecast_evaluation_metrics(model_name="timesfm", instrument=instrument, timeframe=timeframe)# ---------------------------------------------------------------- Microstructure Research Endpoints (Phase 6A)
+@app.get("/api/microstructure/trade-flow")
+def get_microstructure_trade_flow(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6A Trade-Flow Innovation observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
 
+    if refresh:
+        flow_obs, _ = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        if flow_obs:
+            return flow_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("trade_flow"):
+        return obs["trade_flow"]
+    
+    # Try live fetch on first request if empty
+    flow_obs, _ = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+    if flow_obs:
+        return flow_obs.to_dict()
+    
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "TRADE_TICKS",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 60000,
+        "mode": "RESEARCH",
+        "signed_flow": 0.0,
+        "expected_flow": 0.0,
+        "flow_innovation": 0.0,
+        "flow_zscore": 0.0,
+        "flow_direction": 0,
+        "flow_persistence": 0.0,
+        "aggressor_source": "NOT_AVAILABLE",
+        "detail": {"reason": "NO_LIVE_TICKS_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/trade-duration")
+def get_microstructure_trade_duration(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6A Trade Duration / Arrival Pressure observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        _, dur_obs = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        if dur_obs:
+            return dur_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("trade_duration"):
+        return obs["trade_duration"]
+    
+    # Try live fetch on first request if empty
+    _, dur_obs = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+    if dur_obs:
+        return dur_obs.to_dict()
+    
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "TRADE_TICKS",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 60000,
+        "mode": "RESEARCH",
+        "duration_ms": 0.0,
+        "expected_duration_ms": 0.0,
+        "duration_pressure": 0.0,
+        "arrival_intensity": 0.0,
+        "duration_zscore": 0.0,
+        "persistence": 0.0,
+        "detail": {"reason": "NO_LIVE_TICKS_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/order-book")
+def get_microstructure_order_book(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6B Order-Book Imbalance observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        ob_obs, _ = svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+        if ob_obs:
+            return ob_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("order_book"):
+        return obs["order_book"]
+
+    ob_obs, _ = svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+    if ob_obs:
+        return ob_obs.to_dict()
+
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "SNAPSHOT_DATA",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 60000,
+        "mode": "RESEARCH",
+        "depth_requested": 10,
+        "depth_available": 0,
+        "depth_used": 0,
+        "obi_top": None,
+        "obi_depth_N": None,
+        "bid_depth": 0.0,
+        "ask_depth": 0.0,
+        "imbalance_direction": 0,
+        "imbalance_persistence": None,
+        "obi_level_1": None,
+        "obi_level_5": None,
+        "obi_level_10": None,
+        "cancellation_flow": "NOT_AVAILABLE",
+        "hidden_liquidity": "NOT_AVAILABLE",
+        "book_snapshot_age_ms": 0,
+        "sequence_state": "NOT_AVAILABLE",
+        "detail": {"reason": "NO_LIVE_DEPTH_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/liquidity-stress")
+def get_microstructure_liquidity_stress(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6B Spread & Liquidity Stress observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        _, ls_obs = svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+        if ls_obs:
+            return ls_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("liquidity_stress"):
+        return obs["liquidity_stress"]
+
+    _, ls_obs = svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+    if ls_obs:
+        return ls_obs.to_dict()
+
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "SNAPSHOT_DATA",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 60000,
+        "mode": "RESEARCH",
+        "spread": None,
+        "mid_price": None,
+        "relative_spread": None,
+        "expected_spread": None,
+        "spread_zscore": None,
+        "spread_percentile": None,
+        "spread_stress": None,
+        "depth_stress": None,
+        "book_thinning": None,
+        "liquidity_stress": None,
+        "liquidity_recovery_state": "NOT_AVAILABLE",
+        "detail": {"reason": "NO_LIVE_DEPTH_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/price-impact")
+def get_microstructure_price_impact(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6C Empirical Price Impact observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        _, _, impact_obs, _ = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        if impact_obs:
+            return impact_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("price_impact"):
+        return obs["price_impact"]
+
+    _, _, impact_obs, _ = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+    if impact_obs:
+        return impact_obs.to_dict()
+
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "TRADE_TICKS",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 100,
+        "mode": "RESEARCH",
+        "methodology_version": "KYLE_INSPIRED_EMPIRICAL_IMPACT",
+        "impact_coefficient": None,
+        "impact_direction": 0,
+        "impact_stability": None,
+        "impact_asymmetry": None,
+        "buy_impact": None,
+        "sell_impact": None,
+        "flow_response": None,
+        "horizon_steps": 1,
+        "detail": {"reason": "NO_LIVE_TICKS_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/toxicity")
+def get_microstructure_toxicity(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6C Toxicity / Adverse Flow observation. Strictly read-only research."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        _, _, _, tox_obs = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        if tox_obs:
+            return tox_obs.to_dict()
+
+    obs = svc.get_latest_observations(instrument)
+    if obs.get("toxicity"):
+        return obs["toxicity"]
+
+    _, _, _, tox_obs = svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+    if tox_obs:
+        return tox_obs.to_dict()
+
+    now_ms = int(time.time() * 1000)
+    return {
+        "instrument": instrument,
+        "venue": "BINGX",
+        "event_timestamp": now_ms,
+        "received_timestamp": now_ms,
+        "feature_version": "1.0.0",
+        "schema_version": "v1",
+        "source_data_type": "TRADE_TICKS",
+        "sample_count": 0,
+        "quality_state": "MISSING",
+        "freshness_state": "NOT_AVAILABLE",
+        "missingness_state": "MISSING",
+        "calculation_window": 100,
+        "mode": "RESEARCH",
+        "methodology_version": "VPIN_INSPIRED_RESEARCH",
+        "flow_intensity": None,
+        "adverse_price_response": None,
+        "spread_stress_context": None,
+        "depth_stress_context": None,
+        "trade_arrival_stress": None,
+        "toxicity_metric": None,
+        "toxicity_state": "NOT_AVAILABLE",
+        "detail": {"reason": "NO_LIVE_TICKS_AVAILABLE"}
+    }
+
+
+@app.get("/api/microstructure/summary")
+def get_microstructure_summary(
+    instrument: str = Query("BTC-USDT"),
+    refresh: bool = Query(False),
+    user: dict = Depends(require_authenticated_user)
+):
+    """Retrieve Phase 6 Microstructure Summary (Modules 1-6). Research only."""
+    from .microstructure_engine import MicrostructureService
+    from .instruments import InstrumentResolver
+    svc = MicrostructureService.get_instance()
+    inst_obj = InstrumentResolver.get_instance().resolve(instrument)
+    venue_sym = inst_obj.venue_symbol if inst_obj else instrument
+
+    if refresh:
+        svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+
+    obs = svc.get_latest_observations(instrument)
+    if not obs.get("trade_flow") or not obs.get("order_book"):
+        if not obs.get("trade_flow"):
+            svc.fetch_live_bingx_trades(instrument, venue_sym, limit=50)
+        if not obs.get("order_book"):
+            svc.fetch_live_bingx_depth(instrument, venue_sym, limit=20)
+        obs = svc.get_latest_observations(instrument)
+
+    return {
+        "instrument": instrument,
+        "venue_symbol": venue_sym,
+        "methodology_version": "1.0.0",
+        "mode": "RESEARCH",
+        "trade_flow": obs.get("trade_flow"),
+        "trade_duration": obs.get("trade_duration"),
+        "order_book": obs.get("order_book"),
+        "liquidity_stress": obs.get("liquidity_stress"),
+        "price_impact": obs.get("price_impact"),
+        "toxicity": obs.get("toxicity"),
+        "timestamp_ms": int(time.time() * 1000)
+    }
 
 
 

@@ -50,6 +50,7 @@ def _connect() -> sqlite3.Connection:
         _init_user_and_copy_tables(_conn)
         _init_us_market_and_slot_tables(_conn)
         _init_manual_order_tables(_conn)
+        _init_microstructure_tables(_conn)
         _conn.commit()
     return _conn
 
@@ -5500,10 +5501,508 @@ def list_manual_orders(user_id: int, limit: int = 50) -> list[dict]:
         out.append(item)
     return out
 
-
 def init_db() -> sqlite3.Connection:
     """Ensure database connection and all tables are initialized."""
     return _connect()
+
+
+# ---------------------------------------------------------------- microstructure research (Phase 6A)
+
+def _init_microstructure_tables(conn: sqlite3.Connection) -> None:
+    """Initialize Phase 6A microstructure research tables (idempotent, research only)."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_trade_flow(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        signed_flow REAL NOT NULL,
+        expected_flow REAL NOT NULL,
+        flow_innovation REAL NOT NULL,
+        flow_zscore REAL NOT NULL,
+        flow_direction INTEGER NOT NULL,
+        flow_persistence REAL NOT NULL,
+        aggressor_source TEXT NOT NULL,
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_flow_inst_ts ON microstructure_trade_flow(instrument, event_timestamp)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_trade_duration(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        duration_ms REAL NOT NULL,
+        expected_duration_ms REAL NOT NULL,
+        duration_pressure REAL NOT NULL,
+        arrival_intensity REAL NOT NULL,
+        duration_zscore REAL NOT NULL,
+        persistence REAL NOT NULL,
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_dur_inst_ts ON microstructure_trade_duration(instrument, event_timestamp)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_order_book(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        depth_requested INTEGER NOT NULL,
+        depth_available INTEGER NOT NULL,
+        depth_used INTEGER NOT NULL,
+        obi_top REAL,
+        obi_depth_N REAL,
+        bid_depth REAL NOT NULL,
+        ask_depth REAL NOT NULL,
+        imbalance_direction INTEGER NOT NULL,
+        imbalance_persistence REAL,
+        obi_level_1 REAL,
+        obi_level_5 REAL,
+        obi_level_10 REAL,
+        cancellation_flow TEXT DEFAULT 'NOT_AVAILABLE',
+        hidden_liquidity TEXT DEFAULT 'NOT_AVAILABLE',
+        book_snapshot_age_ms INTEGER NOT NULL,
+        sequence_state TEXT DEFAULT 'NOT_AVAILABLE',
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_ob_inst_ts ON microstructure_order_book(instrument, event_timestamp)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_liquidity_stress(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        spread REAL,
+        mid_price REAL,
+        relative_spread REAL,
+        expected_spread REAL,
+        spread_zscore REAL,
+        spread_percentile REAL,
+        spread_stress REAL,
+        depth_stress REAL,
+        book_thinning INTEGER,
+        liquidity_stress REAL,
+        liquidity_recovery_state TEXT NOT NULL DEFAULT 'NOT_AVAILABLE',
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_ls_inst_ts ON microstructure_liquidity_stress(instrument, event_timestamp)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_price_impact(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        methodology_version TEXT NOT NULL,
+        impact_coefficient REAL,
+        impact_direction INTEGER NOT NULL DEFAULT 0,
+        impact_stability REAL,
+        impact_asymmetry REAL,
+        buy_impact REAL,
+        sell_impact REAL,
+        flow_response REAL,
+        horizon_steps INTEGER NOT NULL DEFAULT 1,
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_pi_inst_ts ON microstructure_price_impact(instrument, event_timestamp)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_toxicity(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        methodology_version TEXT NOT NULL,
+        flow_intensity REAL,
+        adverse_price_response REAL,
+        spread_stress_context REAL,
+        depth_stress_context REAL,
+        trade_arrival_stress REAL,
+        toxicity_metric REAL,
+        toxicity_state TEXT NOT NULL DEFAULT 'NOT_AVAILABLE',
+        detail_json TEXT
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_tox_inst_ts ON microstructure_toxicity(instrument, event_timestamp)")
+
+
+def persist_microstructure_flow(data: dict) -> int:
+    """Persist a trade flow observation. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_trade_flow(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, signed_flow, expected_flow, flow_innovation, flow_zscore,
+                flow_direction, flow_persistence, aggressor_source, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "TRADE_TICKS"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("signed_flow", 0.0), data.get("expected_flow", 0.0),
+                data.get("flow_innovation", 0.0), data.get("flow_zscore", 0.0),
+                data.get("flow_direction", 0), data.get("flow_persistence", 0.0),
+                data.get("aggressor_source", "NOT_AVAILABLE"), detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def persist_microstructure_duration(data: dict) -> int:
+    """Persist a trade duration observation. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_trade_duration(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, duration_ms, expected_duration_ms, duration_pressure,
+                arrival_intensity, duration_zscore, persistence, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "TRADE_TICKS"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("duration_ms", 0.0), data.get("expected_duration_ms", 0.0),
+                data.get("duration_pressure", 0.0), data.get("arrival_intensity", 0.0),
+                data.get("duration_zscore", 0.0), data.get("persistence", 0.0), detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def get_latest_microstructure_flow(instrument: str) -> Optional[dict]:
+    """Retrieve the latest trade flow observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_trade_flow WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_trade_flow LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
+def get_latest_microstructure_duration(instrument: str) -> Optional[dict]:
+    """Retrieve the latest trade duration observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_trade_duration WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_trade_duration LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
+def persist_microstructure_order_book(data: dict) -> int:
+    """Persist an order book imbalance observation. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_order_book(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, depth_requested, depth_available, depth_used, obi_top,
+                obi_depth_N, bid_depth, ask_depth, imbalance_direction,
+                imbalance_persistence, obi_level_1, obi_level_5, obi_level_10,
+                cancellation_flow, hidden_liquidity, book_snapshot_age_ms,
+                sequence_state, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "SNAPSHOT_DATA"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("depth_requested", 10), data.get("depth_available", 0), data.get("depth_used", 0),
+                data.get("obi_top"), data.get("obi_depth_N"),
+                data.get("bid_depth", 0.0), data.get("ask_depth", 0.0),
+                data.get("imbalance_direction", 0), data.get("imbalance_persistence"),
+                data.get("obi_level_1"), data.get("obi_level_5"), data.get("obi_level_10"),
+                data.get("cancellation_flow", "NOT_AVAILABLE"), data.get("hidden_liquidity", "NOT_AVAILABLE"),
+                data.get("book_snapshot_age_ms", 0), data.get("sequence_state", "NOT_AVAILABLE"),
+                detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def persist_microstructure_liquidity_stress(data: dict) -> int:
+    """Persist a spread & liquidity stress observation. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_liquidity_stress(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, spread, mid_price, relative_spread, expected_spread,
+                spread_zscore, spread_percentile, spread_stress, depth_stress,
+                book_thinning, liquidity_stress, liquidity_recovery_state, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "SNAPSHOT_DATA"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("spread"), data.get("mid_price"), data.get("relative_spread"),
+                data.get("expected_spread"), data.get("spread_zscore"),
+                data.get("spread_percentile"), data.get("spread_stress"),
+                data.get("depth_stress"), (1 if data.get("book_thinning") else (0 if data.get("book_thinning") is False else None)),
+                data.get("liquidity_stress"), data.get("liquidity_recovery_state", "NOT_AVAILABLE"),
+                detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def get_latest_microstructure_order_book(instrument: str) -> Optional[dict]:
+    """Retrieve the latest order book imbalance observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_order_book WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_order_book LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
+def get_latest_microstructure_liquidity_stress(instrument: str) -> Optional[dict]:
+    """Retrieve the latest liquidity stress observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_liquidity_stress WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_liquidity_stress LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
+def persist_microstructure_price_impact(data: dict) -> int:
+    """Persist a price impact observation (Module 5). Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_price_impact(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, methodology_version, impact_coefficient, impact_direction,
+                impact_stability, impact_asymmetry, buy_impact, sell_impact,
+                flow_response, horizon_steps, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "TRADE_TICKS"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("methodology_version", "KYLE_INSPIRED_EMPIRICAL_IMPACT"),
+                data.get("impact_coefficient"), data.get("impact_direction", 0),
+                data.get("impact_stability"), data.get("impact_asymmetry"),
+                data.get("buy_impact"), data.get("sell_impact"),
+                data.get("flow_response"), data.get("horizon_steps", 1),
+                detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def get_latest_microstructure_price_impact(instrument: str) -> Optional[dict]:
+    """Retrieve the latest price impact observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_price_impact WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_price_impact LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
+def persist_microstructure_toxicity(data: dict) -> int:
+    """Persist a toxicity observation (Module 6). Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    with _lock:
+        cur = c.execute(
+            """INSERT INTO microstructure_toxicity(
+                instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, methodology_version, flow_intensity, adverse_price_response,
+                spread_stress_context, depth_stress_context, trade_arrival_stress,
+                toxicity_metric, toxicity_state, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["instrument"], data.get("venue", "BINGX"), data["event_timestamp"], data["received_timestamp"],
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "TRADE_TICKS"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("methodology_version", "VPIN_INSPIRED_RESEARCH"),
+                data.get("flow_intensity"), data.get("adverse_price_response"),
+                data.get("spread_stress_context"), data.get("depth_stress_context"),
+                data.get("trade_arrival_stress"), data.get("toxicity_metric"),
+                data.get("toxicity_state", "NOT_AVAILABLE"),
+                detail_str
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def get_latest_microstructure_toxicity(instrument: str) -> Optional[dict]:
+    """Retrieve the latest toxicity observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_toxicity WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_toxicity LIMIT 0").description]
+    item = dict(zip(cols, row))
+    if item.get("detail_json"):
+        try:
+            item["detail"] = json.loads(item["detail_json"])
+        except Exception:
+            item["detail"] = {}
+    return item
+
+
 
 
 

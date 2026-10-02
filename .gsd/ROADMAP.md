@@ -17,8 +17,7 @@
 | **Phase 4** | **Position Manager Daemon Hardening** | PENDING | TP1 50% partial exit, exact net breakeven with fees/funding, monotonic trailing, restart recovery. |
 | **Phase 5** | **TimesFM 3.0 Forecasting Subsystem Integration** | COMPLETE | PyTorch TimesFM 3.0 pinned, `ForecastService` running shadow forecasts with $q_{10}-q_{90}$ quantiles. |
 | **Phase 5.5** | **Resource / CPU Optimization Gate** | COMPLETE | TimesFM retained; VPS baseline, sub-component profiling, thread/batch benchmarking, redundancy reduction, critical path protection verified. |
-| **Phase 5.6** | **Unified Manual Order Terminal + Venue Instrument Resolution** | IN_PROGRESS | Canonical instrument model across Crypto/US/Commodities; dynamic BingX discovery; Netflix resolution bug fixed; full lifecycle order acknowledgement & persistence; multi-user scoped submission. |
-| **Phase 6** | **Microstructure Research Engine** | PENDING | Modules A–E operational, calibrated metrics, normalized toxicity score, ADAOT research score. |
+| **Phase 6** | **Microstructure Research Engine (6A, 6B, 6B.1, 6C)** | COMPLETE | Modules 1–6 operational, strict forward causality, VPIN toxicity, baseline corrections verified. |
 | **Phase 7** | **Multi-Market Parity (US Market & Gold)** | PENDING | Real data feeds, Top 100/Sectors/Movers, dynamic Gold resolution, honest freshness flags. |
 | **Phase 8** | **Software Update, Android APKs & Telegram Distribution** | PENDING | Admin & User APKs compiled, SHA-256 verified, uploaded to VPS static and Telegram bot, tested on emulator. |
 | **Phase 9** | **End-to-End Runtime Validation & Final Release** | PENDING | Complete runtime candidate-to-slot-to-exit trace with evidence logs and all 8 release reports. |
@@ -104,18 +103,31 @@
 - **Done Criteria:** Dynamic discovery correctly resolves Netflix, Apple, Nvidia, Bitcoin, Gold, and Silver to authoritative BingX venue symbols; manual order pipeline persists full lifecycle states with user-scoped credentials; all regressions pass. (VERIFIED ON VPS & LOCAL: Real runtime probe confirmed live search and order submission for NFLX -> NCSKNETFLIX2USD-USDT, all 19 Phase 5.6 and master tests PASSED, Android APKs compiled cleanly. Status: `PHASE_5_6 = REAL_RUNTIME_VERIFIED`).
 
 ### Phase 6: Microstructure Research Suite
-- **Objective:** Implement the research paper modules as a structured market intelligence layer without turning unvalidated formulas into uncontrolled trading triggers.
-- **Tasks:**
-  1. Implement `control_plane/microstructure_engine.py` housing:
-     - Module A: Trade flow innovation $I_t = V_t \cdot (Q_t - \rho Q_{t-1})$ with calibrated $\rho$.
-     - Module B: Inter-trade duration, rolling median, duration percentile, and anomaly metrics.
-     - Module C: Visible order book depth, spread percentile, OBI, depth depletion/replenishment.
-     - Module D: Immediate, temporary, and persistent price impact estimation.
-     - Module E: Composite Toxicity score and regime classification (`NORMAL`, `ELEVATED`, `TOXIC_BUY_FLOW`, `TOXIC_SELL_FLOW`, `LIQUIDITY_STRESS`).
-  2. Implement experimental `ADAOT_RESEARCH_SCORE` labeled strictly as `RESEARCH / EXPERIMENTAL`.
-  3. Implement ACD duration and disposition-effect research modules in `SHADOW_ONLY`.
-  4. Verify all score outputs are normalized to $[0, 100]$.
-- **Done Criteria:** Test suite validates all 5 microstructure modules on sample trade and order book feeds, verifying mathematical correctness and bounded outputs.
+- **Objective:** Implement empirical microstructure research modules as a structured market intelligence layer without turning unvalidated formulas into uncontrolled trading triggers.
+- **Phase 6A: Module 1 (Trade-Flow Innovation) + Module 2 (Trade Duration / Arrival Pressure)** — **COMPLETE (`REAL_RUNTIME_VERIFIED`)**
+  - Signed trade flow, direct vs inferred aggressor, rolling expected flow, flow innovation, winsorized z-score, flow persistence.
+  - Dufour-Engle style trade duration $\Delta t_i$, median rolling baseline, arrival intensity $1/\max(\text{med}, 1)$, duration pressure, duration z-score, persistence. Non-directional.
+  - Full local and VPS test suite (21 tests) passing. 100% TimesFM regression (26 tests) passing.
+  - Live VPS runtime BingX trade ingestion probe verified. Real SQLite persistence under `microstructure_*` tables.
+  - Authenticated FastAPI endpoints operational. Android Admin & User APKs updated with research observation UI.
+- **Phase 6B: Module 3 (Order-Book Imbalance) + Module 4 (Spread / Liquidity Stress)** — **COMPLETE (`REAL_RUNTIME_VERIFIED`)**
+  - Visible order-book imbalance at multiple depth horizons (Top/L1, L5, L10, Depth N) with zero-denominator safety (`NOT_AVAILABLE`).
+  - Spread & Liquidity stress: absolute & relative spread, mid-price, rolling expected spread, winsorized z-score, percentile, spread stress, depth stress, book thinning, and recovery state machine (`NORMAL`, `THINNING`, `STRESSED`, `RECOVERING`).
+  - Crossed books ($P_b \ge P_a$) flagged `DEGRADED`. Hidden liquidity and cancellation flow hardcoded `NOT_AVAILABLE`.
+  - Full local and VPS test suite (25 tests) passing. 100% Phase 6A (21 tests) and TimesFM (26 tests) regression passing.
+  - Live VPS runtime BingX depth ingestion probe verified for `BTC-USDT` (41.11 ms latency). SQLite persistence in `microstructure_order_book` and `microstructure_liquidity_stress`.
+  - Authenticated FastAPI endpoints operational (`/api/microstructure/order-book`, `/api/microstructure/liquidity-stress`, `/api/microstructure/summary`). Android Admin & User APKs updated with research observation UI.
+- **Phase 6B.1: Statistical Baseline Correction** — **COMPLETE (`REAL_RUNTIME_VERIFIED`)**
+  - OBI persistence strictly returns `None` (not 0.0) when $N < 5$.
+  - Spread & Liquidity Stress raw observables (`spread`, `mid_price`, `relative_spread`) calculate immediately on $N=1$. Baseline metrics (`expected_spread`, `spread_zscore`, `spread_percentile`, `spread_stress`, `depth_stress`, `book_thinning`, `liquidity_stress`, `liquidity_recovery_state`) return `None` and `"NOT_AVAILABLE"` with `quality_state = INSUFFICIENT_SAMPLE` until $N \ge 5$.
+- **Phase 6C: Module 5 (Empirical Price Impact) + Module 6 (Toxicity & Adverse Flow)** — **COMPLETE (`REAL_RUNTIME_VERIFIED`)**
+  - Module 5 (Empirical Price Impact): `KYLE_INSPIRED_EMPIRICAL_IMPACT`. Strict forward causality pairing flow at $t$ with forward return over $(t, t+h]$. Zero contemporaneous or future leakage. Kyle slope $\lambda$, $R^2$ stability, buy impact, sell impact, and asymmetry ($\lambda_{\text{buy}} - \lambda_{\text{sell}}$). Min sample threshold (20 pairs total, 5 per side for asymmetry).
+  - Module 6 (Toxicity & Adverse Flow): `VPIN_INSPIRED_RESEARCH`. Interpretable submetrics exposed first (`flow_intensity`, `adverse_price_response`, `spread_stress_context`, `depth_stress_context`, `trade_arrival_stress`). VPIN volume imbalance fraction bounded $[0, 1]$. Zero trader psychology/intent speculation.
+  - Full local and VPS test suite (25 tests) passing. Total 70 microstructure tests passing on VPS.
+  - Live VPS runtime BingX trade ingestion probe verified for `BTC-USDT` (370.84 ms latency). SQLite persistence in `microstructure_price_impact` and `microstructure_toxicity`.
+  - Authenticated FastAPI endpoints operational (`/api/microstructure/price-impact`, `/api/microstructure/toxicity`, `/api/microstructure/summary`). Android Admin & User APKs compiled, hosted on VPS (`https://15.235.193.47/static/ophelia-admin-latest.apk`, `https://15.235.193.47/static/ophelia-user-latest.apk`), and verified with updated telemetry cards.
+  - Strict stop after Phase 6C: Hasbrouck VAR / VECM deliberately excluded.
+- **Done Criteria:** Test suite validates microstructure modules on sample and live trade feeds, verifying mathematical correctness, zero lookahead, and complete isolation from execution engine. (VERIFIED ON VPS & LOCAL: Phase 6A, 6B, 6B.1, and 6C operational, 70 tests passing, real live BingX ingestion verified, Status: `PHASE_6C = REAL_RUNTIME_VERIFIED`).
 
 ### Phase 7: Multi-Market Parity (US Market & Gold)
 - **Objective:** Provide robust intelligence and trading parity across the 3 domains: Crypto, US Market, and Commodities / Gold.
