@@ -63,14 +63,23 @@ def calculate_trade_friction_record(
     sl_px = cand.sl_price
     direction = cand.direction.upper()
 
-    # Determine exit price and duration
-    if use_reforecast_exit and cand.reforecast_policy == "EARLY_EXIT_AT_15M":
-        # Early exit at T+15m
-        exit_px = cand.entry_price * (1.0 + cand.gross_realized_r * (cand.risk_amount / cand.entry_price)) # placeholder or actual
-        # From candidate reforecast
+    # Determine exit price and duration. An early-exit cohort must use the actual
+    # reforecast mark and then recompute gross/net PnL from that price. Never treat
+    # an already-net R field as gross return or substitute the original trade exit.
+    if use_reforecast_exit and cand.reforecast_policy == "EARLY_EXIT":
+        exit_px = cand.reforecast_exit_price
+        if exit_px is None or not np.isfinite(float(exit_px)) or float(exit_px) <= 0:
+            raise ValueError(
+                f"Candidate {cand.candidate_id} is marked EARLY_EXIT but has no valid reforecast_exit_price"
+            )
+        exit_px = float(exit_px)
         exit_reason = "REFORECAST_EARLY_EXIT"
         exit_time_min = 15
-        gross_r = cand.reforecast_net_r_base # will adjust below
+        gross_r = (
+            (exit_px - entry_px) / cand.risk_amount
+            if direction == "LONG"
+            else (entry_px - exit_px) / cand.risk_amount
+        )
     else:
         exit_px = cand.exit_price
         exit_reason = cand.exit_reason
@@ -184,7 +193,8 @@ def compute_cohort_friction_metrics(trades: List[Dict[str, Any]]) -> Dict[str, A
     """Aggregates trade-level friction metrics for a cohort."""
     if not trades:
         return {
-            "count": 0, "win_rate": 0.0,
+            "count": 0, "win_rate": 0.0, "tp1_hit_rate": 0.0,
+            "gross_positive_rate": 0.0, "net_positive_rate": 0.0,
             "total_gross_pnl": 0.0, "total_fee": 0.0, "total_slippage": 0.0,
             "total_funding": 0.0, "total_net_pnl": 0.0,
             "gross_r": 0.0, "fee_r": 0.0, "slippage_r": 0.0, "funding_r": 0.0, "net_r": 0.0,
@@ -195,8 +205,14 @@ def compute_cohort_friction_metrics(trades: List[Dict[str, Any]]) -> Dict[str, A
         }
 
     n = len(trades)
-    wins = [t for t in trades if t["gross_r"] > 0]
-    win_rate = (len(wins) / n) * 100.0
+    # Keep distinct outcome definitions. A positive gross mark-to-market return is
+    # not the same as hitting TP1, and neither guarantees positive PnL after costs.
+    tp1_wins = [t for t in trades if t["exit_reason"] in ("TP1", "TP2")]
+    gross_positive = [t for t in trades if t["gross_r"] > 0]
+    net_positive = [t for t in trades if t["net_r"] > 0]
+    tp1_hit_rate = (len(tp1_wins) / n) * 100.0
+    gross_positive_rate = (len(gross_positive) / n) * 100.0
+    net_positive_rate = (len(net_positive) / n) * 100.0
 
     total_gross_pnl = sum(t["gross_pnl"] for t in trades)
     total_fee = sum(t["exchange_fee"] for t in trades)
@@ -218,12 +234,16 @@ def compute_cohort_friction_metrics(trades: List[Dict[str, Any]]) -> Dict[str, A
     mean_f_r = np.mean([t["friction_r_per_trade"] for t in trades])
 
     # Fee to gross PnL percentage on winning trades
-    win_fee_ratios = [t["fee_to_gross_pnl_pct"] for t in wins if t["fee_to_gross_pnl_pct"] > 0]
+    win_fee_ratios = [t["fee_to_gross_pnl_pct"] for t in gross_positive if t["fee_to_gross_pnl_pct"] > 0]
     median_fee_pnl = float(np.median(win_fee_ratios)) if win_fee_ratios else 0.0
 
     return {
         "count": n,
-        "win_rate": round(win_rate, 2),
+        # Compatibility alias: win_rate means TP1/TP2 hit rate, matching Phase 12.
+        "win_rate": round(tp1_hit_rate, 2),
+        "tp1_hit_rate": round(tp1_hit_rate, 2),
+        "gross_positive_rate": round(gross_positive_rate, 2),
+        "net_positive_rate": round(net_positive_rate, 2),
         "total_gross_pnl": round(total_gross_pnl, 2),
         "total_fee": round(total_fee, 2),
         "total_slippage": round(total_slippage, 2),
