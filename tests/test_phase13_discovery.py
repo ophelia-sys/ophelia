@@ -118,6 +118,276 @@ class TestPhase13Discovery(unittest.TestCase):
         self.assertFalse(rejected[3])
         self.assertLessEqual(q_vals[0], q_vals[1])
 
+    def test_adversarial_target_first_long_immune_to_later_stop(self):
+        """Step 1 Core Invariant: TP1 hit first is CLASS_C (+1.5R). Later stop touch CANNOT alter outcome."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+        sl_dist = entry - sl  # 1.0
+
+        # Path: TP1 reached on min 2; min 3 touches SL and plunges
+        path = [
+            {"high": 100.4, "low": 99.8, "close": 100.2},  # min 1: MAE = 0.2%
+            {"high": 101.6, "low": 100.1, "close": 101.5}, # min 2: TP1 reached! Trade exits at 101.5
+            {"high": 100.0, "low": 95.0, "close": 96.0},   # min 3: touches SL 99.0 post-exit!
+            {"high": 96.0, "low": 94.0, "close": 94.5},    # min 4: further drop post-exit
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        c, sh, th, tsl, ttp, px, reas, mae, mfe = res
+
+        self.assertEqual(c, "CLASS_C")
+        self.assertEqual(px, 101.5)
+        self.assertEqual(reas, "TP1")
+        gross_r = (px - entry) / sl_dist
+        self.assertAlmostEqual(gross_r, 1.5, places=4)
+        self.assertFalse(sh, "Realized trade did not hit SL")
+        self.assertTrue(th, "Realized trade hit TP1")
+        self.assertIsNone(tsl)
+        self.assertEqual(ttp, 2)
+
+        # Realized excursions must stop strictly at exit (min 2)
+        self.assertAlmostEqual(mae, 0.002, places=4)  # (100 - 99.8) / 100
+        self.assertAlmostEqual(mfe, 0.016, places=4)  # (101.6 - 100) / 100
+
+        # Full-window excursions record post-exit price movement for research
+        self.assertAlmostEqual(res.full_window_mae, 0.060, places=4)  # (100 - 94.0) / 100
+        self.assertAlmostEqual(res.post_exit_mae, 0.060, places=4)
+
+    def test_adversarial_target_first_short_immune_to_later_stop(self):
+        """Step 1 Core Invariant: SHORT TP1 hit first is CLASS_C (+1.5R). Later stop touch CANNOT alter outcome."""
+        entry = 100.0
+        sl = 101.0
+        tp1 = 98.5
+        sl_dist = sl - entry  # 1.0
+
+        # Path: TP1 reached on min 2; min 3 touches SL and surges to 106.0
+        path = [
+            {"high": 100.2, "low": 99.6, "close": 99.8},   # min 1: MAE = 0.2%
+            {"high": 99.9, "low": 98.4, "close": 98.5},    # min 2: TP1 reached (98.4 <= 98.5)
+            {"high": 106.0, "low": 100.0, "close": 105.0}, # min 3: post-exit surge touching SL 101.0
+        ]
+        res = p13.classify_thesis_resumption("SHORT", entry, sl, tp1, path)
+        c, sh, th, tsl, ttp, px, reas, mae, mfe = res
+
+        self.assertEqual(c, "CLASS_C")
+        self.assertEqual(px, 98.5)
+        self.assertEqual(reas, "TP1")
+        gross_r = (entry - px) / sl_dist
+        self.assertAlmostEqual(gross_r, 1.5, places=4)
+        self.assertFalse(sh)
+        self.assertTrue(th)
+        self.assertEqual(ttp, 2)
+        self.assertAlmostEqual(mae, 0.002, places=4)
+        self.assertAlmostEqual(mfe, 0.016, places=4)
+
+    def test_adversarial_stop_first_then_target_long_class_b(self):
+        """Step 1: SL hit first, then target reached later is CLASS_B (-1R exit, resumed later)."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+        sl_dist = entry - sl
+
+        path = [
+            {"high": 100.2, "low": 99.8, "close": 100.0},  # min 1
+            {"high": 99.4, "low": 98.8, "close": 99.0},    # min 2: SL hit (98.8 <= 99.0)
+            {"high": 100.8, "low": 99.1, "close": 100.5},  # min 3
+            {"high": 101.8, "low": 100.2, "close": 101.6}, # min 4: reaches TP1 post-stop!
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        c, sh, th, tsl, ttp, px, reas, mae, mfe = res
+
+        self.assertEqual(c, "CLASS_B")
+        self.assertEqual(px, 99.0, "Actual exit price remains at SL")
+        self.assertEqual(reas, "SL_RESUMED")
+        gross_r = (px - entry) / sl_dist
+        self.assertAlmostEqual(gross_r, -1.0, places=4)
+        self.assertTrue(sh)
+        self.assertTrue(th, "Thesis resumption recorded")
+        self.assertEqual(tsl, 2)
+        self.assertEqual(ttp, 4)
+
+        # Realized MAE/MFE stop strictly at exit (min 2)
+        self.assertAlmostEqual(mae, 0.012, places=4)
+        self.assertAlmostEqual(mfe, 0.002, places=4)
+
+        # Full window and post-exit metrics show resumption
+        self.assertAlmostEqual(res.full_window_mfe, 0.018, places=4)
+        self.assertAlmostEqual(res.post_exit_mfe, 0.018, places=4)
+
+    def test_adversarial_stop_first_then_target_short_class_b(self):
+        """Step 1: SHORT SL hit first, then target reached later is CLASS_B (-1R exit, resumed later)."""
+        entry = 100.0
+        sl = 101.0
+        tp1 = 98.5
+        sl_dist = sl - entry
+
+        path = [
+            {"high": 100.3, "low": 99.8, "close": 100.1},
+            {"high": 101.2, "low": 100.4, "close": 101.0}, # min 2: SL hit (101.2 >= 101.0)
+            {"high": 100.5, "low": 99.2, "close": 99.5},
+            {"high": 99.2, "low": 98.2, "close": 98.4},    # min 4: reaches TP1 post-stop!
+        ]
+        res = p13.classify_thesis_resumption("SHORT", entry, sl, tp1, path)
+        c, sh, th, tsl, ttp, px, reas, mae, mfe = res
+
+        self.assertEqual(c, "CLASS_B")
+        self.assertEqual(px, 101.0)
+        self.assertEqual(reas, "SL_RESUMED")
+        gross_r = (entry - px) / sl_dist
+        self.assertAlmostEqual(gross_r, -1.0, places=4)
+        self.assertTrue(sh)
+        self.assertTrue(th)
+        self.assertEqual(tsl, 2)
+        self.assertEqual(ttp, 4)
+        self.assertAlmostEqual(mae, 0.012, places=4)
+        self.assertAlmostEqual(mfe, 0.002, places=4)
+        self.assertAlmostEqual(res.full_window_mfe, 0.018, places=4)
+
+    def test_adversarial_stop_first_no_target_long_class_a(self):
+        """Step 1: SL hit and target never reached is CLASS_A (-1R exit)."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+
+        path = [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 99.5, "low": 98.8, "close": 99.0}, # min 2: SL hit
+            {"high": 99.2, "low": 98.0, "close": 98.5}, # never reaches TP1
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        self.assertEqual(res.resumption_class, "CLASS_A")
+        self.assertEqual(res.exit_price, 99.0)
+        self.assertEqual(res.exit_reason, "SL")
+        self.assertTrue(res.sl_hit)
+        self.assertFalse(res.tp1_hit)
+        self.assertEqual(res.time_to_sl, 2)
+        self.assertIsNone(res.time_to_tp1)
+
+    def test_adversarial_stop_first_no_target_short_class_a(self):
+        """Step 1: SHORT SL hit and target never reached is CLASS_A (-1R exit)."""
+        entry = 100.0
+        sl = 101.0
+        tp1 = 98.5
+
+        path = [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.3, "low": 100.1, "close": 101.1}, # min 2: SL hit
+            {"high": 102.0, "low": 100.8, "close": 101.5}, # never reaches TP1
+        ]
+        res = p13.classify_thesis_resumption("SHORT", entry, sl, tp1, path)
+        self.assertEqual(res.resumption_class, "CLASS_A")
+        self.assertEqual(res.exit_price, 101.0)
+        self.assertEqual(res.exit_reason, "SL")
+        self.assertTrue(res.sl_hit)
+        self.assertFalse(res.tp1_hit)
+
+    def test_adversarial_same_candle_ambiguity_conservative_stop_first(self):
+        """Step 1: Same-minute barrier touch resolves conservatively to stop-first."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+
+        # Candle 2 spans 98.5 (touches SL) to 101.8 (touches TP1)
+        path = [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.8, "low": 98.5, "close": 100.2}, # Ambiguous candle
+            {"high": 100.5, "low": 99.5, "close": 100.0},
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        self.assertTrue(res.same_candle_ambiguity, "Ambiguity must be explicitly detected")
+        self.assertEqual(res.resumption_class, "CLASS_A")
+        self.assertEqual(res.exit_price, 99.0)
+        self.assertEqual(res.exit_reason, "SL")
+        self.assertTrue(res.sl_hit)
+        self.assertFalse(res.tp1_hit)
+
+    def test_adversarial_same_candle_ambiguity_with_later_target_resumption(self):
+        """Step 1: Same-minute touch stopped out, but candle 3 reaches TP1 -> CLASS_B."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+
+        path = [
+            {"high": 100.2, "low": 99.8, "close": 100.0},
+            {"high": 101.8, "low": 98.5, "close": 100.2}, # Ambiguous candle at min 2
+            {"high": 102.5, "low": 100.5, "close": 102.0}, # Min 3 touches TP1 strictly after
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        self.assertTrue(res.same_candle_ambiguity)
+        self.assertEqual(res.resumption_class, "CLASS_B")
+        self.assertEqual(res.exit_price, 99.0)
+        self.assertEqual(res.exit_reason, "SL_RESUMED")
+        self.assertTrue(res.sl_hit)
+        self.assertTrue(res.tp1_hit)
+        self.assertEqual(res.time_to_sl, 2)
+        self.assertEqual(res.time_to_tp1, 3)
+
+    def test_adversarial_neither_barrier_reached_flat_and_drift(self):
+        """Step 1: Neither barrier reached evaluates CLASS_D (flat) vs CLASS_E (drift)."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+        risk_pct = 0.01  # 1%
+
+        # Flat path: MAE <= 0.75 * 0.01 = 0.0075 (0.75%)
+        path_flat = [{"high": 100.4, "low": 99.6, "close": 100.1}] * 10
+        res_d = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path_flat)
+        self.assertEqual(res_d.resumption_class, "CLASS_D")
+        self.assertEqual(res_d.exit_reason, "CHOP_FLAT")
+        self.assertFalse(res_d.sl_hit)
+        self.assertFalse(res_d.tp1_hit)
+
+        # Drift path: MAE > 0.75% (e.g. low 99.15 -> MAE 0.85%), but SL 99.0 never hit
+        path_drift = [{"high": 100.1, "low": 99.15, "close": 99.2}] * 10
+        res_e = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path_drift)
+        self.assertEqual(res_e.resumption_class, "CLASS_E")
+        self.assertEqual(res_e.exit_reason, "STRUCTURAL_DRIFT")
+        self.assertFalse(res_e.sl_hit)
+        self.assertFalse(res_e.tp1_hit)
+
+    def test_adversarial_no_lookahead_post_exit_changes(self):
+        """Step 1: Changing candles after actual exit MUST NOT alter realized outcome or realized MAE/MFE."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+
+        # Path 1: Exits at TP1 on min 2; min 3 plunges to 90.0
+        path_plunge = [
+            {"high": 100.3, "low": 99.8, "close": 100.1},
+            {"high": 101.7, "low": 100.2, "close": 101.6}, # TP1 hit
+            {"high": 100.0, "low": 90.0, "close": 91.0},   # Plunge
+        ]
+        # Path 2: Exits at TP1 on min 2; min 3 rockets to 120.0
+        path_rocket = [
+            {"high": 100.3, "low": 99.8, "close": 100.1},
+            {"high": 101.7, "low": 100.2, "close": 101.6}, # TP1 hit
+            {"high": 120.0, "low": 101.0, "close": 119.0}, # Rocket
+        ]
+
+        res_1 = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path_plunge)
+        res_2 = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path_rocket)
+
+        # Realized outcomes MUST be identical
+        self.assertEqual(res_1.resumption_class, res_2.resumption_class)
+        self.assertEqual(res_1.exit_price, res_2.exit_price)
+        self.assertEqual(res_1.exit_reason, res_2.exit_reason)
+        self.assertAlmostEqual(res_1.mae, res_2.mae, places=6)
+        self.assertAlmostEqual(res_1.mfe, res_2.mfe, places=6)
+
+        # Full-window research excursions naturally capture post-exit differences
+        self.assertNotEqual(res_1.full_window_mae, res_2.full_window_mae)
+        self.assertNotEqual(res_1.full_window_mfe, res_2.full_window_mfe)
+
+    def test_adversarial_empty_and_insufficient_data(self):
+        """Step 1: Empty forward bars follows CLASS_F NO_DATA contract."""
+        res = p13.classify_thesis_resumption("LONG", 100.0, 99.0, 101.5, [])
+        self.assertEqual(res.resumption_class, "CLASS_F")
+        self.assertEqual(res.exit_reason, "NO_DATA")
+        self.assertEqual(res.exit_price, 100.0)
+        self.assertEqual(res.mae, 0.0)
+        self.assertEqual(res.mfe, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

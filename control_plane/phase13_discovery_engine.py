@@ -192,8 +192,70 @@ class StopRoomEvaluation:
     net_pnl_usd_fee_slip: float
     net_pnl_usd_conservative: float
 
+    # Extended Excursion & Ambiguity Metrics (Defaults for backward compatibility)
+    full_window_mae_pct: float = 0.0
+    full_window_mfe_pct: float = 0.0
+    post_exit_mfe_pct: float = 0.0
+    post_exit_mae_pct: float = 0.0
+    same_candle_ambiguity: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+class ResumptionResult(tuple):
+    """Result tuple for thesis-resumption classification.
+
+    Subclasses tuple for 100% backward compatibility with 9-element unpacking:
+        res_class, sl_hit, tp1_hit, t_sl, t_tp, exit_p, exit_reason, mae, mfe = result
+
+    Exposes explicit attributes separating realized-trade metrics from full-horizon excursions:
+        .realized_mae / .mae: Adverse excursion strictly until trade exit
+        .realized_mfe / .mfe: Favorable excursion strictly until trade exit
+        .full_window_mae: Adverse excursion across entire observation window
+        .full_window_mfe: Favorable excursion across entire observation window
+        .post_exit_mae: Adverse excursion after trade exit
+        .post_exit_mfe: Favorable excursion after trade exit
+        .same_candle_ambiguity: Boolean indicating whether SL and TP1 were touched in same 1m candle
+    """
+    def __new__(
+        cls,
+        resumption_class: str,
+        sl_hit: bool,
+        tp1_hit: bool,
+        time_to_sl: Optional[int],
+        time_to_tp1: Optional[int],
+        exit_price: float,
+        exit_reason: str,
+        mae: float,
+        mfe: float,
+        full_window_mae: float = 0.0,
+        full_window_mfe: float = 0.0,
+        post_exit_mae: float = 0.0,
+        post_exit_mfe: float = 0.0,
+        same_candle_ambiguity: bool = False,
+    ):
+        instance = super().__new__(
+            cls,
+            (resumption_class, sl_hit, tp1_hit, time_to_sl, time_to_tp1, exit_price, exit_reason, mae, mfe)
+        )
+        instance.resumption_class = resumption_class
+        instance.sl_hit = sl_hit
+        instance.tp1_hit = tp1_hit
+        instance.time_to_sl = time_to_sl
+        instance.time_to_tp1 = time_to_tp1
+        instance.exit_price = exit_price
+        instance.exit_reason = exit_reason
+        instance.mae = mae
+        instance.realized_mae = mae
+        instance.mfe = mfe
+        instance.realized_mfe = mfe
+        instance.full_window_mae = full_window_mae
+        instance.full_window_mfe = full_window_mfe
+        instance.post_exit_mae = post_exit_mae
+        instance.post_exit_mfe = post_exit_mfe
+        instance.same_candle_ambiguity = same_candle_ambiguity
+        return instance
 
 
 def classify_thesis_resumption(
@@ -202,89 +264,182 @@ def classify_thesis_resumption(
     sl: float,
     tp1: float,
     future_1m_bars: List[Dict[str, float]]
-) -> Tuple[str, bool, bool, Optional[int], Optional[int], float, str, float, float]:
-    """Evaluates causal forward 1m path for 120 minutes.
+) -> ResumptionResult:
+    """Evaluates causal forward 1m path for thesis resumption and first-passage exit.
 
-    Returns:
-        resumption_class, sl_hit, tp1_hit, time_to_sl, time_to_tp1, exit_price, exit_reason, mae, mfe
+    Deterministic First-Passage Semantics:
+    1. If TP1 is reached strictly before the stop:
+       - Trade exits at TP1 (CLASS_C, exit_reason="TP1").
+       - Realized MAE/MFE are computed strictly up to the exit candle.
+       - Any subsequent stop touch or adverse excursion after exit cannot alter the realized trade outcome.
+    2. If the stop is reached strictly before TP1:
+       - Trade exits at the stop (exit_price=sl).
+       - If price subsequently reaches TP1 within the observation window: CLASS_B (Premature Stop-Out / Resumed).
+       - If price never reaches TP1: CLASS_A (True Invalidation).
+       - Realized MAE/MFE are computed strictly up to the stop exit.
+    3. If both barriers are touched in the same 1-minute candle:
+       - Conservative stop-first policy applies: trade is assumed stopped out at sl.
+       - same_candle_ambiguity flag is set to True.
+       - If price reaches TP1 in a strictly later candle (minute > stop_candle): CLASS_B (SL_RESUMED).
+       - Otherwise: CLASS_A (SL).
+    4. If neither barrier is touched:
+       - Trade held until observation horizon expires (CLASS_D / CLASS_E).
+       - Realized MAE/MFE cover all available bars.
     """
     if not future_1m_bars:
-        return "CLASS_F", False, False, None, None, entry, "NO_DATA", 0.0, 0.0
+        return ResumptionResult(
+            resumption_class="CLASS_F",
+            sl_hit=False,
+            tp1_hit=False,
+            time_to_sl=None,
+            time_to_tp1=None,
+            exit_price=entry,
+            exit_reason="NO_DATA",
+            mae=0.0,
+            mfe=0.0,
+            full_window_mae=0.0,
+            full_window_mfe=0.0,
+            post_exit_mae=0.0,
+            post_exit_mfe=0.0,
+            same_candle_ambiguity=False,
+        )
 
     is_long = (direction == "LONG")
-    sl_hit = False
-    tp1_hit = False
-    time_to_sl: Optional[int] = None
-    time_to_tp1: Optional[int] = None
+    risk_pct = abs(entry - sl) / max(1e-6, entry)
 
-    highs = [float(b["high"]) for b in future_1m_bars]
-    lows = [float(b["low"]) for b in future_1m_bars]
+    # Full window series
+    all_highs = [float(b["high"]) for b in future_1m_bars]
+    all_lows = [float(b["low"]) for b in future_1m_bars]
     closes = [float(b["close"]) for b in future_1m_bars]
 
     if is_long:
-        mfe = (max(highs) - entry) / entry
-        mae = (entry - min(lows)) / entry
+        full_window_mfe = max(0.0, (max(all_highs) - entry) / entry)
+        full_window_mae = max(0.0, (entry - min(all_lows)) / entry)
     else:
-        mfe = (entry - min(lows)) / entry
-        mae = (max(highs) - entry) / entry
+        full_window_mfe = max(0.0, (entry - min(all_lows)) / entry)
+        full_window_mae = max(0.0, (max(all_highs) - entry) / entry)
 
-    mae = max(0.0, mae)
-    mfe = max(0.0, mfe)
+    first_sl_bar: Optional[int] = None
+    first_tp1_bar: Optional[int] = None
 
-    # First causal order: check minute by minute
-    # Important: In same minute, check SL first to prevent favorable fill bias
     for minute_idx, b in enumerate(future_1m_bars):
         h, l = float(b["high"]), float(b["low"])
-        if is_long:
-            if not sl_hit and l <= sl:
-                sl_hit = True
-                time_to_sl = minute_idx + 1
-            if not tp1_hit and h >= tp1:
-                tp1_hit = True
-                time_to_tp1 = minute_idx + 1
-        else:
-            if not sl_hit and h >= sl:
-                sl_hit = True
-                time_to_sl = minute_idx + 1
-            if not tp1_hit and l <= tp1:
-                tp1_hit = True
-                time_to_tp1 = minute_idx + 1
+        candle_num = minute_idx + 1
 
-    # Resumption Classification:
-    # Class A: SL hit and TP1 never reached within 120m (True Invalidation)
-    # Class B: SL hit at t_sl, but price subsequently reached TP1 at t_tp > t_sl (Premature Stop-Out / Suffocated Trade)
-    # Class C: SL not hit, TP1 reached (Clean Winner)
-    # Class D: Neither hit, and small movement (Flat / Chop)
-    # Class E: Neither hit, but adverse movement without stop touch (Structural drift)
-    # Class F: Horizon expired or ambiguous
-    risk_pct = abs(entry - sl) / entry
-    if sl_hit and (not tp1_hit or (time_to_tp1 is not None and time_to_sl is not None and time_to_tp1 <= time_to_sl)):
-        resumption_class = "CLASS_A"
-        exit_price = sl
-        exit_reason = "SL"
-    elif sl_hit and tp1_hit and time_to_sl is not None and time_to_tp1 is not None and time_to_tp1 > time_to_sl:
-        resumption_class = "CLASS_B"
-        exit_price = sl  # Realized trade stopped out at SL, even though thesis resumed later!
-        exit_reason = "SL_RESUMED"
-    elif not sl_hit and tp1_hit:
+        candle_touches_sl = (l <= sl) if is_long else (h >= sl)
+        candle_touches_tp = (h >= tp1) if is_long else (l <= tp1)
+
+        if candle_touches_sl and first_sl_bar is None:
+            first_sl_bar = candle_num
+        if candle_touches_tp and first_tp1_bar is None:
+            first_tp1_bar = candle_num
+
+    same_candle_ambiguity = (
+        first_sl_bar is not None
+        and first_tp1_bar is not None
+        and first_sl_bar == first_tp1_bar
+    )
+
+    # Determine first-passage classification and actual trade exit
+    if first_tp1_bar is not None and (first_sl_bar is None or first_tp1_bar < first_sl_bar):
+        # Case 1: TP1 reached strictly before SL -> Clean Winner (CLASS_C)
         resumption_class = "CLASS_C"
         exit_price = tp1
         exit_reason = "TP1"
-    elif not sl_hit and not tp1_hit:
-        if mae > 0.75 * risk_pct:
+        sl_hit = False
+        tp1_hit = True
+        time_to_sl = None
+        time_to_tp1 = first_tp1_bar
+        t_exit = first_tp1_bar
+
+    elif first_sl_bar is not None:
+        # Case 2: Stop reached first, or both barriers touched on same candle (conservative stop-first)
+        sl_hit = True
+        time_to_sl = first_sl_bar
+        exit_price = sl
+        t_exit = first_sl_bar
+
+        # Check if TP1 was reached strictly after the stop exit (thesis resumption)
+        resumed_tp1_bar: Optional[int] = None
+        for m_idx in range(first_sl_bar, len(future_1m_bars)):
+            b = future_1m_bars[m_idx]
+            h, l = float(b["high"]), float(b["low"])
+            touches_tp = (h >= tp1) if is_long else (l <= tp1)
+            if touches_tp:
+                resumed_tp1_bar = m_idx + 1
+                break
+
+        if resumed_tp1_bar is not None:
+            resumption_class = "CLASS_B"
+            exit_reason = "SL_RESUMED"
+            tp1_hit = True
+            time_to_tp1 = resumed_tp1_bar
+        else:
+            resumption_class = "CLASS_A"
+            exit_reason = "SL"
+            tp1_hit = False
+            time_to_tp1 = None
+
+    else:
+        # Case 3: Neither barrier reached within observation horizon
+        sl_hit = False
+        tp1_hit = False
+        time_to_sl = None
+        time_to_tp1 = None
+        exit_price = closes[-1]
+        t_exit = len(future_1m_bars)
+
+        # Realized MAE for the full hold
+        if full_window_mae > 0.75 * risk_pct:
             resumption_class = "CLASS_E"
-            exit_price = closes[-1]
             exit_reason = "STRUCTURAL_DRIFT"
         else:
             resumption_class = "CLASS_D"
-            exit_price = closes[-1]
             exit_reason = "CHOP_FLAT"
-    else:
-        resumption_class = "CLASS_F"
-        exit_price = closes[-1]
-        exit_reason = "EXPIRED"
 
-    return resumption_class, sl_hit, tp1_hit, time_to_sl, time_to_tp1, exit_price, exit_reason, mae, mfe
+    # Compute realized MAE and MFE strictly up to t_exit
+    realized_bars = future_1m_bars[:t_exit]
+    r_highs = [float(b["high"]) for b in realized_bars]
+    r_lows = [float(b["low"]) for b in realized_bars]
+
+    if is_long:
+        realized_mfe = max(0.0, (max(r_highs) - entry) / entry)
+        realized_mae = max(0.0, (entry - min(r_lows)) / entry)
+    else:
+        realized_mfe = max(0.0, (entry - min(r_lows)) / entry)
+        realized_mae = max(0.0, (max(r_highs) - entry) / entry)
+
+    # Post-exit excursions (strictly from t_exit onward)
+    post_bars = future_1m_bars[t_exit:]
+    if post_bars:
+        p_highs = [float(b["high"]) for b in post_bars]
+        p_lows = [float(b["low"]) for b in post_bars]
+        if is_long:
+            post_exit_mfe = max(0.0, (max(p_highs) - entry) / entry)
+            post_exit_mae = max(0.0, (entry - min(p_lows)) / entry)
+        else:
+            post_exit_mfe = max(0.0, (entry - min(p_lows)) / entry)
+            post_exit_mae = max(0.0, (max(p_highs) - entry) / entry)
+    else:
+        post_exit_mfe = 0.0
+        post_exit_mae = 0.0
+
+    return ResumptionResult(
+        resumption_class=resumption_class,
+        sl_hit=sl_hit,
+        tp1_hit=tp1_hit,
+        time_to_sl=time_to_sl,
+        time_to_tp1=time_to_tp1,
+        exit_price=exit_price,
+        exit_reason=exit_reason,
+        mae=realized_mae,
+        mfe=realized_mfe,
+        full_window_mae=full_window_mae,
+        full_window_mfe=full_window_mfe,
+        post_exit_mae=post_exit_mae,
+        post_exit_mfe=post_exit_mfe,
+        same_candle_ambiguity=same_candle_ambiguity,
+    )
 
 
 def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
@@ -755,13 +910,14 @@ class Phase13DiscoveryEngine:
                     tp1_price = close_p + 1.5 * sl_dist_price if is_long else close_p - 1.5 * sl_dist_price
                     stop_regime = classify_stop_regime(sl_dist_pct)
 
-                    res_class, sl_hit, tp1_hit, t_sl, t_tp, exit_p, exit_reason, mae_eval, mfe_eval = classify_thesis_resumption(
+                    res = classify_thesis_resumption(
                         direction=direction,
                         entry=close_p,
                         sl=sl_price,
                         tp1=tp1_price,
                         future_1m_bars=forward_bars
                     )
+                    res_class, sl_hit, tp1_hit, t_sl, t_tp, exit_p, exit_reason, mae_eval, mfe_eval = res
 
                     # Realized Gross R
                     if is_long:
@@ -830,6 +986,11 @@ class Phase13DiscoveryEngine:
                         net_pnl_usd_fee_only=net_usd_fee,
                         net_pnl_usd_fee_slip=net_usd_slip,
                         net_pnl_usd_conservative=net_usd_cons,
+                        full_window_mae_pct=res.full_window_mae,
+                        full_window_mfe_pct=res.full_window_mfe,
+                        post_exit_mfe_pct=res.post_exit_mfe,
+                        post_exit_mae_pct=res.post_exit_mae,
+                        same_candle_ambiguity=res.same_candle_ambiguity,
                     )
                     evals.append(eval_obj)
 
@@ -1037,6 +1198,8 @@ def run_alpha_discovery(
 
     # MAE of Eventual Winners vs Eventual Losers
     winners = df_evals[df_evals["resumption_class"].isin(["CLASS_C", "CLASS_B"])]
+    clean_winners = df_evals[df_evals["resumption_class"] == "CLASS_C"]
+    resumed_b = df_evals[df_evals["resumption_class"] == "CLASS_B"]
     losers = df_evals[df_evals["resumption_class"] == "CLASS_A"]
 
     mae_stats = {
@@ -1044,6 +1207,9 @@ def run_alpha_discovery(
         "winners_mean_mae_pct": round(float(np.mean(winners["mae_pct"].values)) * 100, 3) if len(winners) > 0 else 0.0,
         "winners_p75_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 75)) * 100, 3) if len(winners) > 0 else 0.0,
         "winners_p90_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 90)) * 100, 3) if len(winners) > 0 else 0.0,
+        "clean_winners_median_mae_pct": round(float(np.median(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
+        "clean_winners_mean_mae_pct": round(float(np.mean(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
+        "resumed_b_median_full_window_mae_pct": round(float(np.median(resumed_b["full_window_mae_pct"].values)) * 100, 3) if len(resumed_b) > 0 else 0.0,
         "losers_median_mae_pct": round(float(np.median(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
         "losers_mean_mae_pct": round(float(np.mean(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
     }

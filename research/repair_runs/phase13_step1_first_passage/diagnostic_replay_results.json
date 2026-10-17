@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-10-17T21:10:00Z",
+  "step": "STEP_1_FIRST_PASSAGE_REPAIR",
+  "branch": "repair/phase13-f01-first-passage",
+  "commit_base": "38f3fc96a00cb14ed94108dcdce6aa3be922909d",
+  "synthetic_benchmark": {
+    "synthetic_cases": [
+      {
+        "case": "Target_First_Then_Later_Stop",
+        "old_class": "CLASS_A",
+        "old_exit_price": 99.0,
+        "old_exit_reason": "SL",
+        "old_gross_r": -1.0,
+        "old_mae": 0.05,
+        "old_mfe": 0.015999999999999945,
+        "new_class": "CLASS_C",
+        "new_exit_price": 101.5,
+        "new_exit_reason": "TP1",
+        "new_gross_r": 1.5,
+        "new_realized_mae": 0.0020000000000000282,
+        "new_realized_mfe": 0.015999999999999945,
+        "new_full_window_mae": 0.05,
+        "new_full_window_mfe": 0.015999999999999945,
+        "same_candle_ambiguity": false
+      },
+      {
+        "case": "Stop_First_Then_Later_Target",
+        "old_class": "CLASS_B",
+        "old_exit_price": 99.0,
+        "old_exit_reason": "SL_RESUMED",
+        "old_gross_r": -1.0,
+        "old_mae": 0.012000000000000028,
+        "old_mfe": 0.01799999999999997,
+        "new_class": "CLASS_B",
+        "new_exit_price": 99.0,
+        "new_exit_reason": "SL_RESUMED",
+        "new_gross_r": -1.0,
+        "new_realized_mae": 0.012000000000000028,
+        "new_realized_mfe": 0.0020000000000000282,
+        "new_full_window_mae": 0.012000000000000028,
+        "new_full_window_mfe": 0.01799999999999997,
+        "same_candle_ambiguity": false
+      },
+      {
+        "case": "Stop_Only_No_Target",
+        "old_class": "CLASS_A",
+        "old_exit_price": 99.0,
+        "old_exit_reason": "SL",
+        "old_gross_r": -1.0,
+        "old_mae": 0.02,
+        "old_mfe": 0.0020000000000000282,
+        "new_class": "CLASS_A",
+        "new_exit_price": 99.0,
+        "new_exit_reason": "SL",
+        "new_gross_r": -1.0,
+        "new_realized_mae": 0.012000000000000028,
+        "new_realized_mfe": 0.0020000000000000282,
+        "new_full_window_mae": 0.02,
+        "new_full_window_mfe": 0.0020000000000000282,
+        "same_candle_ambiguity": false
+      },
+      {
+        "case": "Target_Only_No_Stop",
+        "old_class": "CLASS_C",
+        "old_exit_price": 101.5,
+        "old_exit_reason": "TP1",
+        "old_gross_r": 1.5,
+        "old_mae": 0.0020000000000000282,
+        "old_mfe": 0.015999999999999945,
+        "new_class": "CLASS_C",
+        "new_exit_price": 101.5,
+        "new_exit_reason": "TP1",
+        "new_gross_r": 1.5,
+        "new_realized_mae": 0.0020000000000000282,
+        "new_realized_mfe": 0.015999999999999945,
+        "new_full_window_mae": 0.0020000000000000282,
+        "new_full_window_mfe": 0.015999999999999945,
+        "same_candle_ambiguity": false
+      },
+      {
+        "case": "Same_Candle_Ambiguous_Touch",
+        "old_class": "CLASS_A",
+        "old_exit_price": 99.0,
+        "old_exit_reason": "SL",
+        "old_gross_r": -1.0,
+        "old_mae": 0.015,
+        "old_mfe": 0.01799999999999997,
+        "new_class": "CLASS_A",
+        "new_exit_price": 99.0,
+        "new_exit_reason": "SL",
+        "new_gross_r": -1.0,
+        "new_realized_mae": 0.015,
+        "new_realized_mfe": 0.01799999999999997,
+        "new_full_window_mae": 0.015,
+        "new_full_window_mfe": 0.01799999999999997,
+        "same_candle_ambiguity": true
+      }
+    ]
+  },
+  "historical_benchmark": {
+    "status": "COMPLETED",
+    "sample_size": 5000,
+    "old_distribution_pct": {
+      "CLASS_A": 38.6,
+      "CLASS_B": 11.62,
+      "CLASS_C": 14.92,
+      "CLASS_D": 28.54,
+      "CLASS_E": 6.32,
+      "CLASS_F": 0.0
+    },
+    "new_distribution_pct": {
+      "CLASS_A": 32.04,
+      "CLASS_B": 10.88,
+      "CLASS_C": 22.44,
+      "CLASS_D": 28.36,
+      "CLASS_E": 6.28,
+      "CLASS_F": 0.0
+    },
+    "misclassified_winners_restored": 268,
+    "misclassified_winners_restored_pct": 5.36,
+    "mean_gross_r_old_buggy": -0.2423,
+    "mean_gross_r_new_corrected": -0.0555,
+    "gross_r_shift": 0.1868,
+    "alpha_disclaimer": "DIAGNOSTIC ONLY. Other known Phase 13 defects (F-02, F-03) remain. This does not validate strategy profitability."
+  },
+  "provenance": {
+    "source_parquet": "data/processed/binance_um_universe_1m_v2.parquet",
+    "sha256": "pre-existing research dataset",
+    "diagnostic_mode": "BOUNDED_READ_ONLY",
+    "canonical_data_preserved": true
+  }
+}
