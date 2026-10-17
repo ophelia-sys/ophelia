@@ -387,3 +387,303 @@ class ToxicityObservation:
         }
 
 
+@dataclass(frozen=True)
+class HasbrouckVarObservation:
+    """Phase 6D: Hasbrouck-Style Bivariate Price Discovery VAR (Research Only)."""
+    provenance: MicrostructureProvenance
+    run_id: str
+    status: str  # VALID, INSUFFICIENT_SAMPLE, NON_STATIONARY, UNSTABLE_SYSTEM, DEGRADED, NOT_AVAILABLE
+    selected_lag: Optional[int] = None
+    lag_selection_method: str = "BIC"
+    candidate_lags: list[int] = field(default_factory=list)
+    sample_count: int = 0
+    window_start: Optional[int] = None
+    window_end: Optional[int] = None
+    sampling_method: str = "EVENT_TIME"  # EVENT_TIME or TIME_BAR
+    sampling_interval_ms: int = 0
+    is_stable: Optional[bool] = None
+    max_eigenvalue_modulus: Optional[float] = None
+    cumulative_impact_H20: Optional[float] = None  # 20-step cumulative impulse response of trade flow on return
+    permanent_impact: Optional[float] = None  # Populated only upon demonstrated mathematical convergence
+    convergence_status: str = "NOT_CONVERGED"  # CONVERGED, NOT_CONVERGED, NOT_AVAILABLE
+    convergence_tolerance: float = 1e-6
+    primary_x_definition: str = "SIGNED_INDICATOR"
+    robustness_x_definition: str = "SIGNED_SQRT_VOLUME"
+    variance_share_flow: Optional[float] = None  # Fraction of return variance explained by trade innovations
+    coefficients: dict[str, Any] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    methodology_version: str = "HASBROUCK_STYLE_V1.1"
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def cumulative_impact(self) -> Optional[float]:
+        return self.cumulative_impact_H20
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "instrument": self.provenance.instrument,
+            "venue": self.provenance.venue,
+            "event_timestamp": self.provenance.event_timestamp,
+            "received_timestamp": self.provenance.received_timestamp,
+            "feature_version": self.provenance.feature_version,
+            "schema_version": self.provenance.schema_version,
+            "source_data_type": self.provenance.source_data_type,
+            "sample_count": self.sample_count,
+            "quality_state": self.provenance.quality_state.value,
+            "freshness_state": self.provenance.freshness_state.value,
+            "missingness_state": self.provenance.missingness_state.value,
+            "calculation_window": self.provenance.calculation_window,
+            "mode": self.provenance.mode,
+            "methodology_version": self.methodology_version,
+            "run_id": self.run_id,
+            "status": self.status,
+            "selected_lag": self.selected_lag,
+            "lag_selection_method": self.lag_selection_method,
+            "candidate_lags": self.candidate_lags,
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "sampling_method": self.sampling_method,
+            "sampling_interval_ms": self.sampling_interval_ms,
+            "is_stable": self.is_stable,
+            "max_eigenvalue_modulus": round(self.max_eigenvalue_modulus, 6) if self.max_eigenvalue_modulus is not None else None,
+            "cumulative_impact_H20": round(self.cumulative_impact_H20, 8) if self.cumulative_impact_H20 is not None else None,
+            "cumulative_impact": round(self.cumulative_impact_H20, 8) if self.cumulative_impact_H20 is not None else None,
+            "permanent_impact": round(self.permanent_impact, 8) if self.permanent_impact is not None else None,
+            "convergence_status": self.convergence_status,
+            "convergence_tolerance": self.convergence_tolerance,
+            "primary_x_definition": self.primary_x_definition,
+            "robustness_x_definition": self.robustness_x_definition,
+            "variance_share_flow": round(self.variance_share_flow, 4) if self.variance_share_flow is not None else None,
+            "coefficients": self.coefficients,
+            "diagnostics": self.diagnostics,
+            "detail": self.detail
+        }
+
+
+@dataclass(frozen=True)
+class VecmObservation:
+    """Phase 6D.1: Bivariate Vector Error Correction Model (Research Only)."""
+    provenance: MicrostructureProvenance
+    run_id: str
+    status: str  # VALID, INSUFFICIENT_SAMPLE, NOT_I1, NO_COINTEGRATION, UNSTABLE_SYSTEM, DEGRADED, NOT_AVAILABLE
+    series_1: str = "BTC-USDT-SPOT"
+    series_2: str = "BTC-USDT-PERP"
+    venue_1: str = "BINGX"
+    venue_2: str = "BINGX"
+    sampling_interval_ms: int = 1000
+    alignment_method: str = "NEAREST_PRIOR"
+    sample_count: int = 0
+    minimum_required_sample: int = 300
+    actual_sample: int = 0
+    sample_status: str = "VALID"
+    window_start: Optional[int] = None
+    window_end: Optional[int] = None
+    selected_lag: Optional[int] = None
+    cointegration_rank: Optional[int] = None
+    trace_stat: Optional[float] = None
+    max_eigen_stat: Optional[float] = None
+    beta_coeff: Optional[float] = None  # Normalized cointegrating vector [1, -beta_coeff]
+    alpha_1: Optional[float] = None  # Adjustment speed of series 1 (Spot)
+    alpha_2: Optional[float] = None  # Adjustment speed of series 2 (Perp)
+    gg_share_1_raw: Optional[float] = None  # Raw unclipped Gonzalo-Granger share for series 1
+    gg_share_2_raw: Optional[float] = None  # Raw unclipped Gonzalo-Granger share for series 2
+    gg_share_in_range: Optional[bool] = None  # True if raw shares fall within [0, 1]
+    gg_share_1: Optional[float] = None  # Component share (None if out of range)
+    gg_share_2: Optional[float] = None  # Component share (None if out of range)
+    bounded_speed_share_1: Optional[float] = None  # Explicit normalized bounded speed share |alpha_2| / (|alpha_1| + |alpha_2|)
+    bounded_speed_share_2: Optional[float] = None  # Explicit normalized bounded speed share |alpha_1| / (|alpha_1| + |alpha_2|)
+    is_stable: Optional[bool] = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    methodology_version: str = "VECM_STYLE_V1.1"
+    justification: Optional[str] = None
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "instrument": self.provenance.instrument,
+            "venue": self.provenance.venue,
+            "event_timestamp": self.provenance.event_timestamp,
+            "received_timestamp": self.provenance.received_timestamp,
+            "feature_version": self.provenance.feature_version,
+            "schema_version": self.provenance.schema_version,
+            "source_data_type": self.provenance.source_data_type,
+            "sample_count": self.sample_count,
+            "minimum_required_sample": self.minimum_required_sample,
+            "actual_sample": self.actual_sample,
+            "sample_status": self.sample_status,
+            "quality_state": self.provenance.quality_state.value,
+            "freshness_state": self.provenance.freshness_state.value,
+            "missingness_state": self.provenance.missingness_state.value,
+            "calculation_window": self.provenance.calculation_window,
+            "mode": self.provenance.mode,
+            "methodology_version": self.methodology_version,
+            "run_id": self.run_id,
+            "status": self.status,
+            "series_1": self.series_1,
+            "series_2": self.series_2,
+            "venue_1": self.venue_1,
+            "venue_2": self.venue_2,
+            "sampling_interval_ms": self.sampling_interval_ms,
+            "alignment_method": self.alignment_method,
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "selected_lag": self.selected_lag,
+            "cointegration_rank": self.cointegration_rank,
+            "trace_stat": round(self.trace_stat, 4) if self.trace_stat is not None else None,
+            "max_eigen_stat": round(self.max_eigen_stat, 4) if self.max_eigen_stat is not None else None,
+            "beta_coeff": round(self.beta_coeff, 6) if self.beta_coeff is not None else None,
+            "alpha_1": round(self.alpha_1, 6) if self.alpha_1 is not None else None,
+            "alpha_2": round(self.alpha_2, 6) if self.alpha_2 is not None else None,
+            "gg_share_1_raw": round(self.gg_share_1_raw, 4) if self.gg_share_1_raw is not None else None,
+            "gg_share_2_raw": round(self.gg_share_2_raw, 4) if self.gg_share_2_raw is not None else None,
+            "gg_share_in_range": self.gg_share_in_range,
+            "gg_share_1": round(self.gg_share_1, 4) if self.gg_share_1 is not None else None,
+            "gg_share_2": round(self.gg_share_2, 4) if self.gg_share_2 is not None else None,
+            "bounded_speed_share_1": round(self.bounded_speed_share_1, 4) if self.bounded_speed_share_1 is not None else None,
+            "bounded_speed_share_2": round(self.bounded_speed_share_2, 4) if self.bounded_speed_share_2 is not None else None,
+            "is_stable": self.is_stable,
+            "diagnostics": self.diagnostics,
+            "justification": self.justification,
+            "detail": self.detail
+        }
+
+
+# Phase 6E: Microstructure Empirical Evaluation & Ablation Models (Research Only)
+
+@dataclass(frozen=True)
+class ExperimentMetadata:
+    """Experiment registration record for empirical evaluation tracking."""
+    experiment_id: str
+    dataset_id: str
+    instrument: str
+    venue: str
+    asset_class: str
+    start_ts: int
+    end_ts: int
+    sampling_interval_ms: int = 1000
+    forecast_horizon_s: int = 300
+    feature_schema_version: str = "v1.0"
+    methodology_versions: str = "MICROSTRUCTURE_EVAL_V1"
+    code_commit: str = "phase6e_local"
+    config_hash: str = "default_hash"
+    mode: str = "RESEARCH"
+    created_at: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "experiment_id": self.experiment_id,
+            "dataset_id": self.dataset_id,
+            "instrument": self.instrument,
+            "venue": self.venue,
+            "asset_class": self.asset_class,
+            "start_ts": self.start_ts,
+            "end_ts": self.end_ts,
+            "sampling_interval_ms": self.sampling_interval_ms,
+            "forecast_horizon_s": self.forecast_horizon_s,
+            "feature_schema_version": self.feature_schema_version,
+            "methodology_versions": self.methodology_versions,
+            "code_commit": self.code_commit,
+            "config_hash": self.config_hash,
+            "mode": "RESEARCH"
+        }
+
+
+@dataclass(frozen=True)
+class EvaluationMetrics:
+    """Model forecast evaluation metrics over test partition."""
+    experiment_id: str
+    model_name: str
+    feature_group: str
+    horizon: int
+    mae: float
+    rmse: float
+    directional_accuracy: float
+    rank_ic: float
+    pinball_loss_p50: float
+    sample_count: int
+
+    def to_dict_list(self) -> list[dict]:
+        return [
+            {"experiment_id": self.experiment_id, "model_name": self.model_name, "feature_group": self.feature_group, "horizon": self.horizon, "metric_name": "MAE", "metric_value": self.mae, "sample_count": self.sample_count},
+            {"experiment_id": self.experiment_id, "model_name": self.model_name, "feature_group": self.feature_group, "horizon": self.horizon, "metric_name": "RMSE", "metric_value": self.rmse, "sample_count": self.sample_count},
+            {"experiment_id": self.experiment_id, "model_name": self.model_name, "feature_group": self.feature_group, "horizon": self.horizon, "metric_name": "DIRECTIONAL_ACCURACY", "metric_value": self.directional_accuracy, "sample_count": self.sample_count},
+            {"experiment_id": self.experiment_id, "model_name": self.model_name, "feature_group": self.feature_group, "horizon": self.horizon, "metric_name": "RANK_IC", "metric_value": self.rank_ic, "sample_count": self.sample_count},
+            {"experiment_id": self.experiment_id, "model_name": self.model_name, "feature_group": self.feature_group, "horizon": self.horizon, "metric_name": "PINBALL_LOSS_P50", "metric_value": self.pinball_loss_p50, "sample_count": self.sample_count},
+        ]
+
+
+@dataclass(frozen=True)
+class AblationResult:
+    """Statistical ablation comparison against baseline model."""
+    experiment_id: str
+    baseline_name: str
+    feature_group: str
+    horizon: int
+    delta_mae: float
+    delta_rmse: float
+    delta_dir_acc: float
+    dm_stat: float
+    raw_p_value: float
+    adjusted_p_value: float
+    is_significant: bool
+
+    def to_dict(self) -> dict:
+        return {
+            "experiment_id": self.experiment_id,
+            "baseline_name": self.baseline_name,
+            "feature_group": self.feature_group,
+            "horizon": self.horizon,
+            "delta_mae": self.delta_mae,
+            "delta_rmse": self.delta_rmse,
+            "delta_dir_acc": self.delta_dir_acc,
+            "dm_stat": self.dm_stat,
+            "raw_p_value": self.raw_p_value,
+            "adjusted_p_value": self.adjusted_p_value,
+            "is_significant": self.is_significant
+        }
+
+
+@dataclass(frozen=True)
+class RegimeResult:
+    """Regime-segmented performance metrics."""
+    experiment_id: str
+    regime_name: str
+    feature_group: str
+    metric_name: str
+    metric_value: float
+    sample_count: int
+
+    def to_dict(self) -> dict:
+        return {
+            "experiment_id": self.experiment_id,
+            "regime_name": self.regime_name,
+            "feature_group": self.feature_group,
+            "metric_name": self.metric_name,
+            "metric_value": self.metric_value,
+            "sample_count": self.sample_count
+        }
+
+
+@dataclass(frozen=True)
+class CrossAssetResult:
+    """Cross-asset evaluation metric record."""
+    experiment_id: str
+    instrument: str
+    asset_class: str
+    feature_group: str
+    metric_name: str
+    metric_value: float
+    sample_count: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "experiment_id": self.experiment_id,
+            "instrument": self.instrument,
+            "asset_class": self.asset_class,
+            "feature_group": self.feature_group,
+            "metric_name": self.metric_name,
+            "metric_value": self.metric_value,
+            "sample_count": self.sample_count
+        }
+
+

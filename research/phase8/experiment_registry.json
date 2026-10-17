@@ -1,0 +1,29 @@
+{
+  "experiments": [
+    {
+      "experiment_id": "EXP_001",
+      "timestamp": "2026-08-14T13:45:00Z",
+      "hypothesis": "Dataset Audit & True ESS Parameter Discovery",
+      "dataset_version": "binance_um_universe_1m_v2_2yr",
+      "feature_set": ["None"],
+      "timeframes": ["1m", "3m", "5m", "15m", "1h", "4h"],
+      "symbol_set": ["BTCUSDTUSDT", "ETHUSDTUSDT", "SOLUSDTUSDT", "XRPUSDTUSDT", "BNBUSDTUSDT"],
+      "label_horizon": "15m, 1H, 4H",
+      "label_definition": "Triple Barrier",
+      "cost_model": "N/A",
+      "training_period": "N/A",
+      "validation_period": "N/A",
+      "final_test_period": "LOCKED",
+      "metrics": {
+        "feature_rows": 1051200,
+        "label_rows": 52050,
+        "average_uniqueness": 0.045,
+        "cross_sectional_correlation": -0.0004,
+        "primary_feature_ar1": -0.4998
+      },
+      "statistical_test": null,
+      "decision": "COMPLETED",
+      "reason_for_acceptance_rejection": "Audit complete. The dependence cluster parameters reflect the underlying mock data structures created in Phase 8.6."
+    }
+  ]
+}

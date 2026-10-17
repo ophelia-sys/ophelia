@@ -24,8 +24,9 @@ def _connect() -> sqlite3.Connection:
         _auto_inited = False
         _wl_inited = False
         os.makedirs(config.DATA_DIR, exist_ok=True)
-        _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
+        _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False, timeout=30.0)
         _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA busy_timeout = 30000")
         
         # Core tables
         _conn.execute("""CREATE TABLE IF NOT EXISTS candles(
@@ -51,6 +52,7 @@ def _connect() -> sqlite3.Connection:
         _init_us_market_and_slot_tables(_conn)
         _init_manual_order_tables(_conn)
         _init_microstructure_tables(_conn)
+        _init_binance_tables(_conn)
         _conn.commit()
     return _conn
 
@@ -277,6 +279,277 @@ def _init_user_and_copy_tables(conn: sqlite3.Connection) -> None:
         UNIQUE(user_id, automation_id)
     )""")
 
+    ensure_microstructure_schema(conn)
+
+
+def ensure_microstructure_schema(conn: Optional[sqlite3.Connection] = None) -> None:
+    """Ensure all microstructure tables and Phase 6D.1 columns exist."""
+    c = conn or _connect()
+    with _lock:
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_var_runs (
+            run_id TEXT PRIMARY KEY,
+            instrument TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            source_data_type TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            methodology_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            selected_lag INTEGER,
+            lag_selection_method TEXT,
+            candidate_lags_json TEXT,
+            window_start INTEGER,
+            window_end INTEGER,
+            sampling_method TEXT,
+            sampling_interval_ms INTEGER,
+            is_stable INTEGER,
+            max_eigenvalue_modulus REAL,
+            cumulative_impact REAL,
+            cumulative_impact_H20 REAL,
+            permanent_impact REAL,
+            convergence_status TEXT DEFAULT 'NOT_CONVERGED',
+            convergence_tolerance REAL DEFAULT 1e-6,
+            primary_x_definition TEXT DEFAULT 'SIGNED_INDICATOR',
+            robustness_x_definition TEXT DEFAULT 'SIGNED_SQRT_VOLUME',
+            variance_share_flow REAL,
+            coefficients_json TEXT,
+            diagnostics_json TEXT,
+            detail_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_var_inst_ts ON microstructure_var_runs(instrument, event_timestamp)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_vecm_runs (
+            run_id TEXT PRIMARY KEY,
+            series_1 TEXT NOT NULL,
+            series_2 TEXT NOT NULL,
+            venue_1 TEXT NOT NULL,
+            venue_2 TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            source_data_type TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            minimum_required_sample INTEGER DEFAULT 300,
+            actual_sample INTEGER DEFAULT 0,
+            sample_status TEXT DEFAULT 'VALID',
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            methodology_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            sampling_interval_ms INTEGER,
+            alignment_method TEXT,
+            window_start INTEGER,
+            window_end INTEGER,
+            selected_lag INTEGER,
+            cointegration_rank INTEGER,
+            trace_stat REAL,
+            max_eigen_stat REAL,
+            beta_coeff REAL,
+            alpha_1 REAL,
+            alpha_2 REAL,
+            gg_share_1_raw REAL,
+            gg_share_2_raw REAL,
+            gg_share_in_range INTEGER,
+            gg_share_1 REAL,
+            gg_share_2 REAL,
+            bounded_speed_share_1 REAL,
+            bounded_speed_share_2 REAL,
+            is_stable INTEGER,
+            justification TEXT,
+            diagnostics_json TEXT,
+            detail_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_vecm_series_ts ON microstructure_vecm_runs(series_1, series_2, event_timestamp)")
+
+        # Phase 6E: Microstructure Empirical Evaluation & Research Registry Tables
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_experiments (
+            experiment_id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            asset_class TEXT NOT NULL,
+            start_ts INTEGER NOT NULL,
+            end_ts INTEGER NOT NULL,
+            sampling_interval_ms INTEGER NOT NULL,
+            forecast_horizon_s INTEGER NOT NULL,
+            feature_schema_version TEXT NOT NULL,
+            methodology_versions TEXT NOT NULL,
+            code_commit TEXT,
+            config_hash TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_exp_inst_ts ON microstructure_experiments(instrument, start_ts, end_ts)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_experiment_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_exp_metrics_exp_model ON microstructure_experiment_metrics(experiment_id, model_name, feature_group)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_ablation_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            baseline_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            delta_mae REAL,
+            delta_rmse REAL,
+            delta_dir_acc REAL,
+            dm_stat REAL,
+            raw_p_value REAL,
+            adjusted_p_value REAL,
+            is_significant INTEGER,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_ablation_exp ON microstructure_ablation_results(experiment_id, feature_group)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_regime_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            regime_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_regime_exp ON microstructure_regime_results(experiment_id, regime_name)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_cross_asset_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            asset_class TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_cross_asset_exp ON microstructure_cross_asset_results(experiment_id, instrument)")
+
+        # Phase 6F: TimesFM Microstructure Feature Consumption Experiments Table
+        c.execute("""CREATE TABLE IF NOT EXISTS timesfm_microstructure_experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            condition_name TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            feature_channels TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            mae_baseline REAL,
+            mae_augmented REAL,
+            delta_mae REAL,
+            rmse_baseline REAL,
+            rmse_augmented REAL,
+            delta_rmse REAL,
+            dir_acc_baseline REAL,
+            dir_acc_augmented REAL,
+            delta_dir_acc REAL,
+            dm_stat REAL,
+            raw_p_value REAL,
+            adjusted_p_value REAL,
+            is_significant INTEGER,
+            status TEXT NOT NULL,
+            latency_baseline_ms REAL,
+            latency_augmented_ms REAL,
+            memory_overhead_mb REAL,
+            mode TEXT NOT NULL DEFAULT 'SHADOW',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_tfm_micro_exp_inst ON timesfm_microstructure_experiments(instrument, condition_name)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_tfm_micro_exp_id ON timesfm_microstructure_experiments(experiment_id)")
+
+        # Ensure 'id' and 'is_significant' columns exist in timesfm_microstructure_experiments
+        try:
+            tfm_cols = {row[1] for row in c.execute("PRAGMA table_info(timesfm_microstructure_experiments)").fetchall()}
+            if "id" not in tfm_cols or "is_significant" not in tfm_cols:
+                c.execute("ALTER TABLE timesfm_microstructure_experiments RENAME TO timesfm_microstructure_experiments_old")
+                c.execute("""CREATE TABLE timesfm_microstructure_experiments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    experiment_id TEXT NOT NULL,
+                    condition_name TEXT NOT NULL,
+                    instrument TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    horizon INTEGER NOT NULL,
+                    feature_channels TEXT NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    mae_baseline REAL,
+                    mae_augmented REAL,
+                    delta_mae REAL,
+                    rmse_baseline REAL,
+                    rmse_augmented REAL,
+                    delta_rmse REAL,
+                    dir_acc_baseline REAL,
+                    dir_acc_augmented REAL,
+                    delta_dir_acc REAL,
+                    dm_stat REAL,
+                    raw_p_value REAL,
+                    adjusted_p_value REAL,
+                    is_significant INTEGER,
+                    status TEXT NOT NULL,
+                    latency_baseline_ms REAL,
+                    latency_augmented_ms REAL,
+                    memory_overhead_mb REAL,
+                    mode TEXT NOT NULL DEFAULT 'SHADOW',
+                    created_at INTEGER NOT NULL)""")
+                c.execute("""INSERT INTO timesfm_microstructure_experiments (
+                    experiment_id, condition_name, instrument, timeframe, horizon,
+                    feature_channels, sample_count, mae_baseline, mae_augmented, delta_mae,
+                    rmse_baseline, rmse_augmented, delta_rmse, dir_acc_baseline, dir_acc_augmented,
+                    delta_dir_acc, dm_stat, raw_p_value, adjusted_p_value, is_significant, status,
+                    latency_baseline_ms, latency_augmented_ms, memory_overhead_mb, mode, created_at
+                ) SELECT experiment_id, condition_name, instrument, timeframe, horizon,
+                    feature_channels, sample_count, mae_baseline, mae_augmented, delta_mae,
+                    rmse_baseline, rmse_augmented, delta_rmse, dir_acc_baseline, dir_acc_augmented,
+                    delta_dir_acc, dm_stat, raw_p_value, adjusted_p_value, 0, status,
+                    latency_baseline_ms, latency_augmented_ms, memory_overhead_mb, mode, created_at
+                FROM timesfm_microstructure_experiments_old""")
+                c.execute("DROP TABLE timesfm_microstructure_experiments_old")
+        except Exception:
+            pass
+
+        for _t, _col, _t_type in [
+            ("microstructure_var_runs", "cumulative_impact_H20", "REAL"),
+            ("microstructure_var_runs", "permanent_impact", "REAL"),
+            ("microstructure_var_runs", "convergence_status", "TEXT DEFAULT 'NOT_CONVERGED'"),
+            ("microstructure_var_runs", "convergence_tolerance", "REAL DEFAULT 1e-6"),
+            ("microstructure_var_runs", "primary_x_definition", "TEXT DEFAULT 'SIGNED_INDICATOR'"),
+            ("microstructure_var_runs", "robustness_x_definition", "TEXT DEFAULT 'SIGNED_SQRT_VOLUME'"),
+            ("microstructure_vecm_runs", "minimum_required_sample", "INTEGER DEFAULT 300"),
+            ("microstructure_vecm_runs", "actual_sample", "INTEGER DEFAULT 0"),
+            ("microstructure_vecm_runs", "sample_status", "TEXT DEFAULT 'VALID'"),
+            ("microstructure_vecm_runs", "gg_share_1_raw", "REAL"),
+            ("microstructure_vecm_runs", "gg_share_2_raw", "REAL"),
+            ("microstructure_vecm_runs", "gg_share_in_range", "INTEGER"),
+            ("microstructure_vecm_runs", "bounded_speed_share_1", "REAL"),
+            ("microstructure_vecm_runs", "bounded_speed_share_2", "REAL"),
+            ("microstructure_vecm_runs", "justification", "TEXT"),
+        ]:
+            try:
+                c.execute(f"ALTER TABLE {_t} ADD COLUMN {_col} {_t_type}")
+            except sqlite3.OperationalError:
+                pass
+        c.commit()
 
 
 def upsert_candles(exchange: str, symbol: str, rows: list[dict]) -> int:
@@ -624,6 +897,189 @@ def _auto_conn() -> sqlite3.Connection:
             created_at INTEGER NOT NULL,
             FOREIGN KEY(run_id) REFERENCES microstructure_model_runs(run_id))""")
         c.execute("CREATE INDEX IF NOT EXISTS ix_micro_eval_inst ON microstructure_evaluations(instrument, metric_name)")
+
+        # Phase 6D: Hasbrouck VAR and VECM runs tables (strictly RESEARCH mode)
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_var_runs (
+            run_id TEXT PRIMARY KEY,
+            instrument TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            source_data_type TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            methodology_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            selected_lag INTEGER,
+            lag_selection_method TEXT,
+            candidate_lags_json TEXT,
+            window_start INTEGER,
+            window_end INTEGER,
+            sampling_method TEXT,
+            sampling_interval_ms INTEGER,
+            is_stable INTEGER,
+            max_eigenvalue_modulus REAL,
+            cumulative_impact REAL,
+            cumulative_impact_H20 REAL,
+            permanent_impact REAL,
+            convergence_status TEXT DEFAULT 'NOT_CONVERGED',
+            convergence_tolerance REAL DEFAULT 1e-6,
+            primary_x_definition TEXT DEFAULT 'SIGNED_INDICATOR',
+            robustness_x_definition TEXT DEFAULT 'SIGNED_SQRT_VOLUME',
+            variance_share_flow REAL,
+            coefficients_json TEXT,
+            diagnostics_json TEXT,
+            detail_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_var_inst_ts ON microstructure_var_runs(instrument, event_timestamp)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_vecm_runs (
+            run_id TEXT PRIMARY KEY,
+            series_1 TEXT NOT NULL,
+            series_2 TEXT NOT NULL,
+            venue_1 TEXT NOT NULL,
+            venue_2 TEXT NOT NULL,
+            event_timestamp INTEGER NOT NULL,
+            received_timestamp INTEGER NOT NULL,
+            feature_version TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            source_data_type TEXT NOT NULL,
+            sample_count INTEGER NOT NULL,
+            minimum_required_sample INTEGER DEFAULT 300,
+            actual_sample INTEGER DEFAULT 0,
+            sample_status TEXT DEFAULT 'VALID',
+            quality_state TEXT NOT NULL,
+            freshness_state TEXT NOT NULL,
+            missingness_state TEXT NOT NULL,
+            calculation_window INTEGER NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            methodology_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            sampling_interval_ms INTEGER,
+            alignment_method TEXT,
+            window_start INTEGER,
+            window_end INTEGER,
+            selected_lag INTEGER,
+            cointegration_rank INTEGER,
+            trace_stat REAL,
+            max_eigen_stat REAL,
+            beta_coeff REAL,
+            alpha_1 REAL,
+            alpha_2 REAL,
+            gg_share_1_raw REAL,
+            gg_share_2_raw REAL,
+            gg_share_in_range INTEGER,
+            gg_share_1 REAL,
+            gg_share_2 REAL,
+            bounded_speed_share_1 REAL,
+            bounded_speed_share_2 REAL,
+            is_stable INTEGER,
+            justification TEXT,
+            diagnostics_json TEXT,
+            detail_json TEXT,
+            created_at INTEGER NOT NULL)""")
+        # Phase 6E: Microstructure Empirical Evaluation & Research Registry Tables
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_experiments (
+            experiment_id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            asset_class TEXT NOT NULL,
+            start_ts INTEGER NOT NULL,
+            end_ts INTEGER NOT NULL,
+            sampling_interval_ms INTEGER NOT NULL,
+            forecast_horizon_s INTEGER NOT NULL,
+            feature_schema_version TEXT NOT NULL,
+            methodology_versions TEXT NOT NULL,
+            code_commit TEXT,
+            config_hash TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'RESEARCH',
+            created_at INTEGER NOT NULL)""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_exp_inst_ts ON microstructure_experiments(instrument, start_ts, end_ts)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_experiment_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_exp_metrics_exp_model ON microstructure_experiment_metrics(experiment_id, model_name, feature_group)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_ablation_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            baseline_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            delta_mae REAL,
+            delta_rmse REAL,
+            delta_dir_acc REAL,
+            dm_stat REAL,
+            raw_p_value REAL,
+            adjusted_p_value REAL,
+            is_significant INTEGER,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_ablation_exp ON microstructure_ablation_results(experiment_id, feature_group)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_regime_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            regime_name TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_regime_exp ON microstructure_regime_results(experiment_id, regime_name)")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS microstructure_cross_asset_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id TEXT NOT NULL,
+            instrument TEXT NOT NULL,
+            asset_class TEXT NOT NULL,
+            feature_group TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL,
+            sample_count INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(experiment_id) REFERENCES microstructure_experiments(experiment_id))""")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_micro_cross_asset_exp ON microstructure_cross_asset_results(experiment_id, instrument)")
+
+        # Phase 6D.1 Migrations for existing SQLite tables
+        for _t_col in [
+            ("microstructure_var_runs", "cumulative_impact_H20", "REAL"),
+            ("microstructure_var_runs", "permanent_impact", "REAL"),
+            ("microstructure_var_runs", "convergence_status", "TEXT DEFAULT 'NOT_CONVERGED'"),
+            ("microstructure_var_runs", "convergence_tolerance", "REAL DEFAULT 1e-6"),
+            ("microstructure_var_runs", "primary_x_definition", "TEXT DEFAULT 'SIGNED_INDICATOR'"),
+            ("microstructure_var_runs", "robustness_x_definition", "TEXT DEFAULT 'SIGNED_SQRT_VOLUME'"),
+            ("microstructure_vecm_runs", "minimum_required_sample", "INTEGER DEFAULT 300"),
+            ("microstructure_vecm_runs", "actual_sample", "INTEGER DEFAULT 0"),
+            ("microstructure_vecm_runs", "sample_status", "TEXT DEFAULT 'VALID'"),
+            ("microstructure_vecm_runs", "gg_share_1_raw", "REAL"),
+            ("microstructure_vecm_runs", "gg_share_2_raw", "REAL"),
+            ("microstructure_vecm_runs", "gg_share_in_range", "INTEGER"),
+            ("microstructure_vecm_runs", "bounded_speed_share_1", "REAL"),
+            ("microstructure_vecm_runs", "bounded_speed_share_2", "REAL"),
+            ("microstructure_vecm_runs", "justification", "TEXT"),
+        ]:
+            try:
+                c.execute(f"ALTER TABLE {_t_col[0]} ADD COLUMN {_t_col[1]} {_t_col[2]}")
+            except sqlite3.OperationalError:
+                pass
 
         # Migrations for existing tables
         try:
@@ -5681,6 +6137,85 @@ def _init_microstructure_tables(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_tox_inst_ts ON microstructure_toxicity(instrument, event_timestamp)")
 
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_var_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT UNIQUE NOT NULL,
+        instrument TEXT NOT NULL,
+        venue TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        methodology_version TEXT NOT NULL DEFAULT 'HASBROUCK_STYLE_RESEARCH',
+        status TEXT NOT NULL,
+        selected_lag INTEGER,
+        lag_selection_method TEXT,
+        candidate_lags_json TEXT,
+        window_start INTEGER,
+        window_end INTEGER,
+        sampling_method TEXT,
+        sampling_interval_ms INTEGER,
+        is_stable INTEGER,
+        max_eigenvalue_modulus REAL,
+        cumulative_impact REAL,
+        variance_share_flow REAL,
+        coefficients_json TEXT,
+        diagnostics_json TEXT,
+        detail_json TEXT,
+        created_at INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_var_inst_ts ON microstructure_var_runs(instrument, event_timestamp)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_var_run_id ON microstructure_var_runs(run_id)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS microstructure_vecm_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT UNIQUE NOT NULL,
+        series_1 TEXT NOT NULL,
+        series_2 TEXT NOT NULL,
+        venue_1 TEXT NOT NULL,
+        venue_2 TEXT NOT NULL,
+        event_timestamp INTEGER NOT NULL,
+        received_timestamp INTEGER NOT NULL,
+        feature_version TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        source_data_type TEXT NOT NULL,
+        sample_count INTEGER NOT NULL,
+        quality_state TEXT NOT NULL,
+        freshness_state TEXT NOT NULL,
+        missingness_state TEXT NOT NULL,
+        calculation_window INTEGER NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'RESEARCH',
+        methodology_version TEXT NOT NULL DEFAULT 'VECM_STYLE_RESEARCH',
+        status TEXT NOT NULL,
+        sampling_interval_ms INTEGER,
+        alignment_method TEXT,
+        window_start INTEGER,
+        window_end INTEGER,
+        selected_lag INTEGER,
+        cointegration_rank INTEGER,
+        trace_stat REAL,
+        max_eigen_stat REAL,
+        beta_coeff REAL,
+        alpha_1 REAL,
+        alpha_2 REAL,
+        gg_share_1 REAL,
+        gg_share_2 REAL,
+        is_stable INTEGER,
+        diagnostics_json TEXT,
+        detail_json TEXT,
+        created_at INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_vecm_series_ts ON microstructure_vecm_runs(series_1, series_2, event_timestamp)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_micro_vecm_run_id ON microstructure_vecm_runs(run_id)")
+    ensure_microstructure_schema(conn)
+
 
 def persist_microstructure_flow(data: dict) -> int:
     """Persist a trade flow observation. Mode is strictly RESEARCH."""
@@ -6003,8 +6538,897 @@ def get_latest_microstructure_toxicity(instrument: str) -> Optional[dict]:
     return item
 
 
+def persist_microstructure_var(data: dict) -> int:
+    """Persist a Hasbrouck-style VAR run. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    coeffs_str = json.dumps(data.get("coefficients")) if data.get("coefficients") else None
+    diags_str = json.dumps(data.get("diagnostics")) if data.get("diagnostics") else None
+    cands_str = json.dumps(data.get("candidate_lags")) if data.get("candidate_lags") else None
+    cum_h20 = data.get("cumulative_impact_H20", data.get("cumulative_impact"))
+
+    with _lock:
+        cur = c.execute(
+            """INSERT OR REPLACE INTO microstructure_var_runs(
+                run_id, instrument, venue, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, methodology_version, status, selected_lag, lag_selection_method,
+                candidate_lags_json, window_start, window_end, sampling_method,
+                sampling_interval_ms, is_stable, max_eigenvalue_modulus,
+                cumulative_impact, cumulative_impact_H20, permanent_impact,
+                convergence_status, convergence_tolerance, primary_x_definition,
+                robustness_x_definition, variance_share_flow, coefficients_json,
+                diagnostics_json, detail_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["run_id"], data["instrument"], data.get("venue", "BINGX"),
+                data["event_timestamp"], data.get("received_timestamp", data["event_timestamp"]),
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "TRADE_TICKS"), data.get("sample_count", 0),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("methodology_version", "HASBROUCK_STYLE_V1.1"),
+                data.get("status", "VALID"), data.get("selected_lag"),
+                data.get("lag_selection_method", "BIC"), cands_str,
+                data.get("window_start"), data.get("window_end"),
+                data.get("sampling_method", "EVENT_TIME"), data.get("sampling_interval_ms", 0),
+                1 if data.get("is_stable") else (0 if data.get("is_stable") is False else None),
+                data.get("max_eigenvalue_modulus"), cum_h20, cum_h20,
+                data.get("permanent_impact"),
+                data.get("convergence_status", "NOT_CONVERGED"),
+                data.get("convergence_tolerance", 1e-6),
+                data.get("primary_x_definition", "SIGNED_INDICATOR"),
+                data.get("robustness_x_definition", "SIGNED_SQRT_VOLUME"),
+                data.get("variance_share_flow"), coeffs_str, diags_str,
+                detail_str, now_ms
+            )
+        )
+        c.commit()
+        return cur.lastrowid
 
 
+def get_latest_microstructure_var(instrument: str) -> Optional[dict]:
+    """Retrieve the latest Hasbrouck VAR observation for an instrument."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_var_runs WHERE instrument=? ORDER BY event_timestamp DESC LIMIT 1",
+            (instrument.upper(),)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_var_runs LIMIT 0").description]
+    item = dict(zip(cols, row))
+    for f in ("coefficients_json", "diagnostics_json", "detail_json", "candidate_lags_json"):
+        target = f.replace("_json", "")
+        if item.get(f):
+            try:
+                item[target] = json.loads(item[f])
+            except Exception:
+                item[target] = {} if "dict" in target or target in ("coefficients", "diagnostics", "detail") else []
+    item["is_stable"] = bool(item["is_stable"]) if item.get("is_stable") is not None else None
+    return item
 
 
+def get_microstructure_var_by_run_id(run_id: str) -> Optional[dict]:
+    """Retrieve a Hasbrouck VAR run by run_id."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_var_runs WHERE run_id=?",
+            (run_id,)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_var_runs LIMIT 0").description]
+    item = dict(zip(cols, row))
+    for f in ("coefficients_json", "diagnostics_json", "detail_json", "candidate_lags_json"):
+        target = f.replace("_json", "")
+        if item.get(f):
+            try:
+                item[target] = json.loads(item[f])
+            except Exception:
+                item[target] = {} if "dict" in target or target in ("coefficients", "diagnostics", "detail") else []
+    item["is_stable"] = bool(item["is_stable"]) if item.get("is_stable") is not None else None
+    return item
 
+
+def persist_microstructure_vecm(data: dict) -> int:
+    """Persist a VECM run. Mode is strictly RESEARCH."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    detail_raw = data.get("detail")
+    detail_str = json.dumps(detail_raw) if isinstance(detail_raw, (dict, list)) else (str(detail_raw) if detail_raw else None)
+    diags_str = json.dumps(data.get("diagnostics")) if data.get("diagnostics") else None
+
+    with _lock:
+        cur = c.execute(
+            """INSERT OR REPLACE INTO microstructure_vecm_runs(
+                run_id, series_1, series_2, venue_1, venue_2, event_timestamp, received_timestamp,
+                feature_version, schema_version, source_data_type, sample_count,
+                minimum_required_sample, actual_sample, sample_status,
+                quality_state, freshness_state, missingness_state, calculation_window,
+                mode, methodology_version, status, sampling_interval_ms, alignment_method,
+                window_start, window_end, selected_lag, cointegration_rank,
+                trace_stat, max_eigen_stat, beta_coeff, alpha_1, alpha_2,
+                gg_share_1_raw, gg_share_2_raw, gg_share_in_range,
+                gg_share_1, gg_share_2, bounded_speed_share_1, bounded_speed_share_2,
+                is_stable, justification, diagnostics_json, detail_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                data["run_id"], data.get("series_1", "BTC-USDT-SPOT"), data.get("series_2", "BTC-USDT-PERP"),
+                data.get("venue_1", "BINGX"), data.get("venue_2", "BINGX"),
+                data["event_timestamp"], data.get("received_timestamp", data["event_timestamp"]),
+                data.get("feature_version", "1.0.0"), data.get("schema_version", "v1"),
+                data.get("source_data_type", "PRICE_SERIES"), data.get("sample_count", 0),
+                data.get("minimum_required_sample", 300),
+                data.get("actual_sample", data.get("sample_count", 0)),
+                data.get("sample_status", "VALID"),
+                data.get("quality_state", "VALID"), data.get("freshness_state", "FRESH"),
+                data.get("missingness_state", "COMPLETE"), data.get("calculation_window", 60000),
+                "RESEARCH",  # Invariant: strictly RESEARCH
+                data.get("methodology_version", "VECM_STYLE_V1.1"),
+                data.get("status", "VALID"), data.get("sampling_interval_ms", 1000),
+                data.get("alignment_method", "NEAREST_PRIOR"),
+                data.get("window_start"), data.get("window_end"),
+                data.get("selected_lag"), data.get("cointegration_rank"),
+                data.get("trace_stat"), data.get("max_eigen_stat"),
+                data.get("beta_coeff"), data.get("alpha_1"), data.get("alpha_2"),
+                data.get("gg_share_1_raw"), data.get("gg_share_2_raw"),
+                1 if data.get("gg_share_in_range") else (0 if data.get("gg_share_in_range") is False else None),
+                data.get("gg_share_1"), data.get("gg_share_2"),
+                data.get("bounded_speed_share_1"), data.get("bounded_speed_share_2"),
+                1 if data.get("is_stable") else (0 if data.get("is_stable") is False else None),
+                data.get("justification"),
+                diags_str, detail_str, now_ms
+            )
+        )
+        c.commit()
+        return cur.lastrowid
+
+
+def get_latest_microstructure_vecm(series_1: str = "BTC-USDT-SPOT", series_2: str = "BTC-USDT-PERP") -> Optional[dict]:
+    """Retrieve the latest VECM observation for a series pair."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_vecm_runs WHERE series_1=? AND series_2=? ORDER BY event_timestamp DESC LIMIT 1",
+            (series_1.upper(), series_2.upper())
+        ).fetchone()
+        if not row:
+            # Fallback search by series_1 alone
+            row = c.execute(
+                "SELECT * FROM microstructure_vecm_runs WHERE series_1=? ORDER BY event_timestamp DESC LIMIT 1",
+                (series_1.upper(),)
+            ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_vecm_runs LIMIT 0").description]
+    item = dict(zip(cols, row))
+    for f in ("diagnostics_json", "detail_json"):
+        target = f.replace("_json", "")
+        if item.get(f):
+            try:
+                item[target] = json.loads(item[f])
+            except Exception:
+                item[target] = {}
+    item["is_stable"] = bool(item["is_stable"]) if item.get("is_stable") is not None else None
+    return item
+
+
+def get_microstructure_vecm_by_run_id(run_id: str) -> Optional[dict]:
+    """Retrieve a VECM run by run_id."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_vecm_runs WHERE run_id=?",
+            (run_id,)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_vecm_runs LIMIT 0").description]
+    item = dict(zip(cols, row))
+    for f in ("diagnostics_json", "detail_json"):
+        target = f.replace("_json", "")
+        if item.get(f):
+            try:
+                item[target] = json.loads(item[f])
+            except Exception:
+                item[target] = {}
+    item["is_stable"] = bool(item["is_stable"]) if item.get("is_stable") is not None else None
+    return item
+
+
+# Phase 6E: Microstructure Empirical Evaluation & Research Registry Helpers
+
+def persist_microstructure_experiment(exp: dict) -> None:
+    """Persist an experiment metadata record. Strictly RESEARCH mode."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        c.execute(
+            """INSERT OR REPLACE INTO microstructure_experiments(
+                experiment_id, dataset_id, instrument, venue, asset_class,
+                start_ts, end_ts, sampling_interval_ms, forecast_horizon_s,
+                feature_schema_version, methodology_versions, code_commit,
+                config_hash, mode, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                exp["experiment_id"], exp.get("dataset_id", "canonical_v1"),
+                exp.get("instrument", "BTC-USDT"), exp.get("venue", "BINGX"),
+                exp.get("asset_class", "CRYPTO"), exp["start_ts"], exp["end_ts"],
+                exp.get("sampling_interval_ms", 1000), exp.get("forecast_horizon_s", 300),
+                exp.get("feature_schema_version", "v1.0"),
+                exp.get("methodology_versions", "MICROSTRUCTURE_EVAL_V1"),
+                exp.get("code_commit", "phase6e_local"),
+                exp.get("config_hash", "default_hash"),
+                "RESEARCH",
+                now_ms
+            )
+        )
+        c.commit()
+
+
+def persist_microstructure_metrics(metrics: list[dict]) -> None:
+    """Persist a batch of model forecast evaluation metrics."""
+    if not metrics:
+        return
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        for m in metrics:
+            c.execute(
+                """INSERT INTO microstructure_experiment_metrics(
+                    experiment_id, model_name, feature_group, horizon,
+                    metric_name, metric_value, sample_count, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    m["experiment_id"], m["model_name"], m["feature_group"],
+                    m.get("horizon", 300), m["metric_name"], m.get("metric_value"),
+                    m.get("sample_count", 0), now_ms
+                )
+            )
+        c.commit()
+
+
+def persist_microstructure_ablation_results(ablations: list[dict]) -> None:
+    """Persist a batch of ablation comparisons with DM stats and FDR p-values."""
+    if not ablations:
+        return
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        for a in ablations:
+            c.execute(
+                """INSERT INTO microstructure_ablation_results(
+                    experiment_id, baseline_name, feature_group, horizon,
+                    delta_mae, delta_rmse, delta_dir_acc, dm_stat,
+                    raw_p_value, adjusted_p_value, is_significant, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    a["experiment_id"], a["baseline_name"], a["feature_group"],
+                    a.get("horizon", 300), a.get("delta_mae"), a.get("delta_rmse"),
+                    a.get("delta_dir_acc"), a.get("dm_stat"), a.get("raw_p_value"),
+                    a.get("adjusted_p_value"), 1 if a.get("is_significant") else 0,
+                    now_ms
+                )
+            )
+        c.commit()
+
+
+def persist_microstructure_regime_results(regimes: list[dict]) -> None:
+    """Persist regime-segmented results."""
+    if not regimes:
+        return
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        for r in regimes:
+            c.execute(
+                """INSERT INTO microstructure_regime_results(
+                    experiment_id, regime_name, feature_group,
+                    metric_name, metric_value, sample_count, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    r["experiment_id"], r["regime_name"], r["feature_group"],
+                    r["metric_name"], r.get("metric_value"), r.get("sample_count", 0),
+                    now_ms
+                )
+            )
+        c.commit()
+
+
+def persist_microstructure_cross_asset_results(cross_assets: list[dict]) -> None:
+    """Persist cross-asset evaluation results."""
+    if not cross_assets:
+        return
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        for ca in cross_assets:
+            c.execute(
+                """INSERT INTO microstructure_cross_asset_results(
+                    experiment_id, instrument, asset_class, feature_group,
+                    metric_name, metric_value, sample_count, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    ca["experiment_id"], ca["instrument"], ca.get("asset_class", "CRYPTO"),
+                    ca["feature_group"], ca["metric_name"], ca.get("metric_value"),
+                    ca.get("sample_count", 0), now_ms
+                )
+            )
+        c.commit()
+
+
+def get_microstructure_experiment(experiment_id: str) -> Optional[dict]:
+    """Retrieve an experiment metadata record."""
+    c = _wl_conn()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM microstructure_experiments WHERE experiment_id=?",
+            (experiment_id,)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_experiments LIMIT 0").description]
+    return dict(zip(cols, row))
+
+
+def get_microstructure_experiment_metrics(experiment_id: str) -> list[dict]:
+    """Retrieve metrics for an experiment."""
+    c = _wl_conn()
+    with _lock:
+        rows = c.execute(
+            "SELECT * FROM microstructure_experiment_metrics WHERE experiment_id=? ORDER BY id ASC",
+            (experiment_id,)
+        ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_experiment_metrics LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def get_microstructure_ablation_results(experiment_id: str) -> list[dict]:
+    """Retrieve ablation results for an experiment."""
+    c = _wl_conn()
+    with _lock:
+        rows = c.execute(
+            "SELECT * FROM microstructure_ablation_results WHERE experiment_id=? ORDER BY id ASC",
+            (experiment_id,)
+        ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_ablation_results LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def get_microstructure_regime_results(experiment_id: str) -> list[dict]:
+    """Retrieve regime results for an experiment."""
+    c = _wl_conn()
+    with _lock:
+        rows = c.execute(
+            "SELECT * FROM microstructure_regime_results WHERE experiment_id=? ORDER BY id ASC",
+            (experiment_id,)
+        ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_regime_results LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def get_microstructure_cross_asset_results(experiment_id: str) -> list[dict]:
+    """Retrieve cross-asset results for an experiment."""
+    c = _wl_conn()
+    with _lock:
+        rows = c.execute(
+            "SELECT * FROM microstructure_cross_asset_results WHERE experiment_id=? ORDER BY id ASC",
+            (experiment_id,)
+        ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM microstructure_cross_asset_results LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+# Phase 6F: TimesFM Microstructure Feature Consumption Helpers
+
+def persist_timesfm_microstructure_experiment(record: dict) -> None:
+    """Persist a TimesFM microstructure feature consumption experiment record."""
+    c = _wl_conn()
+    now_ms = int(time.time() * 1000)
+    feat_chans = record.get("feature_channels", [])
+    chans_str = json.dumps(feat_chans) if isinstance(feat_chans, (list, dict)) else str(feat_chans)
+    with _lock:
+        c.execute(
+            """INSERT OR REPLACE INTO timesfm_microstructure_experiments(
+                experiment_id, condition_name, instrument, timeframe, horizon,
+                feature_channels, sample_count, mae_baseline, mae_augmented, delta_mae,
+                rmse_baseline, rmse_augmented, delta_rmse, dir_acc_baseline, dir_acc_augmented,
+                delta_dir_acc, dm_stat, raw_p_value, adjusted_p_value, is_significant, status,
+                latency_baseline_ms, latency_augmented_ms, memory_overhead_mb, mode, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                record["experiment_id"], record["condition_name"], record["instrument"],
+                record.get("timeframe", "5m"), record.get("horizon", 12),
+                chans_str, record.get("sample_count", 0),
+                record.get("mae_baseline"), record.get("mae_augmented"), record.get("delta_mae"),
+                record.get("rmse_baseline"), record.get("rmse_augmented"), record.get("delta_rmse"),
+                record.get("dir_acc_baseline"), record.get("dir_acc_augmented"), record.get("delta_dir_acc"),
+                record.get("dm_stat"), record.get("raw_p_value"), record.get("adjusted_p_value"),
+                1 if record.get("is_significant") else 0,
+                record.get("status", "VALID"), record.get("latency_baseline_ms", 0.0),
+                record.get("latency_augmented_ms", 0.0), record.get("memory_overhead_mb", 0.0),
+                "SHADOW", now_ms
+            )
+        )
+        c.commit()
+
+
+def get_timesfm_microstructure_experiments(experiment_id_or_instrument: Optional[str] = None) -> list[dict]:
+    """Retrieve TimesFM microstructure experiments, optionally filtered by experiment_id or instrument."""
+    c = _wl_conn()
+    with _lock:
+        if experiment_id_or_instrument:
+            rows = c.execute(
+                "SELECT * FROM timesfm_microstructure_experiments WHERE experiment_id=? OR instrument=? ORDER BY id ASC",
+                (experiment_id_or_instrument, experiment_id_or_instrument)
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM timesfm_microstructure_experiments ORDER BY id ASC"
+            ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM timesfm_microstructure_experiments LIMIT 0").description]
+    res = [dict(zip(cols, r)) for r in rows]
+    for r in res:
+        if "feature_channels" in r and isinstance(r["feature_channels"], str):
+            try:
+                r["feature_channels"] = json.loads(r["feature_channels"])
+            except Exception:
+                pass
+    return res
+
+
+# ---------------------------------------------------------------- Binance Multi-Venue Layer (Phase 10)
+
+def _init_binance_tables(conn: sqlite3.Connection) -> None:
+    """Initialize Phase 10 Binance Primary Market Data and Candidate Compatibility tables."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS binance_raw_candles_1m(
+        venue TEXT NOT NULL DEFAULT 'BINANCE',
+        venue_product TEXT NOT NULL DEFAULT 'USDM_PERPETUAL',
+        symbol TEXT NOT NULL,
+        canonical_instrument_id TEXT,
+        ts INTEGER NOT NULL,
+        open REAL NOT NULL,
+        high REAL NOT NULL,
+        low REAL NOT NULL,
+        close REAL NOT NULL,
+        volume REAL NOT NULL,
+        quote_volume REAL,
+        trade_count INTEGER,
+        taker_buy_volume REAL,
+        taker_buy_quote_volume REAL,
+        is_closed INTEGER NOT NULL DEFAULT 1,
+        data_quality TEXT NOT NULL DEFAULT 'VALID',
+        freshness TEXT NOT NULL DEFAULT 'FRESH',
+        provider_version TEXT NOT NULL DEFAULT 'BINANCE_USDM_V1',
+        schema_version TEXT NOT NULL DEFAULT 'BINANCE_CANDLE_SCHEMA_V1',
+        ingestion_ts INTEGER NOT NULL,
+        PRIMARY KEY (venue, symbol, ts)
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_bn_raw_1m_ts ON binance_raw_candles_1m(symbol, ts)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS binance_derived_candles(
+        venue TEXT NOT NULL DEFAULT 'BINANCE',
+        symbol TEXT NOT NULL,
+        canonical_instrument_id TEXT,
+        resolution TEXT NOT NULL,
+        ts INTEGER NOT NULL,
+        close_ts INTEGER NOT NULL,
+        open REAL NOT NULL,
+        high REAL NOT NULL,
+        low REAL NOT NULL,
+        close REAL NOT NULL,
+        volume REAL NOT NULL,
+        quote_volume REAL,
+        trade_count INTEGER,
+        taker_buy_volume REAL,
+        source_bar_count INTEGER NOT NULL,
+        is_closed INTEGER NOT NULL DEFAULT 1,
+        data_quality TEXT NOT NULL DEFAULT 'VALID',
+        freshness TEXT NOT NULL DEFAULT 'FRESH',
+        provider_version TEXT NOT NULL DEFAULT 'BINANCE_USDM_V1',
+        schema_version TEXT NOT NULL DEFAULT 'BINANCE_CANDLE_SCHEMA_V1',
+        ingestion_ts INTEGER NOT NULL,
+        PRIMARY KEY (symbol, resolution, ts)
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_bn_derived_ts ON binance_derived_candles(symbol, resolution, ts)")
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS candidate_forecasts(
+        forecast_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        canonical_instrument_id TEXT,
+        forecast_timestamp INTEGER NOT NULL,
+        source_timeframe TEXT NOT NULL DEFAULT '5m',
+        timeframe_mode TEXT NOT NULL DEFAULT 'TIMESFM_PRIMARY_5M',
+        path_15m REAL,
+        path_30m REAL,
+        path_45m REAL,
+        path_60m REAL,
+        full_path_json TEXT,
+        q10 REAL,
+        q50 REAL,
+        q90 REAL,
+        raw_q10 REAL,
+        raw_q50 REAL,
+        raw_q90 REAL,
+        quantile_crossing_detected INTEGER DEFAULT 0,
+        postprocessed_q10 REAL,
+        postprocessed_q50 REAL,
+        postprocessed_q90 REAL,
+        postprocessing_method TEXT DEFAULT 'NONE',
+        forecast_return_pct REAL,
+        forecast_dispersion_pct REAL,
+        dispersion_bucket TEXT DEFAULT 'DISPERSION_BUCKET_UNCALIBRATED',
+        model_name TEXT NOT NULL DEFAULT 'TimesFM',
+        model_version TEXT NOT NULL DEFAULT '3.0',
+        checkpoint TEXT,
+        context_length INTEGER,
+        direction_prediction TEXT,
+        context_hash TEXT,
+        snapshot_hash TEXT,
+        status TEXT NOT NULL DEFAULT 'SHADOW',
+        created_ms INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_cand_fc_cand_id ON candidate_forecasts(candidate_id)")
+
+    _cand_fc_cols = [
+        ("timeframe_mode", "TEXT DEFAULT 'TIMESFM_PRIMARY_5M'"),
+        ("full_path_json", "TEXT"),
+        ("raw_q10", "REAL"),
+        ("raw_q50", "REAL"),
+        ("raw_q90", "REAL"),
+        ("quantile_crossing_detected", "INTEGER DEFAULT 0"),
+        ("postprocessed_q10", "REAL"),
+        ("postprocessed_q50", "REAL"),
+        ("postprocessed_q90", "REAL"),
+        ("postprocessing_method", "TEXT DEFAULT 'NONE'"),
+        ("dispersion_bucket", "TEXT DEFAULT 'DISPERSION_BUCKET_UNCALIBRATED'"),
+        ("context_hash", "TEXT"),
+        ("snapshot_hash", "TEXT"),
+        ("provider_class", "TEXT DEFAULT 'TimesFMProvider'"),
+        ("model_class", "TEXT DEFAULT 'TimesFM3Forecaster'"),
+        ("device", "TEXT DEFAULT 'cpu'"),
+        ("actual_model_inference_ms", "REAL DEFAULT 0.0"),
+        ("serialization_ms", "REAL DEFAULT 0.0"),
+        ("postprocessing_ms", "REAL DEFAULT 0.0"),
+        ("compatibility_calculation_ms", "REAL DEFAULT 0.0"),
+        ("total_candidate_forecast_ms", "REAL DEFAULT 0.0"),
+        ("cache_hit", "INTEGER DEFAULT 0")
+    ]
+    for _col, _typ in _cand_fc_cols:
+        try:
+            conn.execute(f"ALTER TABLE candidate_forecasts ADD COLUMN {_col} {_typ}")
+        except sqlite3.OperationalError:
+            pass
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS candidate_research_outcomes(
+        candidate_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        timestamp_ms INTEGER NOT NULL,
+        direction TEXT NOT NULL,
+        entry_price REAL NOT NULL,
+        sl_price REAL NOT NULL,
+        tp1_price REAL NOT NULL,
+        tp2_price REAL,
+        expected_horizon TEXT,
+        regime TEXT,
+        data_venue TEXT NOT NULL DEFAULT 'BINANCE',
+        execution_venue TEXT NOT NULL DEFAULT 'BINGX',
+        forecast_id TEXT,
+        q10 REAL,
+        q50 REAL,
+        q90 REAL,
+        dispersion_pct REAL,
+        dispersion_bucket TEXT DEFAULT 'DISPERSION_BUCKET_UNCALIBRATED',
+        forecast_direction TEXT,
+        trade_compatibility TEXT,
+        compatibility_mode TEXT,
+        retest_state_at_entry TEXT,
+        breakout_price REAL,
+        retest_touch_price REAL,
+        rejection_confirm_price REAL,
+        retest_elapsed_bars INTEGER,
+        forecast_median_return REAL,
+        forecast_q10_return REAL,
+        forecast_q50_return REAL,
+        forecast_q90_return REAL,
+        dist_entry_to_q10 REAL,
+        dist_entry_to_q50 REAL,
+        dist_entry_to_q90 REAL,
+        dist_sl_to_q10 REAL,
+        dist_sl_to_q50 REAL,
+        dist_sl_to_q90 REAL,
+        dist_tp1_to_q10 REAL,
+        dist_tp1_to_q50 REAL,
+        dist_tp1_to_q90 REAL,
+        forecast_path_direction TEXT,
+        forecast_path_slope REAL,
+        forecast_expected_range REAL,
+        mfe REAL,
+        mae REAL,
+        tp1_hit INTEGER,
+        tp2_hit INTEGER,
+        sl_hit INTEGER,
+        exit_reason TEXT,
+        time_to_exit_min INTEGER,
+        realized_r_multiple REAL,
+        normalized_risk_amount REAL,
+        normalized_realized_r REAL,
+        return_15m REAL,
+        return_30m REAL,
+        return_45m REAL,
+        return_60m REAL,
+        binance_price_at_entry REAL,
+        bingx_price_at_entry REAL,
+        basis_pct_at_entry REAL,
+        evaluation_status TEXT NOT NULL DEFAULT 'COMPLETE',
+        created_ms INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_cand_out_sym ON candidate_research_outcomes(symbol, timestamp_ms)")
+
+    _cand_out_cols = [
+        ("dispersion_bucket", "TEXT DEFAULT 'DISPERSION_BUCKET_UNCALIBRATED'"),
+        ("compatibility_mode", "TEXT"),
+        ("retest_state_at_entry", "TEXT"),
+        ("breakout_price", "REAL"),
+        ("retest_touch_price", "REAL"),
+        ("rejection_confirm_price", "REAL"),
+        ("retest_elapsed_bars", "INTEGER"),
+        ("forecast_median_return", "REAL"),
+        ("forecast_q10_return", "REAL"),
+        ("forecast_q50_return", "REAL"),
+        ("forecast_q90_return", "REAL"),
+        ("dist_entry_to_q10", "REAL"),
+        ("dist_entry_to_q50", "REAL"),
+        ("dist_entry_to_q90", "REAL"),
+        ("dist_sl_to_q10", "REAL"),
+        ("dist_sl_to_q50", "REAL"),
+        ("dist_sl_to_q90", "REAL"),
+        ("dist_tp1_to_q10", "REAL"),
+        ("dist_tp1_to_q50", "REAL"),
+        ("dist_tp1_to_q90", "REAL"),
+        ("forecast_path_direction", "TEXT"),
+        ("forecast_path_slope", "REAL"),
+        ("forecast_expected_range", "REAL"),
+        ("normalized_risk_amount", "REAL"),
+        ("normalized_realized_r", "REAL"),
+        ("research_family", "TEXT DEFAULT 'PHASE10.2_TIMESFM_ROLE_DISCOVERY_V1'"),
+        ("forecast_return_15m", "REAL"),
+        ("forecast_return_30m", "REAL"),
+        ("forecast_return_45m", "REAL"),
+        ("forecast_return_60m", "REAL"),
+        ("path_slope_15_30", "REAL"),
+        ("path_slope_30_45", "REAL"),
+        ("path_slope_45_60", "REAL"),
+        ("path_acceleration", "REAL"),
+        ("forecast_range", "REAL"),
+        ("forecast_dispersion", "REAL"),
+        ("q10_return_15m", "REAL"),
+        ("q10_return_30m", "REAL"),
+        ("q10_return_45m", "REAL"),
+        ("q10_return_60m", "REAL"),
+        ("q50_return_15m", "REAL"),
+        ("q50_return_30m", "REAL"),
+        ("q50_return_45m", "REAL"),
+        ("q50_return_60m", "REAL"),
+        ("q90_return_15m", "REAL"),
+        ("q90_return_30m", "REAL"),
+        ("q90_return_45m", "REAL"),
+        ("q90_return_60m", "REAL"),
+        ("distance_to_SL", "REAL"),
+        ("distance_to_TP1", "REAL"),
+        ("distance_to_TP2", "REAL"),
+        ("expected_holding_horizon", "TEXT"),
+        ("min_low_before_continuation", "REAL"),
+        ("time_to_min_low_min", "REAL"),
+        ("dist_below_entry", "REAL"),
+        ("dist_below_retest_zone", "REAL"),
+        ("mfe_after_min_low", "REAL"),
+        ("mae_before_continuation", "REAL"),
+        ("pullback_depth_mae_pred_error", "REAL"),
+        ("reforecast_delta_5m", "REAL"),
+        ("reforecast_delta_10m", "REAL"),
+        ("reforecast_delta_15m", "REAL"),
+        ("reforecast_trend_state", "TEXT")
+    ]
+    for _col, _typ in _cand_out_cols:
+        try:
+            conn.execute(f"ALTER TABLE candidate_research_outcomes ADD COLUMN {_col} {_typ}")
+        except sqlite3.OperationalError:
+            pass
+
+
+def insert_binance_raw_1m(records: list[dict]) -> int:
+    """Insert raw 1m closed or forming candles into binance_raw_candles_1m table."""
+    if not records:
+        return 0
+    now_ms = int(time.time() * 1000)
+    c = _connect()
+    inserted = 0
+    with _lock:
+        for r in records:
+            c.execute("""
+                INSERT OR REPLACE INTO binance_raw_candles_1m(
+                    venue, venue_product, symbol, canonical_instrument_id, ts,
+                    open, high, low, close, volume, quote_volume, trade_count,
+                    taker_buy_volume, taker_buy_quote_volume, is_closed,
+                    data_quality, freshness, provider_version, schema_version, ingestion_ts
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r.get("venue", "BINANCE"),
+                r.get("venue_product", "USDM_PERPETUAL"),
+                r["symbol"],
+                r.get("canonical_instrument_id", f"CRYPTO:{r['symbol']}"),
+                int(r["ts"]),
+                float(r["open"]),
+                float(r["high"]),
+                float(r["low"]),
+                float(r["close"]),
+                float(r["volume"]),
+                float(r.get("quote_volume", 0.0)),
+                int(r.get("trade_count", 0)),
+                float(r.get("taker_buy_volume", 0.0)),
+                float(r.get("taker_buy_quote_volume", 0.0)),
+                1 if r.get("is_closed", True) else 0,
+                r.get("data_quality", "VALID"),
+                r.get("freshness", "FRESH"),
+                r.get("provider_version", "BINANCE_USDM_V1"),
+                r.get("schema_version", "BINANCE_CANDLE_SCHEMA_V1"),
+                now_ms
+            ))
+            inserted += 1
+        c.commit()
+    return inserted
+
+
+def get_binance_raw_1m(symbol: str, start_ts: int = 0, end_ts: Optional[int] = None, limit: int = 1000) -> list[dict]:
+    """Retrieve raw Binance 1m candles for a symbol ordered by timestamp ascending."""
+    c = _connect()
+    with _lock:
+        if end_ts is not None:
+            rows = c.execute(
+                "SELECT * FROM binance_raw_candles_1m WHERE symbol=? AND ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?",
+                (symbol, start_ts, end_ts, limit)
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM binance_raw_candles_1m WHERE symbol=? AND ts >= ? ORDER BY ts ASC LIMIT ?",
+                (symbol, start_ts, limit)
+            ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM binance_raw_candles_1m LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def insert_binance_derived_candles(records: list[dict]) -> int:
+    """Insert causal aggregated candles (5m, 15m, 30m, 1h) into binance_derived_candles."""
+    if not records:
+        return 0
+    now_ms = int(time.time() * 1000)
+    c = _connect()
+    inserted = 0
+    with _lock:
+        for r in records:
+            c.execute("""
+                INSERT OR REPLACE INTO binance_derived_candles(
+                    venue, symbol, canonical_instrument_id, resolution, ts, close_ts,
+                    open, high, low, close, volume, quote_volume, trade_count,
+                    taker_buy_volume, source_bar_count, is_closed, data_quality,
+                    freshness, provider_version, schema_version, ingestion_ts
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r.get("venue", "BINANCE"),
+                r["symbol"],
+                r.get("canonical_instrument_id", f"CRYPTO:{r['symbol']}"),
+                r["resolution"],
+                int(r["ts"]),
+                int(r.get("close_ts", r["ts"] + 300000)),
+                float(r["open"]),
+                float(r["high"]),
+                float(r["low"]),
+                float(r["close"]),
+                float(r["volume"]),
+                float(r.get("quote_volume", 0.0)),
+                int(r.get("trade_count", 0)),
+                float(r.get("taker_buy_volume", 0.0)),
+                int(r.get("source_bar_count", 5)),
+                1 if r.get("is_closed", True) else 0,
+                r.get("data_quality", "VALID"),
+                r.get("freshness", "FRESH"),
+                r.get("provider_version", "BINANCE_USDM_V1"),
+                r.get("schema_version", "BINANCE_CANDLE_SCHEMA_V1"),
+                now_ms
+            ))
+            inserted += 1
+        c.commit()
+    return inserted
+
+
+def get_binance_derived_candles(symbol: str, resolution: str = "5m", start_ts: int = 0, end_ts: Optional[int] = None, limit: int = 500) -> list[dict]:
+    """Retrieve derived Binance candles for a given resolution ordered ascending."""
+    c = _connect()
+    with _lock:
+        if end_ts is not None:
+            rows = c.execute(
+                "SELECT * FROM binance_derived_candles WHERE symbol=? AND resolution=? AND ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT ?",
+                (symbol, resolution, start_ts, end_ts, limit)
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM binance_derived_candles WHERE symbol=? AND resolution=? AND ts >= ? ORDER BY ts ASC LIMIT ?",
+                (symbol, resolution, start_ts, limit)
+            ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM binance_derived_candles LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def insert_candidate_forecast(record: dict) -> None:
+    """Persist candidate forecast context and distribution output."""
+    now_ms = int(time.time() * 1000)
+    c = _connect()
+    record_copy = dict(record)
+    if "created_ms" not in record_copy:
+        record_copy["created_ms"] = now_ms
+    with _lock:
+        cols = [col[0] for col in c.execute("SELECT * FROM candidate_forecasts LIMIT 0").description]
+        valid_cols = [col for col in cols if col in record_copy]
+        placeholders = ", ".join(["?"] * len(valid_cols))
+        col_names = ", ".join(valid_cols)
+        values = [record_copy[col] for col in valid_cols]
+        c.execute(f"INSERT OR REPLACE INTO candidate_forecasts({col_names}) VALUES({placeholders})", values)
+        c.commit()
+
+
+def get_candidate_forecast(candidate_id: str) -> Optional[dict]:
+    """Retrieve frozen candidate forecast by candidate_id."""
+    c = _connect()
+    with _lock:
+        row = c.execute(
+            "SELECT * FROM candidate_forecasts WHERE candidate_id=? ORDER BY created_ms DESC LIMIT 1",
+            (candidate_id,)
+        ).fetchone()
+        if not row:
+            return None
+        cols = [col[0] for col in c.execute("SELECT * FROM candidate_forecasts LIMIT 0").description]
+    return dict(zip(cols, row))
+
+
+def insert_candidate_outcome(record: dict) -> None:
+    """Persist candidate empirical research outcome."""
+    now_ms = int(time.time() * 1000)
+    c = _connect()
+    record_copy = dict(record)
+    if "created_ms" not in record_copy:
+        record_copy["created_ms"] = now_ms
+    with _lock:
+        cols = [col[0] for col in c.execute("SELECT * FROM candidate_research_outcomes LIMIT 0").description]
+        valid_cols = [col for col in cols if col in record_copy]
+        placeholders = ", ".join(["?"] * len(valid_cols))
+        col_names = ", ".join(valid_cols)
+        values = [record_copy[col] for col in valid_cols]
+        c.execute(f"INSERT OR REPLACE INTO candidate_research_outcomes({col_names}) VALUES({placeholders})", values)
+        c.commit()
+
+
+def list_candidate_outcomes(symbol: Optional[str] = None, limit: int = 500) -> list[dict]:
+    """List candidate research outcomes."""
+    c = _connect()
+    with _lock:
+        if symbol:
+            rows = c.execute(
+                "SELECT * FROM candidate_research_outcomes WHERE symbol=? ORDER BY timestamp_ms DESC LIMIT ?",
+                (symbol, limit)
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM candidate_research_outcomes ORDER BY timestamp_ms DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        cols = [col[0] for col in c.execute("SELECT * FROM candidate_research_outcomes LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]

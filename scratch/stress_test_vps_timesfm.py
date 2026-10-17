@@ -262,6 +262,7 @@ def run_benchmark():
         "stage_e_concurrency": report_e
     }
 
+    os.makedirs("/opt/ophelia/vps_evidence", exist_ok=True)
     with open("/opt/ophelia/vps_evidence/timesfm_stress_benchmark.json", "w") as f:
         json.dump(final_report, f, indent=2)
 

@@ -223,6 +223,63 @@ __marimo__/
 control.env
 *.key
 *.pem
+*.id_rsa
+*.id_ed25519
+
+# Databases & local state
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db3
+ophelia.db
+
+# Archives & bundle artifacts
+*.bundle
+*.tar.gz
+*.tar
+*.zip
+*.7z
+
+# ML models & large binary matrices
+*.pkl
+*.parquet
+
+# Android build outputs & local JDK
+android-app/.gradle/
+android-app/**/build/
+android-app/*.hprof
+android-app/jdk17/
+android-app/jdk17.zip
+*.apk
+*.hprof
+
+# Large raw & processed market datasets (reproducible from scripts/manifests)
+data/raw/
+data/normalized/
+data/processed/
+data/*.parquet
+data/*.zip
+data/phase12_evaluated_candidates_cache.json
+research/data/
+research/results/
+research/experiments/**/*.parquet
+research/experiments/**/*.csv
+
+# Scratch temporary work (preserving already-tracked verification scripts)
+scratch/
+!scratch/deploy_phase6c_vps.py
+!scratch/stress_test_vps_timesfm.py
+!scratch/verify_phase6c_live_vps.py
+
+# Execution logs & capture text
 vps_output*.txt
-scratch/vps_*.json
+capture_output.txt
+*.log
+
+# IDE & agent cache
+.codegraph/
+.gemini/
+
+
 

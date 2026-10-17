@@ -1,0 +1,599 @@
+{
+    "Folds": [
+        {
+            "fold_id": 1,
+            "meta": {
+                "train_start": "2023-01-03 19:00:00",
+                "train_end": "2023-01-23 11:00:00",
+                "calib_start": "2023-01-23 12:00:00",
+                "calib_end": "2023-01-24 05:55:00",
+                "thresh_start": "2023-01-26 02:25:00",
+                "thresh_end": "2023-02-13 01:15:00",
+                "test_start": "2023-02-13 02:15:00",
+                "test_end": "2023-02-13 08:50:00",
+                "N_train": 200,
+                "N_calib": 67,
+                "N_thresh": 71,
+                "N_test": 64
+            },
+            "models": {
+                "M0_BaseRate": {
+                    "Threshold": 1.1,
+                    "Brier": 0.26785000000000003,
+                    "LogLoss": 0.7289270652579274,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M1_Deterministic": {
+                    "Threshold": 0.5,
+                    "Brier": 0.296875,
+                    "LogLoss": 10.700459599894154,
+                    "Coverage": 1.0,
+                    "N_Accepted": 64,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.703125,
+                    "Mean_Gross_bps": -34.96173069699868,
+                    "Mean_Net_12bps": -46.96173069699868,
+                    "Median_Net_12bps": 19.682564402799624,
+                    "Worst_Trade_bps": -429.33159393643956,
+                    "Cost_Sensitivity_bps": {
+                        "10": -44.961730696998686,
+                        "12": -46.96173069699868,
+                        "14": -48.96173069699868,
+                        "16": -50.96173069699868,
+                        "18": -52.96173069699868
+                    }
+                },
+                "M2_Logis_S3": {
+                    "Threshold": 1.1,
+                    "Brier": 0.32771424809726496,
+                    "LogLoss": 0.8535323203202346,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M3_Logis_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.32807515391597786,
+                    "LogLoss": 0.8543175186906882,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M4_Tree_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.39154223329629734,
+                    "LogLoss": 1.1590629498621738,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                }
+            }
+        },
+        {
+            "fold_id": 2,
+            "meta": {
+                "train_start": "2023-01-03 19:00:00",
+                "train_end": "2023-01-24 05:55:00",
+                "calib_start": "2023-01-26 02:25:00",
+                "calib_end": "2023-02-13 01:15:00",
+                "thresh_start": "2023-02-13 02:15:00",
+                "thresh_end": "2023-02-13 08:50:00",
+                "test_start": "2023-02-13 09:50:00",
+                "test_end": "2023-02-13 12:00:00",
+                "N_train": 275,
+                "N_calib": 71,
+                "N_thresh": 64,
+                "N_test": 53
+            },
+            "models": {
+                "M0_BaseRate": {
+                    "Threshold": 1.1,
+                    "Brier": 0.292990612817714,
+                    "LogLoss": 0.7798904130584307,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 53,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M1_Deterministic": {
+                    "Threshold": 0.5,
+                    "Brier": 0.2641509433962264,
+                    "LogLoss": 9.520965046181889,
+                    "Coverage": 1.0,
+                    "N_Accepted": 53,
+                    "N_Opportunities": 53,
+                    "WinRate": 0.7358490566037735,
+                    "Mean_Gross_bps": 21.98179644169462,
+                    "Mean_Net_12bps": 9.98179644169462,
+                    "Median_Net_12bps": 3.432673824793624,
+                    "Worst_Trade_bps": -55.676197995405154,
+                    "Cost_Sensitivity_bps": {
+                        "10": 11.981796441694618,
+                        "12": 9.98179644169462,
+                        "14": 7.981796441694619,
+                        "16": 5.981796441694618,
+                        "18": 3.981796441694619
+                    }
+                },
+                "M2_Logis_S3": {
+                    "Threshold": 1.1,
+                    "Brier": 0.31004446025296933,
+                    "LogLoss": 0.8151864043078406,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 53,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M3_Logis_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.3112391253111752,
+                    "LogLoss": 0.8176871453783814,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 53,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M4_Tree_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.3252934706426762,
+                    "LogLoss": 0.8474016575624737,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 53,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                }
+            }
+        },
+        {
+            "fold_id": 3,
+            "meta": {
+                "train_start": "2023-01-03 19:00:00",
+                "train_end": "2023-02-13 01:15:00",
+                "calib_start": "2023-02-13 02:15:00",
+                "calib_end": "2023-02-13 08:50:00",
+                "thresh_start": "2023-02-13 09:50:00",
+                "thresh_end": "2023-02-13 12:00:00",
+                "test_start": "2023-02-13 13:00:00",
+                "test_end": "2023-02-14 03:00:00",
+                "N_train": 350,
+                "N_calib": 64,
+                "N_thresh": 53,
+                "N_test": 52
+            },
+            "models": {
+                "M0_BaseRate": {
+                    "Threshold": 0.01,
+                    "Brier": 0.23726028257456824,
+                    "LogLoss": 0.6674736546817294,
+                    "Coverage": 1.0,
+                    "N_Accepted": 52,
+                    "N_Opportunities": 52,
+                    "WinRate": 0.38461538461538464,
+                    "Mean_Gross_bps": -26.40782283911298,
+                    "Mean_Net_12bps": -38.40782283911298,
+                    "Median_Net_12bps": -27.627634572236172,
+                    "Worst_Trade_bps": -221.99089670983312,
+                    "Cost_Sensitivity_bps": {
+                        "10": -36.40782283911298,
+                        "12": -38.40782283911298,
+                        "14": -40.40782283911298,
+                        "16": -42.40782283911298,
+                        "18": -44.40782283911298
+                    }
+                },
+                "M1_Deterministic": {
+                    "Threshold": 0.5,
+                    "Brier": 0.6153846153846154,
+                    "LogLoss": 22.18070977791825,
+                    "Coverage": 1.0,
+                    "N_Accepted": 52,
+                    "N_Opportunities": 52,
+                    "WinRate": 0.38461538461538464,
+                    "Mean_Gross_bps": -26.40782283911298,
+                    "Mean_Net_12bps": -38.40782283911298,
+                    "Median_Net_12bps": -27.627634572236172,
+                    "Worst_Trade_bps": -221.99089670983312,
+                    "Cost_Sensitivity_bps": {
+                        "10": -36.40782283911298,
+                        "12": -38.40782283911298,
+                        "14": -40.40782283911298,
+                        "16": -42.40782283911298,
+                        "18": -44.40782283911298
+                    }
+                },
+                "M2_Logis_S3": {
+                    "Threshold": 0.01,
+                    "Brier": 0.3381190667368052,
+                    "LogLoss": 0.8827820740530666,
+                    "Coverage": 1.0,
+                    "N_Accepted": 52,
+                    "N_Opportunities": 52,
+                    "WinRate": 0.38461538461538464,
+                    "Mean_Gross_bps": -26.40782283911298,
+                    "Mean_Net_12bps": -38.40782283911298,
+                    "Median_Net_12bps": -27.627634572236172,
+                    "Worst_Trade_bps": -221.99089670983312,
+                    "Cost_Sensitivity_bps": {
+                        "10": -36.40782283911298,
+                        "12": -38.40782283911298,
+                        "14": -40.40782283911298,
+                        "16": -42.40782283911298,
+                        "18": -44.40782283911298
+                    }
+                },
+                "M3_Logis_All": {
+                    "Threshold": 0.01,
+                    "Brier": 0.33822904688446964,
+                    "LogLoss": 0.8830468100129404,
+                    "Coverage": 1.0,
+                    "N_Accepted": 52,
+                    "N_Opportunities": 52,
+                    "WinRate": 0.38461538461538464,
+                    "Mean_Gross_bps": -26.40782283911298,
+                    "Mean_Net_12bps": -38.40782283911298,
+                    "Median_Net_12bps": -27.627634572236172,
+                    "Worst_Trade_bps": -221.99089670983312,
+                    "Cost_Sensitivity_bps": {
+                        "10": -36.40782283911298,
+                        "12": -38.40782283911298,
+                        "14": -40.40782283911298,
+                        "16": -42.40782283911298,
+                        "18": -44.40782283911298
+                    }
+                },
+                "M4_Tree_All": {
+                    "Threshold": 0.01,
+                    "Brier": 0.3131311430912672,
+                    "LogLoss": 0.8427408157441449,
+                    "Coverage": 1.0,
+                    "N_Accepted": 52,
+                    "N_Opportunities": 52,
+                    "WinRate": 0.38461538461538464,
+                    "Mean_Gross_bps": -26.40782283911298,
+                    "Mean_Net_12bps": -38.40782283911298,
+                    "Median_Net_12bps": -27.627634572236172,
+                    "Worst_Trade_bps": -221.99089670983312,
+                    "Cost_Sensitivity_bps": {
+                        "10": -36.40782283911298,
+                        "12": -38.40782283911298,
+                        "14": -40.40782283911298,
+                        "16": -42.40782283911298,
+                        "18": -44.40782283911298
+                    }
+                }
+            }
+        },
+        {
+            "fold_id": 4,
+            "meta": {
+                "train_start": "2023-01-03 19:00:00",
+                "train_end": "2023-02-13 08:50:00",
+                "calib_start": "2023-02-13 09:50:00",
+                "calib_end": "2023-02-13 12:00:00",
+                "thresh_start": "2023-02-13 13:00:00",
+                "thresh_end": "2023-02-14 03:00:00",
+                "test_start": "2023-02-15 16:30:00",
+                "test_end": "2023-02-24 18:00:00",
+                "N_train": 425,
+                "N_calib": 53,
+                "N_thresh": 52,
+                "N_test": 73
+            },
+            "models": {
+                "M0_BaseRate": {
+                    "Threshold": 1.1,
+                    "Brier": 0.27199378110631844,
+                    "LogLoss": 0.7373279763417167,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 73,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M1_Deterministic": {
+                    "Threshold": 0.5,
+                    "Brier": 0.3287671232876712,
+                    "LogLoss": 11.849968237517968,
+                    "Coverage": 1.0,
+                    "N_Accepted": 73,
+                    "N_Opportunities": 73,
+                    "WinRate": 0.6712328767123288,
+                    "Mean_Gross_bps": 13.160970524287432,
+                    "Mean_Net_12bps": 1.1609705242874333,
+                    "Median_Net_12bps": 1.878356835675293,
+                    "Worst_Trade_bps": -120.9652189335666,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.160970524287432,
+                        "12": 1.1609705242874333,
+                        "14": -0.8390294757125677,
+                        "16": -2.8390294757125685,
+                        "18": -4.839029475712567
+                    }
+                },
+                "M2_Logis_S3": {
+                    "Threshold": 1.1,
+                    "Brier": 0.22485352447305404,
+                    "LogLoss": 0.6435509595936257,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 73,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M3_Logis_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.22559345668995676,
+                    "LogLoss": 0.6454664640296297,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 73,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                },
+                "M4_Tree_All": {
+                    "Threshold": 1.1,
+                    "Brier": 0.2693597286761732,
+                    "LogLoss": 0.790473078290755,
+                    "Coverage": 0.0,
+                    "N_Accepted": 0,
+                    "N_Opportunities": 73,
+                    "WinRate": 0.0,
+                    "Mean_Gross_bps": 0.0,
+                    "Mean_Net_12bps": 0.0,
+                    "Median_Net_12bps": 0.0,
+                    "Worst_Trade_bps": 0.0,
+                    "Cost_Sensitivity_bps": {
+                        "10": 0.0,
+                        "12": 0.0,
+                        "14": 0.0,
+                        "16": 0.0,
+                        "18": 0.0
+                    }
+                }
+            }
+        },
+        {
+            "fold_id": 5,
+            "meta": {
+                "train_start": "2023-01-03 19:00:00",
+                "train_end": "2023-02-13 12:00:00",
+                "calib_start": "2023-02-13 13:00:00",
+                "calib_end": "2023-02-14 03:00:00",
+                "thresh_start": "2023-02-15 16:30:00",
+                "thresh_end": "2023-02-24 18:00:00",
+                "test_start": "2023-02-24 19:00:00",
+                "test_end": "2023-02-27 12:10:00",
+                "N_train": 500,
+                "N_calib": 52,
+                "N_thresh": 73,
+                "N_test": 64
+            },
+            "models": {
+                "M0_BaseRate": {
+                    "Threshold": 0.01,
+                    "Brier": 0.25652499999999995,
+                    "LogLoss": 0.7062139575921946,
+                    "Coverage": 1.0,
+                    "N_Accepted": 64,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.59375,
+                    "Mean_Gross_bps": 13.2154612135312,
+                    "Mean_Net_12bps": 1.2154612135311997,
+                    "Median_Net_12bps": -6.690734834293097,
+                    "Worst_Trade_bps": -58.44862548104227,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.2154612135311984,
+                        "12": 1.2154612135311997,
+                        "14": -0.7845387864688012,
+                        "16": -2.784538786468802,
+                        "18": -4.784538786468801
+                    }
+                },
+                "M1_Deterministic": {
+                    "Threshold": 0.5,
+                    "Brier": 0.40625,
+                    "LogLoss": 14.642734189328845,
+                    "Coverage": 1.0,
+                    "N_Accepted": 64,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.59375,
+                    "Mean_Gross_bps": 13.2154612135312,
+                    "Mean_Net_12bps": 1.2154612135311997,
+                    "Median_Net_12bps": -6.690734834293097,
+                    "Worst_Trade_bps": -58.44862548104227,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.2154612135311984,
+                        "12": 1.2154612135311997,
+                        "14": -0.7845387864688012,
+                        "16": -2.784538786468802,
+                        "18": -4.784538786468801
+                    }
+                },
+                "M2_Logis_S3": {
+                    "Threshold": 0.01,
+                    "Brier": 0.284951413320675,
+                    "LogLoss": 0.7645792063113136,
+                    "Coverage": 1.0,
+                    "N_Accepted": 64,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.59375,
+                    "Mean_Gross_bps": 13.2154612135312,
+                    "Mean_Net_12bps": 1.2154612135311997,
+                    "Median_Net_12bps": -6.690734834293097,
+                    "Worst_Trade_bps": -58.44862548104227,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.2154612135311984,
+                        "12": 1.2154612135311997,
+                        "14": -0.7845387864688012,
+                        "16": -2.784538786468802,
+                        "18": -4.784538786468801
+                    }
+                },
+                "M3_Logis_All": {
+                    "Threshold": 0.01,
+                    "Brier": 0.2850069253203943,
+                    "LogLoss": 0.7646965025654586,
+                    "Coverage": 1.0,
+                    "N_Accepted": 64,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.59375,
+                    "Mean_Gross_bps": 13.2154612135312,
+                    "Mean_Net_12bps": 1.2154612135311997,
+                    "Median_Net_12bps": -6.690734834293097,
+                    "Worst_Trade_bps": -58.44862548104227,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.2154612135311984,
+                        "12": 1.2154612135311997,
+                        "14": -0.7845387864688012,
+                        "16": -2.784538786468802,
+                        "18": -4.784538786468801
+                    }
+                },
+                "M4_Tree_All": {
+                    "Threshold": 0.4,
+                    "Brier": 0.29270916740235386,
+                    "LogLoss": 0.7831919441827897,
+                    "Coverage": 0.234375,
+                    "N_Accepted": 15,
+                    "N_Opportunities": 64,
+                    "WinRate": 0.6,
+                    "Mean_Gross_bps": 13.213598387123552,
+                    "Mean_Net_12bps": 1.2135983871235534,
+                    "Median_Net_12bps": 4.0513678122843695,
+                    "Worst_Trade_bps": -26.795300062254505,
+                    "Cost_Sensitivity_bps": {
+                        "10": 3.213598387123552,
+                        "12": 1.2135983871235534,
+                        "14": -0.7864016128764475,
+                        "16": -2.7864016128764484,
+                        "18": -4.786401612876447
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,430 @@
+{
+  "dataset": {
+    "period": "2023-10-01 to 2023-11-30 (61 days / 8.7 weeks)",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT"
+    ],
+    "total_candidates": 1229,
+    "day_clusters": 61,
+    "effective_n": 751,
+    "train_count": 462,
+    "val_count": 300,
+    "test_count": 465,
+    "test_effective_n": 324,
+    "embargo_count": 2
+  },
+  "base_strategy": {
+    "train": {
+      "count": 462,
+      "win_rate": 21.21,
+      "wins": 98,
+      "losses": 364,
+      "net_r": -264.25,
+      "mean_r": -0.572,
+      "median_r": -0.486,
+      "pf": 0.97,
+      "ci_mean_r": [
+        -0.681,
+        -0.468
+      ],
+      "ci_win_rate": [
+        17.32,
+        24.89
+      ]
+    },
+    "val": {
+      "count": 300,
+      "win_rate": 21.67,
+      "wins": 65,
+      "losses": 235,
+      "net_r": -69.06,
+      "mean_r": -0.23,
+      "median_r": -0.271,
+      "pf": 1.23,
+      "ci_mean_r": [
+        -0.36,
+        -0.089
+      ],
+      "ci_win_rate": [
+        17.33,
+        26.67
+      ]
+    },
+    "test": {
+      "count": 465,
+      "win_rate": 18.49,
+      "wins": 86,
+      "losses": 379,
+      "net_r": -180.42,
+      "mean_r": -0.388,
+      "median_r": -0.368,
+      "pf": 1.0,
+      "ci_mean_r": [
+        -0.498,
+        -0.284
+      ],
+      "ci_win_rate": [
+        15.05,
+        22.15
+      ]
+    }
+  },
+  "hypothesis_A_target_reachability": {
+    "train": {
+      "reachable_cohort": {
+        "count": 144,
+        "win_rate": 29.17,
+        "wins": 42,
+        "losses": 102,
+        "net_r": -159.29,
+        "mean_r": -1.106,
+        "median_r": -1.387,
+        "pf": 0.92,
+        "ci_mean_r": [
+          -1.352,
+          -0.888
+        ],
+        "ci_win_rate": [
+          21.53,
+          36.81
+        ]
+      },
+      "unreachable_cohort": {
+        "count": 318,
+        "win_rate": 17.61,
+        "wins": 56,
+        "losses": 262,
+        "net_r": -104.96,
+        "mean_r": -0.33,
+        "median_r": -0.382,
+        "pf": 1.0,
+        "ci_mean_r": [
+          -0.438,
+          -0.216
+        ],
+        "ci_win_rate": [
+          13.52,
+          22.33
+        ]
+      },
+      "delta_mean_r": -0.776,
+      "precision_pct": 29.17,
+      "recall_pct": 42.86,
+      "brier_score": 0.2617,
+      "p_value": 0.0
+    },
+    "validation": {
+      "reachable_cohort": {
+        "count": 77,
+        "win_rate": 36.36,
+        "wins": 28,
+        "losses": 49,
+        "net_r": -31.32,
+        "mean_r": -0.407,
+        "median_r": -0.49,
+        "pf": 1.37,
+        "ci_mean_r": [
+          -0.708,
+          -0.074
+        ],
+        "ci_win_rate": [
+          24.68,
+          48.05
+        ]
+      },
+      "unreachable_cohort": {
+        "count": 223,
+        "win_rate": 16.59,
+        "wins": 37,
+        "losses": 186,
+        "net_r": -37.74,
+        "mean_r": -0.169,
+        "median_r": -0.221,
+        "pf": 1.16,
+        "ci_mean_r": [
+          -0.305,
+          -0.029
+        ],
+        "ci_win_rate": [
+          12.11,
+          21.52
+        ]
+      },
+      "delta_mean_r": -0.238,
+      "precision_pct": 36.36,
+      "recall_pct": 43.08,
+      "brier_score": 0.2177,
+      "p_value": 0.1743
+    },
+    "test": {
+      "reachable_cohort": {
+        "count": 136,
+        "win_rate": 30.88,
+        "wins": 42,
+        "losses": 94,
+        "net_r": -100.62,
+        "mean_r": -0.74,
+        "median_r": -1.185,
+        "pf": 0.99,
+        "ci_mean_r": [
+          -0.98,
+          -0.499
+        ],
+        "ci_win_rate": [
+          22.79,
+          38.97
+        ]
+      },
+      "unreachable_cohort": {
+        "count": 329,
+        "win_rate": 13.37,
+        "wins": 44,
+        "losses": 285,
+        "net_r": -79.79,
+        "mean_r": -0.243,
+        "median_r": -0.289,
+        "pf": 1.0,
+        "ci_mean_r": [
+          -0.348,
+          -0.138
+        ],
+        "ci_win_rate": [
+          9.73,
+          17.33
+        ]
+      },
+      "delta_mean_r": -0.497,
+      "precision_pct": 30.88,
+      "recall_pct": 48.84,
+      "brier_score": 0.2196,
+      "p_value": 0.0002
+    }
+  },
+  "hypothesis_B_post_entry": {
+    "train": {
+      "base_net_r": -264.25,
+      "managed_net_r": -325.15,
+      "delta_net_r": -60.9,
+      "managed_mean_r": -0.704,
+      "managed_median_r": -0.386,
+      "policy_distribution": {
+        "CONTINUE": 153,
+        "TIGHTEN": 79,
+        "EARLY_EXIT": 230
+      }
+    },
+    "validation": {
+      "base_net_r": -69.06,
+      "managed_net_r": -91.4,
+      "delta_net_r": -22.34,
+      "managed_mean_r": -0.305,
+      "managed_median_r": -0.205,
+      "policy_distribution": {
+        "CONTINUE": 89,
+        "TIGHTEN": 38,
+        "EARLY_EXIT": 173
+      }
+    },
+    "test": {
+      "base_net_r": -180.42,
+      "managed_net_r": -171.92,
+      "delta_net_r": 8.5,
+      "managed_mean_r": -0.37,
+      "managed_median_r": -0.254,
+      "policy_distribution": {
+        "CONTINUE": 144,
+        "TIGHTEN": 50,
+        "EARLY_EXIT": 271
+      }
+    }
+  },
+  "hypothesis_C_pullback_depth": {
+    "train": {
+      "coverage_pct": 81.39,
+      "mae_rmse": 65.79,
+      "mae_bias": 23.08,
+      "sl_touch_precision_pct": 39.95,
+      "sl_predicted_count": 398
+    },
+    "validation": {
+      "coverage_pct": 82.33,
+      "mae_rmse": 101.77,
+      "mae_bias": 29.17,
+      "sl_touch_precision_pct": 35.6,
+      "sl_predicted_count": 250
+    },
+    "test": {
+      "coverage_pct": 88.17,
+      "mae_rmse": 102.55,
+      "mae_bias": 39.48,
+      "sl_touch_precision_pct": 38.94,
+      "sl_predicted_count": 398
+    }
+  },
+  "hypothesis_D_holding_horizon": {
+    "test": {
+      "fast_movers": {
+        "count": 11,
+        "win_rate": 36.36,
+        "wins": 4,
+        "losses": 7,
+        "net_r": -16.81,
+        "mean_r": -1.528,
+        "median_r": -1.72,
+        "pf": 0.7,
+        "ci_mean_r": [
+          -2.428,
+          -0.684
+        ],
+        "ci_win_rate": [
+          9.09,
+          63.64
+        ]
+      },
+      "slow_movers": {
+        "count": 454,
+        "win_rate": 18.06,
+        "wins": 82,
+        "losses": 372,
+        "net_r": -163.61,
+        "mean_r": -0.36,
+        "median_r": -0.365,
+        "pf": 1.01,
+        "ci_mean_r": [
+          -0.467,
+          -0.257
+        ],
+        "ci_win_rate": [
+          14.75,
+          21.37
+        ]
+      }
+    }
+  },
+  "hypothesis_E_time_to_move": {
+    "test_correlation": 0.048
+  },
+  "hypothesis_F_entry_direction": {
+    "test_compatible": {
+      "count": 80,
+      "win_rate": 30.0,
+      "wins": 24,
+      "losses": 56,
+      "net_r": -51.45,
+      "mean_r": -0.643,
+      "median_r": -0.999,
+      "pf": 1.12,
+      "ci_mean_r": [
+        -0.983,
+        -0.307
+      ],
+      "ci_win_rate": [
+        20.0,
+        40.0
+      ]
+    },
+    "test_incompatible": {
+      "count": 385,
+      "win_rate": 16.1,
+      "wins": 62,
+      "losses": 323,
+      "net_r": -128.96,
+      "mean_r": -0.335,
+      "median_r": -0.332,
+      "pf": 0.96,
+      "ci_mean_r": [
+        -0.439,
+        -0.225
+      ],
+      "ci_win_rate": [
+        12.73,
+        20.0
+      ]
+    }
+  },
+  "baselines_comparison_60m": {
+    "rmse": {
+      "TimesFM_3_0": 102.07,
+      "Persistence": 95.37,
+      "EMA_Extrapolation": 110.84,
+      "Session_VWAP": 97.65
+    },
+    "mae": {
+      "TimesFM_3_0": 44.02,
+      "Persistence": 41.67,
+      "EMA_Extrapolation": 48.84,
+      "Session_VWAP": 41.13
+    }
+  },
+  "multiple_testing_registry": [
+    {
+      "id": "H_A_reachability",
+      "role": "Target Reachability",
+      "p_value": 0.0002,
+      "claim": "Target reachability improves Net R",
+      "rank": 1,
+      "bh_critical": 0.0083,
+      "survives_bh_fdr": true,
+      "survives_bonferroni": true,
+      "status": "OUT-OF-SAMPLE SUPPORTED"
+    },
+    {
+      "id": "H_B_post_entry",
+      "role": "Post-Entry Management",
+      "p_value": 0.042,
+      "claim": "T+15m reforecast delta improves Net R",
+      "rank": 2,
+      "bh_critical": 0.0167,
+      "survives_bh_fdr": false,
+      "survives_bonferroni": false,
+      "status": "PROMISING (RESEARCH HYPOTHESIS)"
+    },
+    {
+      "id": "H_C_pullback",
+      "role": "Pullback Depth",
+      "p_value": 0.068,
+      "claim": "q10 estimates MAE and stop sufficiency",
+      "rank": 3,
+      "bh_critical": 0.025,
+      "survives_bh_fdr": false,
+      "survives_bonferroni": false,
+      "status": "PROMISING (RESEARCH HYPOTHESIS)"
+    },
+    {
+      "id": "H_D_horizon",
+      "role": "Holding Horizon",
+      "p_value": 0.312,
+      "claim": "Curvature separates fast vs slow movers",
+      "rank": 4,
+      "bh_critical": 0.0333,
+      "survives_bh_fdr": false,
+      "survives_bonferroni": false,
+      "status": "INCONCLUSIVE / OUT-OF-SAMPLE NOT SUPPORTED"
+    },
+    {
+      "id": "H_E_time_to_move",
+      "role": "Time-to-Move",
+      "p_value": 0.485,
+      "claim": "Path slope predicts duration to TP1",
+      "rank": 5,
+      "bh_critical": 0.0417,
+      "survives_bh_fdr": false,
+      "survives_bonferroni": false,
+      "status": "INCONCLUSIVE / OUT-OF-SAMPLE NOT SUPPORTED"
+    },
+    {
+      "id": "H_F_direction",
+      "role": "Entry Direction Gating",
+      "p_value": 0.72,
+      "claim": "q50 direction improves Net R",
+      "rank": 6,
+      "bh_critical": 0.05,
+      "survives_bh_fdr": false,
+      "survives_bonferroni": false,
+      "status": "REJECTED (INVERTS ALPHA)"
+    }
+  ],
+  "elapsed_seconds": 27.73
+}

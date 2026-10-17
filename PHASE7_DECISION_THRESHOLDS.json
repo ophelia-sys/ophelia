@@ -1,0 +1,26 @@
+{
+    "BTCUSDT": {
+        "long_threshold": 0.4649919601784945,
+        "short_threshold": 0.45823922067728673
+    },
+    "ETHUSDT": {
+        "long_threshold": 0.4807840651856047,
+        "short_threshold": 0.47264823383139243
+    },
+    "SOLUSDT": {
+        "long_threshold": 0.4852544557595321,
+        "short_threshold": 0.4923352475798561
+    },
+    "XRPUSDT": {
+        "long_threshold": 0.4965083209467712,
+        "short_threshold": 0.4746297332328837
+    },
+    "ADAUSDT": {
+        "long_threshold": 0.47556129414203,
+        "short_threshold": 0.481074146081213
+    },
+    "BNBUSDT": {
+        "long_threshold": 0.4766263546774572,
+        "short_threshold": 0.45120624076143756
+    }
+}

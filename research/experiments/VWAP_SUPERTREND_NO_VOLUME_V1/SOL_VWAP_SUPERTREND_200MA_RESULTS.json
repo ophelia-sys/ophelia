@@ -1,0 +1,110 @@
+{
+    "BASE": [
+        {
+            "direction": "LONG",
+            "total_trades": 35,
+            "targets": 14,
+            "stops": 21,
+            "target_rate": 0.4,
+            "stop_rate": 0.6,
+            "mean_bps": 13.12731684132875,
+            "median_bps": -15.822784810126667,
+            "mean_mfe_pct": 0.4035811741811277,
+            "mean_mae_pct": -0.2720066303514782,
+            "mean_hold_m": 186.28571428571428,
+            "median_hold_m": 135.0,
+            "max_drawdown_bps": 223.16600434773792,
+            "longest_win_streak": 5,
+            "longest_loss_streak": 7
+        },
+        {
+            "direction": "SHORT",
+            "total_trades": 27,
+            "targets": 8,
+            "stops": 19,
+            "target_rate": 0.2962962962962963,
+            "stop_rate": 0.7037037037037037,
+            "mean_bps": 4.380415330056603,
+            "median_bps": -18.597236981934273,
+            "mean_mfe_pct": 0.33447476061963594,
+            "mean_mae_pct": -0.22884097583628227,
+            "mean_hold_m": 165.1851851851852,
+            "median_hold_m": 65.0,
+            "max_drawdown_bps": 189.90596916750093,
+            "longest_win_streak": 3,
+            "longest_loss_streak": 7
+        }
+    ],
+    "FILTERED": [
+        {
+            "direction": "LONG",
+            "total_trades": 21,
+            "targets": 8,
+            "stops": 13,
+            "target_rate": 0.38095238095238093,
+            "stop_rate": 0.6190476190476191,
+            "mean_bps": 14.362693721263911,
+            "median_bps": -15.822784810126667,
+            "mean_mfe_pct": 0.4080582413732267,
+            "mean_mae_pct": -0.29810571597930957,
+            "mean_hold_m": 188.57142857142858,
+            "median_hold_m": 110.0,
+            "max_drawdown_bps": 224.1822016213113,
+            "longest_win_streak": 5,
+            "longest_loss_streak": 7
+        },
+        {
+            "direction": "SHORT",
+            "total_trades": 14,
+            "targets": 4,
+            "stops": 10,
+            "target_rate": 0.2857142857142857,
+            "stop_rate": 0.7142857142857143,
+            "mean_bps": 6.731546772703205,
+            "median_bps": -17.51329538034252,
+            "mean_mfe_pct": 0.29857047846139945,
+            "mean_mae_pct": -0.19449607488346882,
+            "mean_hold_m": 135.35714285714286,
+            "median_hold_m": 80.0,
+            "max_drawdown_bps": 123.55229679110514,
+            "longest_win_streak": 1,
+            "longest_loss_streak": 4
+        }
+    ],
+    "DIAGNOSTIC": [
+        {
+            "direction": "LONG",
+            "total_trades": 782,
+            "targets": 34,
+            "stops": 748,
+            "target_rate": 0.043478260869565216,
+            "stop_rate": 0.9565217391304348,
+            "mean_bps": 2.1596890985584545,
+            "median_bps": 0.0,
+            "mean_mfe_pct": 0.08893498723464702,
+            "mean_mae_pct": -0.06541803613838942,
+            "mean_hold_m": 17.372122762148337,
+            "median_hold_m": 0.0,
+            "max_drawdown_bps": 413.531163182549,
+            "longest_win_streak": 13,
+            "longest_loss_streak": 288
+        },
+        {
+            "direction": "SHORT",
+            "total_trades": 752,
+            "targets": 10,
+            "stops": 742,
+            "target_rate": 0.013297872340425532,
+            "stop_rate": 0.9867021276595744,
+            "mean_bps": -0.9111856568962823,
+            "median_bps": 0.0,
+            "mean_mfe_pct": 0.04480761360592037,
+            "mean_mae_pct": -0.045212707152961246,
+            "mean_hold_m": 8.55718085106383,
+            "median_hold_m": 0.0,
+            "max_drawdown_bps": 1031.8665005779085,
+            "longest_win_streak": 4,
+            "longest_loss_streak": 231
+        }
+    ]
+}

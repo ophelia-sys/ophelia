@@ -1,0 +1,18 @@
+{
+  "candle_count_deduped": 17568,
+  "candle_count_raw": 17568,
+  "contract_type": "USD-M perpetual futures",
+  "csv_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\validation\\exchange_10_4_two_months\\binance_sol_5m_2026_06_07.csv",
+  "csv_sha256": "9e46cccf8585cd2865542ef63001cc388c1ee690edf9aa4e56ccb3c5ed30f018",
+  "duplicate_rows_removed": 0,
+  "end_utc_exclusive": "2026-08-01T00:00:00+00:00",
+  "endpoint": "https://fapi.binance.com/fapi/v1/klines",
+  "exchange": "BINANCE",
+  "interval": "5m",
+  "pages_fetched": 12,
+  "raw_pages_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\validation\\exchange_10_4_two_months\\raw\\binance_raw_pages.json",
+  "retrieval_completed_utc": "2026-08-22T04:25:58.052047+00:00",
+  "start_utc": "2026-06-01T00:00:00+00:00",
+  "symbol_api": "SOLUSDT",
+  "timezone": "UTC (epoch ms)"
+}

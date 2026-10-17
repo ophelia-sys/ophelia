@@ -1,0 +1,66 @@
+{
+    "Deterministic_S3_Net_bps": -2.8332016439134655,
+    "Total_Validation_Events": 184,
+    "Ablation": {
+        "A_S3_Only": {
+            "Logistic": {
+                "Brier": 0.2485610050518932,
+                "LogLoss": 0.6904595966703855,
+                "Trades_Taken": 3,
+                "Realized_Net_bps": -40.308269429839676
+            },
+            "Calibrated_Logistic": {
+                "Brier": 0.24421027747216592,
+                "LogLoss": 0.6815589358643198,
+                "Trades_Taken": 0,
+                "Realized_Net_bps": 0.0
+            },
+            "Calibrated_Tree": {
+                "Brier": 0.24421134143432727,
+                "LogLoss": 0.681561068442155,
+                "Trades_Taken": 0,
+                "Realized_Net_bps": 0.0
+            }
+        },
+        "B_S3_Vol": {
+            "Logistic": {
+                "Brier": 0.2485609973310257,
+                "LogLoss": 0.690459581065951,
+                "Trades_Taken": 3,
+                "Realized_Net_bps": -40.308269429839676
+            },
+            "Calibrated_Logistic": {
+                "Brier": 0.24421027749559976,
+                "LogLoss": 0.6815589359112807,
+                "Trades_Taken": 0,
+                "Realized_Net_bps": 0.0
+            },
+            "Calibrated_Tree": {
+                "Brier": 0.2721955108323787,
+                "LogLoss": 0.7492188521699196,
+                "Trades_Taken": 34,
+                "Realized_Net_bps": 5.799004171376187
+            }
+        },
+        "C_S3_All": {
+            "Logistic": {
+                "Brier": 0.24779645061985037,
+                "LogLoss": 0.6889502818248229,
+                "Trades_Taken": 3,
+                "Realized_Net_bps": -40.308269429839676
+            },
+            "Calibrated_Logistic": {
+                "Brier": 0.24324184765910117,
+                "LogLoss": 0.6796103824242449,
+                "Trades_Taken": 0,
+                "Realized_Net_bps": 0.0
+            },
+            "Calibrated_Tree": {
+                "Brier": 0.28177256275246515,
+                "LogLoss": 0.813039340898396,
+                "Trades_Taken": 108,
+                "Realized_Net_bps": 6.391455884785946
+            }
+        }
+    }
+}

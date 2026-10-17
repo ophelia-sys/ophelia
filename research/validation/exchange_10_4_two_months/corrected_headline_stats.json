@@ -1,0 +1,50 @@
+{
+  "bingx": {
+    "primary_trades_slip0": 34,
+    "gross_bps_per_trade": -6.330258109533531,
+    "net_bps_per_trade": -16.330258109533535,
+    "median_net_bps": -55.04685916395468,
+    "profit_factor_net": 0.7026310675162952,
+    "win_rate_net": 0.38235294117647056,
+    "max_drawdown_net_bps": -744.1775032896367,
+    "max_losing_streak": 5,
+    "median_hold_minutes": 220.0,
+    "exposure_hours": 224.08333333333334,
+    "risk_geometry_pct": {
+      "mean": 0.7701,
+      "median": 0.6887,
+      "p25": 0.5047,
+      "p75": 0.986,
+      "max": 1.5592
+    }
+  },
+  "binance": {
+    "primary_trades_slip0": 83,
+    "gross_bps_per_trade": 17.55564973565574,
+    "net_bps_per_trade": 7.555649735655738,
+    "median_net_bps": -82.1395616868692,
+    "profit_factor_net": 1.0939385409041513,
+    "win_rate_net": 0.4819277108433735,
+    "max_drawdown_net_bps": -810.0251870881924,
+    "max_losing_streak": 3,
+    "median_hold_minutes": 270.0,
+    "exposure_hours": 688.1666666666666,
+    "risk_geometry_pct": {
+      "mean": 1.3712,
+      "median": 1.2577,
+      "p25": 0.8874,
+      "p75": 1.6005,
+      "max": 3.1731
+    }
+  },
+  "bingx_overlap": {
+    "trades": 34,
+    "net_bps_per_trade": -16.330258109533535,
+    "profit_factor_net": 0.7026310675162952
+  },
+  "binance_overlap": {
+    "trades": 27,
+    "net_bps_per_trade": 13.413509729990087,
+    "profit_factor_net": 1.2486119570514267
+  }
+}

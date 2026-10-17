@@ -1,0 +1,33 @@
+[Unit]
+Description=Ophelia Trading Engine (Shadow Mode)
+After=network.target
+
+[Service]
+Type=simple
+User=ophelia
+Group=ophelia
+WorkingDirectory=/opt/ophelia
+Environment="OPHELIA_MODE=SHADOW"
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=/opt/ophelia/.env
+
+# Execute the main application
+ExecStart=/opt/ophelia/.venv/bin/python main.py
+
+# Restart Policy
+Restart=on-failure
+RestartSec=10
+
+# Security and Isolation
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Log configuration (Systemd handles rotation)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

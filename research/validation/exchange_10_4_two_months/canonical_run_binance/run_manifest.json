@@ -1,0 +1,27 @@
+{
+  "anchor_check": "PASS",
+  "bootstrap_seed": 290719,
+  "config_sha256": "a842745afcb18b4c2a029f23a6fd17f170de4cd139355d1ee8943ff8e09bc826",
+  "counts": {
+    "signals": 128,
+    "skipped": 45,
+    "trades": 83,
+    "unfilled_eod": 0
+  },
+  "created_utc": "2026-08-22T05:35:22.190377+00:00",
+  "dataset_id": "DS-BINANCE-VAL",
+  "dataset_manifest": {},
+  "dataset_sha256": "9e46cccf8585cd2865542ef63001cc388c1ee690edf9aa4e56ccb3c5ed30f018",
+  "dataset_version": "DS-BINANCE-VAL.v1",
+  "engine_version": "2.9.0",
+  "git_commit": "ecfcff0412f6fafb9faa9ef174293026cda62069",
+  "git_dirty_flag": true,
+  "output_file_hashes": {
+    "OPHELIA_CANONICAL_AUDIT.md": "55f91ff6be65020ca1c2b52c6acc0c9462ae298d49aae1e4b7c57a34834d2b73",
+    "OPHELIA_CANONICAL_METRICS.json": "ba7bb6a648770dfa5d2bbd9aa535e36029814963acea778478b9f8559e76b114",
+    "OPHELIA_CANONICAL_SIGNAL_LEDGER.csv": "4c742c6d104947b83dd8889e740b42a8eca688feff9fff5358561077b2208c0b",
+    "OPHELIA_CANONICAL_TRADE_LEDGER.csv": "92dfafda390ac6ef58b80a3f4b597f8d1c1dccf3e75e85c9b1f8f84c63ad06ba"
+  },
+  "run_id": "8c923882b763",
+  "spec_version": "1.0"
+}

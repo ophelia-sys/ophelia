@@ -1,0 +1,51 @@
+[
+  {
+    "page": 1,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1783485000000&endTime=1783784999999&limit=1000",
+    "status": 200,
+    "rows_returned": 989,
+    "retrieved_utc": "2026-08-22T05:21:12.296690+00:00"
+  },
+  {
+    "page": 2,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1783785000000&endTime=1784084999999&limit=1000",
+    "status": 200,
+    "rows_returned": 1000,
+    "retrieved_utc": "2026-08-22T05:21:14.013489+00:00"
+  },
+  {
+    "page": 3,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1784085000000&endTime=1784384999999&limit=1000",
+    "status": 200,
+    "rows_returned": 1000,
+    "retrieved_utc": "2026-08-22T05:21:15.667602+00:00"
+  },
+  {
+    "page": 4,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1784385000000&endTime=1784684999999&limit=1000",
+    "status": 200,
+    "rows_returned": 1000,
+    "retrieved_utc": "2026-08-22T05:21:17.299680+00:00"
+  },
+  {
+    "page": 5,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1784685000000&endTime=1784984999999&limit=1000",
+    "status": 200,
+    "rows_returned": 1000,
+    "retrieved_utc": "2026-08-22T05:21:18.887428+00:00"
+  },
+  {
+    "page": 6,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1784985000000&endTime=1785284999999&limit=1000",
+    "status": 200,
+    "rows_returned": 1000,
+    "retrieved_utc": "2026-08-22T05:21:20.574446+00:00"
+  },
+  {
+    "page": 7,
+    "url": "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=SOL-USDT&interval=5m&startTime=1785285000000&endTime=1785542399999&limit=1000",
+    "status": 200,
+    "rows_returned": 858,
+    "retrieved_utc": "2026-08-22T05:21:22.222462+00:00"
+  }
+]

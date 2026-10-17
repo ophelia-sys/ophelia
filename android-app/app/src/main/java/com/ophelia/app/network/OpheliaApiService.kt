@@ -291,6 +291,19 @@ interface OpheliaApiService {
         @Query("refresh") refresh: Boolean = false
     ): ToxicityObservationModel
 
+    @GET("/api/microstructure/hasbrouck")
+    suspend fun getMicrostructureHasbrouck(
+        @Query("instrument") instrument: String = "BTC-USDT",
+        @Query("refresh") refresh: Boolean = false
+    ): HasbrouckVarObservationModel
+
+    @GET("/api/microstructure/vecm")
+    suspend fun getMicrostructureVecm(
+        @Query("series_1") series1: String = "BTC-USDT-SPOT",
+        @Query("series_2") series2: String = "BTC-USDT-PERP",
+        @Query("refresh") refresh: Boolean = false
+    ): VecmObservationModel
+
 
     // --- 48-Hour Historical Backtest ---
     @GET("/api/backtest/48h")
@@ -465,6 +478,13 @@ interface OpheliaApiService {
 
     @POST("/api/admin/god-eye/purge-synthetic")
     suspend fun purgeSyntheticUsers(): Map<String, Any>
+
+    // --- Phase 10: Multi-Venue Market Intelligence & TimesFM Compatibility ---
+    @GET("/api/cross-venue/basis/{symbol}")
+    suspend fun getCrossVenueBasis(@Path("symbol") symbol: String = "BTC-USDT"): CrossVenueBasisObservationModel
+
+    @GET("/api/timesfm/compatibility/{candidate_id}")
+    suspend fun getCandidateCompatibility(@Path("candidate_id") candidateId: String): TimesFMCompatibilityObservationModel
 }
 
 

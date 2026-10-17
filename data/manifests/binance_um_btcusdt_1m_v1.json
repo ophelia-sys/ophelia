@@ -1,0 +1,17 @@
+{
+    "row_count": 129600,
+    "duplicate_timestamps": 0,
+    "non_monotonic": false,
+    "missing_intervals": 0,
+    "completeness_percentage": 100.0,
+    "ohlc_valid": true,
+    "positive_prices": true,
+    "positive_volume": true,
+    "status": "PASS",
+    "dataset_id": "binance_um_btcusdt_1m_v1",
+    "symbol": "BTCUSDT",
+    "start_timestamp": 1672531200000,
+    "end_timestamp": 1680307140000,
+    "source": "Binance Vision",
+    "schema_version": "v1"
+}

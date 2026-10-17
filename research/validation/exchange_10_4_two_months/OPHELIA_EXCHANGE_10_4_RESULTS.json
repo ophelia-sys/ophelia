@@ -1,0 +1,614 @@
+{
+  "bingx": {
+    "dataset": "DS-BINGX-VAL",
+    "total_signals": 54,
+    "long_signals": 23,
+    "short_signals": 31,
+    "trades_taken_single_position": 34,
+    "anchor_check": "PASS",
+    "invariant_errors": [],
+    "risk_geometry": {
+      "mean_risk_pct": 0.7701207324560574,
+      "median_risk_pct": 0.688700365411635,
+      "p25_risk_pct": 0.5046859446459125,
+      "p75_risk_pct": 0.9859924786425924,
+      "max_risk_pct": 1.5591744348287,
+      "n": 34
+    },
+    "policy_table": [
+      {
+        "exit_policy": "ABS_050BP",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.5,
+        "gross_bps_per_trade": -10.216160926161404,
+        "net_bps_per_trade": -20.216160926161407,
+        "mean_R": -0.15276888430788427,
+        "median_R": -0.33965873579277805,
+        "profit_factor_net": 0.49731251167212986
+      },
+      {
+        "exit_policy": "ABS_075BP",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.47058823529411764,
+        "gross_bps_per_trade": -2.1056558852646514,
+        "net_bps_per_trade": -12.105655885264655,
+        "mean_R": -0.0382768140944113,
+        "median_R": -0.99999999999998,
+        "profit_factor_net": 0.7164546132747278
+      },
+      {
+        "exit_policy": "ABS_100BP",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.4117647058823529,
+        "gross_bps_per_trade": -1.5270970731369748,
+        "net_bps_per_trade": -11.527097073136975,
+        "mean_R": -0.024241290531480178,
+        "median_R": -0.9999999999999893,
+        "profit_factor_net": 0.7627482009153844
+      },
+      {
+        "exit_policy": "FIXED_R_100",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.4411764705882353,
+        "gross_bps_per_trade": -12.53564805744149,
+        "net_bps_per_trade": -22.53564805744149,
+        "mean_R": -0.11764705882352941,
+        "median_R": -0.9999999999999865,
+        "profit_factor_net": 0.5525275977043234
+      },
+      {
+        "exit_policy": "FIXED_R_150",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.38235294117647056,
+        "gross_bps_per_trade": -6.330258109533531,
+        "net_bps_per_trade": -16.330258109533535,
+        "mean_R": -0.0441176470588181,
+        "median_R": -0.9999999999999923,
+        "profit_factor_net": 0.7026310675162952
+      },
+      {
+        "exit_policy": "FIXED_R_200",
+        "signals": 34,
+        "resolved": 34,
+        "censored": 0,
+        "hit_rate": 0.35294117647058826,
+        "gross_bps_per_trade": -1.5441829248401027,
+        "net_bps_per_trade": -11.544182924840108,
+        "mean_R": 0.05882352941176855,
+        "median_R": -0.9999999999999923,
+        "profit_factor_net": 0.8020772079915177
+      },
+      {
+        "exit_policy": "FIXED_R_300",
+        "signals": 34,
+        "resolved": 33,
+        "censored": 1,
+        "hit_rate": 0.21212121212121213,
+        "gross_bps_per_trade": -9.712447430758777,
+        "net_bps_per_trade": -19.712447430758782,
+        "mean_R": -0.1515151515151494,
+        "median_R": -0.999999999999994,
+        "profit_factor_net": 0.7118010830010768
+      },
+      {
+        "exit_policy": "FIXED_R_500",
+        "signals": 34,
+        "resolved": 32,
+        "censored": 2,
+        "hit_rate": 0.09375,
+        "gross_bps_per_trade": -40.04537741721933,
+        "net_bps_per_trade": -50.04537741721933,
+        "mean_R": -0.43749999999999917,
+        "median_R": -0.9999999999999991,
+        "profit_factor_net": 0.3651543569084204
+      }
+    ],
+    "direction_policy": [
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_050BP",
+        "trades": 17,
+        "hit_rate": 0.5294117647058824,
+        "net_bps_per_trade": -18.051389634705256,
+        "mean_R": -0.035654620603106355
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_075BP",
+        "trades": 17,
+        "hit_rate": 0.47058823529411764,
+        "net_bps_per_trade": -13.595085435264382,
+        "mean_R": 0.06356521147723622
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_100BP",
+        "trades": 17,
+        "hit_rate": 0.4117647058823529,
+        "net_bps_per_trade": -10.200460650450408,
+        "mean_R": 0.06330960810277358
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_100",
+        "trades": 17,
+        "hit_rate": 0.47058823529411764,
+        "net_bps_per_trade": -28.576103192120094,
+        "mean_R": -0.05882352941176706
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_150",
+        "trades": 17,
+        "hit_rate": 0.4117647058823529,
+        "net_bps_per_trade": -21.46364664332685,
+        "mean_R": 0.029411764705889354
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_200",
+        "trades": 17,
+        "hit_rate": 0.4117647058823529,
+        "net_bps_per_trade": -9.264589722820965,
+        "mean_R": 0.23529411764706268
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_300",
+        "trades": 17,
+        "hit_rate": 0.23529411764705882,
+        "net_bps_per_trade": -18.796459196105463,
+        "mean_R": -0.058823529411763685
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_500",
+        "trades": 17,
+        "hit_rate": 0.11764705882352941,
+        "net_bps_per_trade": -44.96234983780208,
+        "mean_R": -0.2941176470588247
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_050BP",
+        "trades": 17,
+        "hit_rate": 0.47058823529411764,
+        "net_bps_per_trade": -22.380932217617552,
+        "mean_R": -0.2698831480126622
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_075BP",
+        "trades": 17,
+        "hit_rate": 0.47058823529411764,
+        "net_bps_per_trade": -10.616226335264924,
+        "mean_R": -0.14011883966605884
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_100BP",
+        "trades": 17,
+        "hit_rate": 0.4117647058823529,
+        "net_bps_per_trade": -12.85373349582354,
+        "mean_R": -0.11179218916573384
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_100",
+        "trades": 17,
+        "hit_rate": 0.4117647058823529,
+        "net_bps_per_trade": -16.49519292276289,
+        "mean_R": -0.17647058823529174
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_150",
+        "trades": 17,
+        "hit_rate": 0.35294117647058826,
+        "net_bps_per_trade": -11.196869575740221,
+        "mean_R": -0.11764705882352555
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_200",
+        "trades": 17,
+        "hit_rate": 0.29411764705882354,
+        "net_bps_per_trade": -13.823776126859244,
+        "mean_R": -0.11764705882352539
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_300",
+        "trades": 16,
+        "hit_rate": 0.1875,
+        "net_bps_per_trade": -20.685684930077937,
+        "mean_R": -0.24999999999999678
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_500",
+        "trades": 15,
+        "hit_rate": 0.06666666666666667,
+        "net_bps_per_trade": -55.80614200722557,
+        "mean_R": -0.5999999999999968
+      }
+    ],
+    "tails": {
+      "n_primary_trades": 34,
+      "mfe_ge_7R_share": 0.0,
+      "mfe_ge_9R_share": 0.0,
+      "mfe_ge_10R_share": 0.0,
+      "max_drawdown_net_bps": -744.1775032896367,
+      "max_losing_streak": 5
+    }
+  },
+  "binance": {
+    "dataset": "DS-BINANCE-VAL",
+    "total_signals": 128,
+    "long_signals": 63,
+    "short_signals": 65,
+    "trades_taken_single_position": 83,
+    "anchor_check": "PASS",
+    "invariant_errors": [],
+    "risk_geometry": {
+      "mean_risk_pct": 1.37122295781944,
+      "median_risk_pct": 1.25772602672512,
+      "p25_risk_pct": 0.8873630604790901,
+      "p75_risk_pct": 1.60051035751442,
+      "max_risk_pct": 3.17309379416911,
+      "n": 83
+    },
+    "policy_table": [
+      {
+        "exit_policy": "ABS_050BP",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.7228915662650602,
+        "gross_bps_per_trade": 1.6983356588823098,
+        "net_bps_per_trade": -8.301664341117691,
+        "mean_R": 0.03870203507418638,
+        "median_R": 0.3132812237958718,
+        "profit_factor_net": 0.7769408764104778
+      },
+      {
+        "exit_policy": "ABS_075BP",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.6867469879518072,
+        "gross_bps_per_trade": 11.854797269212224,
+        "net_bps_per_trade": 1.8547972692122199,
+        "mean_R": 0.1378283169322915,
+        "median_R": 0.467286631612773,
+        "profit_factor_net": 1.0433528376547558
+      },
+      {
+        "exit_policy": "ABS_100BP",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.5903614457831325,
+        "gross_bps_per_trade": 4.3267641916429085,
+        "net_bps_per_trade": -5.673235808357092,
+        "mean_R": 0.1237718094809971,
+        "median_R": 0.4589262577344391,
+        "profit_factor_net": 0.9035258580727902
+      },
+      {
+        "exit_policy": "FIXED_R_100",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.5421686746987951,
+        "gross_bps_per_trade": 1.332037657740589,
+        "net_bps_per_trade": -8.66796234225942,
+        "mean_R": 0.08433734939759045,
+        "median_R": 0.9999999999999942,
+        "profit_factor_net": 0.8803980870044618
+      },
+      {
+        "exit_policy": "FIXED_R_150",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.4819277108433735,
+        "gross_bps_per_trade": 17.55564973565574,
+        "net_bps_per_trade": 7.555649735655738,
+        "mean_R": 0.20481927710843476,
+        "median_R": -0.99999999999999,
+        "profit_factor_net": 1.0939385409041513
+      },
+      {
+        "exit_policy": "FIXED_R_200",
+        "signals": 83,
+        "resolved": 83,
+        "censored": 0,
+        "hit_rate": 0.42168674698795183,
+        "gross_bps_per_trade": 29.69951264144627,
+        "net_bps_per_trade": 19.699512641446262,
+        "mean_R": 0.2650602409638564,
+        "median_R": -0.9999999999999948,
+        "profit_factor_net": 1.2256578249043346
+      },
+      {
+        "exit_policy": "FIXED_R_300",
+        "signals": 83,
+        "resolved": 81,
+        "censored": 2,
+        "hit_rate": 0.2716049382716049,
+        "gross_bps_per_trade": 7.979320346235297,
+        "net_bps_per_trade": -2.020679653764711,
+        "mean_R": 0.08641975308642005,
+        "median_R": -0.999999999999998,
+        "profit_factor_net": 0.9813985783838043
+      },
+      {
+        "exit_policy": "FIXED_R_500",
+        "signals": 83,
+        "resolved": 81,
+        "censored": 2,
+        "hit_rate": 0.19753086419753085,
+        "gross_bps_per_trade": 21.56643103343358,
+        "net_bps_per_trade": 11.566431033433558,
+        "mean_R": 0.18518518518518512,
+        "median_R": -0.9999999999999986,
+        "profit_factor_net": 1.0969899464656372
+      }
+    ],
+    "direction_policy": [
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_050BP",
+        "trades": 44,
+        "hit_rate": 0.6363636363636364,
+        "net_bps_per_trade": -28.278936739049744,
+        "mean_R": -0.05714298850940791
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_075BP",
+        "trades": 44,
+        "hit_rate": 0.5681818181818182,
+        "net_bps_per_trade": -27.301975065017736,
+        "mean_R": -0.014774779613105587
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "ABS_100BP",
+        "trades": 44,
+        "hit_rate": 0.4772727272727273,
+        "net_bps_per_trade": -36.561797531994735,
+        "mean_R": -0.028473564742794208
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_100",
+        "trades": 44,
+        "hit_rate": 0.4772727272727273,
+        "net_bps_per_trade": -27.67843995193565,
+        "mean_R": -0.04545454545454584
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_150",
+        "trades": 44,
+        "hit_rate": 0.38636363636363635,
+        "net_bps_per_trade": -25.23157114393863,
+        "mean_R": -0.0340909090909079
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_200",
+        "trades": 44,
+        "hit_rate": 0.36363636363636365,
+        "net_bps_per_trade": -7.714216209635905,
+        "mean_R": 0.09090909090909131
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_300",
+        "trades": 44,
+        "hit_rate": 0.2727272727272727,
+        "net_bps_per_trade": -1.9161071947560424,
+        "mean_R": 0.09090909090909069
+      },
+      {
+        "direction": "LONG",
+        "exit_policy": "FIXED_R_500",
+        "trades": 44,
+        "hit_rate": 0.20454545454545456,
+        "net_bps_per_trade": 6.8592461358159085,
+        "mean_R": 0.22727272727272635
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_050BP",
+        "trades": 39,
+        "hit_rate": 0.8205128205128205,
+        "net_bps_per_trade": 14.236796825780008,
+        "mean_R": 0.14683488219413895
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_075BP",
+        "trades": 39,
+        "hit_rate": 0.8205128205128205,
+        "net_bps_per_trade": 34.74961733859987,
+        "mean_R": 0.3099959130347908
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "ABS_100BP",
+        "trades": 39,
+        "hit_rate": 0.717948717948718,
+        "net_bps_per_trade": 29.17539793113152,
+        "mean_R": 0.2955358214257872
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_100",
+        "trades": 39,
+        "hit_rate": 0.6153846153846154,
+        "net_bps_per_trade": 12.779755986606082,
+        "mean_R": 0.23076923076923145
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_150",
+        "trades": 39,
+        "hit_rate": 0.5897435897435898,
+        "net_bps_per_trade": 44.54636047160835,
+        "mean_R": 0.47435897435897506
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_200",
+        "trades": 39,
+        "hit_rate": 0.48717948717948717,
+        "net_bps_per_trade": 50.627822114462056,
+        "mean_R": 0.461538461538463
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_300",
+        "trades": 37,
+        "hit_rate": 0.2702702702702703,
+        "net_bps_per_trade": -2.1450360915047426,
+        "mean_R": 0.08108108108108207
+      },
+      {
+        "direction": "SHORT",
+        "exit_policy": "FIXED_R_500",
+        "trades": 37,
+        "hit_rate": 0.1891891891891892,
+        "net_bps_per_trade": 17.164164425195075,
+        "mean_R": 0.13513513513513592
+      }
+    ],
+    "tails": {
+      "n_primary_trades": 83,
+      "mfe_ge_7R_share": 0.0,
+      "mfe_ge_9R_share": 0.0,
+      "mfe_ge_10R_share": 0.0,
+      "max_drawdown_net_bps": -810.0251870881924,
+      "max_losing_streak": 3
+    }
+  },
+  "cross_venue": {
+    "indicator_parity": [
+      {
+        "indicator": "ST10_4_active_line",
+        "n_overlap_bars": 6838,
+        "mean_abs_diff_bps": 10.659934169768686,
+        "max_abs_diff_bps": 170.42806553536616,
+        "pct_bars_within_1bp": 2.2813688212927756
+      },
+      {
+        "indicator": "session_vwap",
+        "n_overlap_bars": 6847,
+        "mean_abs_diff_bps": 9.757206433843184,
+        "max_abs_diff_bps": 97.94851792844456,
+        "pct_bars_within_1bp": 15.846356068351103
+      },
+      {
+        "indicator": "ST10_4_direction",
+        "n_overlap_bars": 6847,
+        "mean_abs_diff_bps": null,
+        "max_abs_diff_bps": null,
+        "pct_bars_within_1bp": 92.4638527822404
+      }
+    ],
+    "signal_comparison": [
+      {
+        "tolerance": "exact",
+        "bingx_signals": 54,
+        "binance_signals": 128,
+        "matched": 15,
+        "bingx_only": 39,
+        "binance_only": 28
+      },
+      {
+        "tolerance": "pm5m",
+        "bingx_signals": 54,
+        "binance_signals": 128,
+        "matched": 23,
+        "bingx_only": 31,
+        "binance_only": 20
+      },
+      {
+        "tolerance": "pm10m",
+        "bingx_signals": 54,
+        "binance_signals": 128,
+        "matched": 25,
+        "bingx_only": 29,
+        "binance_only": 18
+      },
+      {
+        "tolerance": "pm15m",
+        "bingx_signals": 54,
+        "binance_signals": 128,
+        "matched": 27,
+        "bingx_only": 27,
+        "binance_only": 16
+      }
+    ],
+    "timing": {
+      "exact": 15,
+      "m5": 23,
+      "m10": 25,
+      "m15": 27
+    },
+    "tv_diagnostic_f3": {
+      "overlap_bars": 3562,
+      "mean_abs_diff_bps": 1.6320409985317268e-05,
+      "max_abs_diff_bps": 0.01616580362086596,
+      "note": "TV file carries factor-3.0 lines only; F4-vs-chart comparison impossible by construction."
+    },
+    "price_parity": [
+      {
+        "field": "open",
+        "n": 6847,
+        "max_abs_diff": 0.046999999999997044,
+        "mean_abs_diff": 0.008849569154374187,
+        "mean_abs_diff_bps": 1.164641363826628,
+        "max_abs_diff_bps": 6.4818645704036735
+      },
+      {
+        "field": "high",
+        "n": 6847,
+        "max_abs_diff": 0.14000000000000057,
+        "mean_abs_diff": 0.009528406601431233,
+        "mean_abs_diff_bps": 1.252448366502875,
+        "max_abs_diff_bps": 17.948717948718024
+      },
+      {
+        "field": "low",
+        "n": 6847,
+        "max_abs_diff": 0.23699999999999477,
+        "mean_abs_diff": 0.008440923031984786,
+        "mean_abs_diff_bps": 1.1108609291661535,
+        "max_abs_diff_bps": 30.699481865284298
+      },
+      {
+        "field": "close",
+        "n": 6847,
+        "max_abs_diff": 0.06700000000000728,
+        "mean_abs_diff": 0.00904074777274718,
+        "mean_abs_diff_bps": 1.1892138686452969,
+        "max_abs_diff_bps": 8.658568105454547
+      }
+    ],
+    "volume_ratio_bx_over_bn": 0.19756060388646343
+  }
+}

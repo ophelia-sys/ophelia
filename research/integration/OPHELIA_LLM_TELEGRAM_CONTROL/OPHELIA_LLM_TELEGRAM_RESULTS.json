@@ -1,0 +1,114 @@
+{
+  "T1": {
+    "parse_ok": true,
+    "intent": {
+      "intent_type": "MARKET_QUERY",
+      "symbol": "SOL-USDT",
+      "lookback_min": 30,
+      "strategy": null,
+      "timeframe_min": null,
+      "aggregation_interval_min": null,
+      "direction_preference": null,
+      "margin_usage_pct": null,
+      "leverage": null,
+      "action": null,
+      "automation_id": null,
+      "analytics_requested": [],
+      "missing_parameters": [],
+      "reply_hint": "",
+      "confidence": 0.8
+    },
+    "snapshot_bars": 7,
+    "last_price": 93.0,
+    "err": ""
+  },
+  "T2": {
+    "count_5m_candles_in_30m": 6,
+    "pass": true
+  },
+  "T3": {
+    "window_min": 15,
+    "avg_abs_move_pct": 0.0,
+    "max_abs_move_pct": 0.0,
+    "net_move_pct": 0.2047,
+    "range_pct": 0.5603,
+    "direction": "UP"
+  },
+  "T4": {
+    "methodology": "inflow=taker_buy_volume(Binance); outflow=total-inflow (aggressive-buy vs aggressive-sell approximation)",
+    "window_min": 30,
+    "total": 410550.1,
+    "inflow": 201155.23,
+    "outflow": 209394.87,
+    "net_flow": -8239.64,
+    "net_flow_pct": -2.01
+  },
+  "T5": {
+    "POC": 92.857292,
+    "VAH": 93.00625,
+    "VAL": 92.708333
+  },
+  "T6": {
+    "best_bid": 93.016,
+    "best_ask": 93.032,
+    "spread": 0.016,
+    "spread_bps": 1.72,
+    "bid_vol_top": 2456.92,
+    "ask_vol_top": 2882.18,
+    "imbalance_pct": -7.97,
+    "levels_returned": 10
+  },
+  "T7": {
+    "EMA9": null,
+    "EMA20": null,
+    "state": null
+  },
+  "T8": {
+    "estimate": null,
+    "note": "insufficient data",
+    "type": "ESTIMATE"
+  },
+  "T9": {
+    "llm_parse_ok": true,
+    "llm_err": "",
+    "intent_type": "CONDITION_CREATE",
+    "missing_param_listed": true,
+    "automation_id": 4,
+    "proposal_notional": 1000.0,
+    "mode": "SHADOW"
+  },
+  "T10_skip_simulated": {
+    "note": "skip path exercised via cancel_shadow_trade unit below",
+    "cancel_missing_trade_raises": true
+  },
+  "T11_health": {
+    "core": "OK",
+    "cpu": 100.0,
+    "ram": 50.1,
+    "cleanup_age": 1.7
+  },
+  "T12_vps_health_subset": {
+    "uptime_s": 1036365,
+    "disk_pct": 11.0
+  },
+  "T13_over24h": {
+    "candles_returned": 35,
+    "enforced": true
+  },
+  "T14_cleanup": {
+    "deleted": 1,
+    "ok": true,
+    "error": null,
+    "cutoff_utc": "2026-08-21T11:29:50.043000+00:00",
+    "oldest_after": 1787396100000
+  },
+  "T15_no_execution": {
+    "intent_type": "MARKET_QUERY",
+    "not_execution_intent": true,
+    "execution_tools_exposed": []
+  },
+  "T16_risk_veto": {
+    "rejected_high_leverage": true,
+    "reason": "leverage 100 exceeds cap 50"
+  }
+}

@@ -1,0 +1,14 @@
+{
+    "total_baseline": 121,
+    "optimistic_net_r": -20.901271226221798,
+    "realistic_net_r": -24.88152547146616,
+    "conservative_net_r": -28.861779716710522,
+    "regimes": {
+        "Bearish": 3.5892478200923374,
+        "Bearish_Chop": 2.069807178660514,
+        "Bearish_HighVol": -7.495075996063766,
+        "Bullish_Breakout": -10.625359278374848,
+        "Bullish_Chop": -2.4437559123754884,
+        "Sideways": -9.976389283404911
+    }
+}

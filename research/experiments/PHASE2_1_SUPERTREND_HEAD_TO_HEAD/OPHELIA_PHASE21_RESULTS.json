@@ -1,0 +1,39 @@
+{
+    "counts": {
+        "3": 177,
+        "4": 121,
+        "3_long": 96,
+        "3_short": 81,
+        "4_long": 58,
+        "4_short": 63
+    },
+    "matching_60": {
+        "MATCHED_10/4_CONFIRMS_LATER": 88,
+        "10/3_ONLY_FALSE_FLIP_CANDIDATE": 55,
+        "10/4_ONLY": 37,
+        "10/3_ONLY_SUCCESS": 30,
+        "10/3_ONLY_FAILURE": 4
+    },
+    "matching_30": {
+        "10/3_ONLY_FALSE_FLIP_CANDIDATE": 68,
+        "MATCHED_10/4_CONFIRMS_LATER": 67,
+        "10/4_ONLY": 54,
+        "10/3_ONLY_SUCCESS": 37,
+        "10/3_ONLY_FAILURE": 5
+    },
+    "matching_90": {
+        "MATCHED_10/4_CONFIRMS_LATER": 103,
+        "10/3_ONLY_FALSE_FLIP_CANDIDATE": 52,
+        "10/4_ONLY": 27,
+        "10/3_ONLY_SUCCESS": 19,
+        "10/3_ONLY_FAILURE": 3
+    },
+    "timing_60": {
+        "avg_diff_mins": 18.920454545454547,
+        "med_diff_mins": 10.0,
+        "max_diff_mins": 60.0,
+        "missed_15R_pct": 20.716501408845197,
+        "missed_2R_pct": 15.5373760566339,
+        "missed_3R_pct": 10.358250704422598
+    }
+}

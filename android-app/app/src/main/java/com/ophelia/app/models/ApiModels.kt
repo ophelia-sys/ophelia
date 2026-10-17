@@ -2140,6 +2140,8 @@ data class MicrostructureSummaryResponse(
     @SerializedName("liquidity_stress") val liquidityStress: LiquidityStressObservationModel? = null,
     @SerializedName("price_impact") val priceImpact: PriceImpactObservationModel? = null,
     @SerializedName("toxicity") val toxicity: ToxicityObservationModel? = null,
+    @SerializedName("hasbrouck") val hasbrouck: HasbrouckVarObservationModel? = null,
+    @SerializedName("vecm") val vecm: VecmObservationModel? = null,
     @SerializedName("timestamp_ms") val timestampMs: Long = 0L
 )
 
@@ -2227,6 +2229,95 @@ data class ToxicityObservationModel(
     @SerializedName("toxicity_state") val toxicityState: String = "NOT_AVAILABLE",
     @SerializedName("methodology_version") val methodologyVersion: String = "VPIN_INSPIRED_RESEARCH",
     val mode: String = "RESEARCH"
+)
+
+// --- Phase 6D: Hasbrouck-Style VAR & VECM Models ---
+data class HasbrouckVarObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("run_id") val runId: String? = null,
+    val status: String = "NOT_AVAILABLE",
+    @SerializedName("selected_lag") val selectedLag: Int? = null,
+    @SerializedName("lag_selection_method") val lagSelectionMethod: String = "BIC",
+    @SerializedName("candidate_lags") val candidateLags: List<Int> = emptyList(),
+    @SerializedName("window_start") val windowStart: Long? = null,
+    @SerializedName("window_end") val windowEnd: Long? = null,
+    @SerializedName("sampling_method") val samplingMethod: String = "EVENT_TIME",
+    @SerializedName("is_stable") val isStable: Boolean? = null,
+    @SerializedName("max_eigenvalue_modulus") val maxEigenvalueModulus: Double? = null,
+    @SerializedName("cumulative_impact") val cumulativeImpact: Double? = null,
+    @SerializedName("variance_share_flow") val varianceShareFlow: Double? = null,
+    @SerializedName("methodology_version") val methodologyVersion: String = "HASBROUCK_STYLE_RESEARCH",
+    val mode: String = "RESEARCH"
+)
+
+data class VecmObservationModel(
+    val instrument: String = "",
+    val venue: String = "BINGX",
+    @SerializedName("event_timestamp") val eventTimestamp: Long = 0L,
+    @SerializedName("sample_count") val sampleCount: Int = 0,
+    @SerializedName("quality_state") val qualityState: String = "VALID",
+    @SerializedName("freshness_state") val freshnessState: String = "FRESH",
+    @SerializedName("run_id") val runId: String? = null,
+    val status: String = "NOT_AVAILABLE",
+    @SerializedName("series_1") val series1: String = "BTC-USDT-SPOT",
+    @SerializedName("series_2") val series2: String = "BTC-USDT-PERP",
+    @SerializedName("alignment_method") val alignmentMethod: String = "NEAREST_PRIOR",
+    @SerializedName("window_start") val windowStart: Long? = null,
+    @SerializedName("window_end") val windowEnd: Long? = null,
+    @SerializedName("selected_lag") val selectedLag: Int? = null,
+    @SerializedName("cointegration_rank") val cointegrationRank: Int? = null,
+    @SerializedName("trace_stat") val traceStat: Double? = null,
+    @SerializedName("max_eigen_stat") val maxEigenStat: Double? = null,
+    @SerializedName("beta_coeff") val betaCoeff: Double? = null,
+    @SerializedName("alpha_1") val alpha1: Double? = null,
+    @SerializedName("alpha_2") val alpha2: Double? = null,
+    @SerializedName("gg_share_1") val ggShare1: Double? = null,
+    @SerializedName("gg_share_2") val ggShare2: Double? = null,
+    @SerializedName("is_stable") val isStable: Boolean? = null,
+    @SerializedName("methodology_version") val methodologyVersion: String = "VECM_STYLE_RESEARCH",
+    val mode: String = "RESEARCH"
+)
+
+// --- Phase 10: Multi-Venue Market Intelligence & TimesFM Compatibility ---
+data class CrossVenueBasisObservationModel(
+    val symbol: String = "",
+    @SerializedName("canonical_instrument_id") val canonicalInstrumentId: String = "",
+    @SerializedName("binance_price") val binancePrice: Double = 0.0,
+    @SerializedName("bingx_price") val bingxPrice: Double = 0.0,
+    @SerializedName("basis_abs") val basisAbs: Double = 0.0,
+    @SerializedName("basis_pct") val basisPct: Double = 0.0,
+    @SerializedName("basis_zscore") val basisZscore: Double? = null,
+    @SerializedName("basis_velocity") val basisVelocity: Double = 0.0,
+    @SerializedName("timestamp_delta_ms") val timestampDeltaMs: Long = 0L,
+    @SerializedName("binance_data_age_ms") val binanceDataAgeMs: Long = 0L,
+    @SerializedName("bingx_data_age_ms") val bingxDataAgeMs: Long = 0L,
+    @SerializedName("execution_spread") val executionSpread: Double = 0.0,
+    @SerializedName("estimated_slippage_pct") val estimatedSlippagePct: Double = 0.0,
+    val state: String = "NOT_AVAILABLE",
+    val version: String = "CROSS_VENUE_BASIS_V1"
+)
+
+data class TimesFMCompatibilityObservationModel(
+    @SerializedName("candidate_id") val candidateId: String = "",
+    val symbol: String = "",
+    val direction: String = "LONG",
+    @SerializedName("entry_price") val entryPrice: Double = 0.0,
+    @SerializedName("sl_price") val slPrice: Double = 0.0,
+    @SerializedName("tp1_price") val tp1Price: Double = 0.0,
+    @SerializedName("forecast_direction") val forecastDirection: String = "NEUTRAL",
+    @SerializedName("forecast_dispersion") val forecastDispersion: String = "MODERATE",
+    @SerializedName("trade_compatibility") val tradeCompatibility: String = "NOT_AVAILABLE",
+    val q10: Double = 0.0,
+    val q50: Double = 0.0,
+    val q90: Double = 0.0,
+    @SerializedName("dispersion_pct") val dispersionPct: Double = 0.0,
+    val status: String = "SHADOW_ONLY",
+    @SerializedName("calibration_status") val calibrationStatus: String = "NOT CALIBRATED"
 )
 
 

@@ -1,0 +1,34 @@
+{
+  "ophelia_dir": {
+    "stdout": "total 1408\ndrwxr-xr-x 30 ophelia ophelia   4096 Aug 25 19:10 .\ndrwxr-xr-x  3 root    root      4096 Aug 25 10:04 ..\ndrwxr-xr-x  3 ophelia ophelia   4096 Aug 16 11:58 .cache\n-rw-------  1 ophelia ophelia    309 Aug 16 12:41 .env\n-rw-------  1 ophelia ophelia    123 Aug 16 11:39 .env.shadow\ndrwx------  3 ophelia ophelia   4096 Aug 16 12:04 .local\ndrwxr-xr-x  3 ophelia ophelia   4096 Aug 16 12:06 .pytest_cache\ndrwxr-xr-x  5 ophelia ophelia   4096 Aug 16 11:57 .venv\n-rw-rw-rw-  1 ophelia ophelia   1820 Aug 20 10:23 PHASE7_DECISION_THRESHOLDS.json\n-rw-rw-rw-  1 ophelia ophelia 110115 Aug 16 09:59 PHASE7_MODEL_FROZEN_ADAUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 110323 Aug 16 09:59 PHASE7_MODEL_FROZEN_BNBUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 107221 Aug 16 09:58 PHASE7_MODEL_FROZEN_BTCUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 109857 Aug 16 09:58 PHASE7_MODEL_FROZEN_ETHUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 108104 Aug 16 09:59 PHASE7_MODEL_FROZEN_SOLUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 110091 Aug 16 09:59 PHASE7_MODEL_FROZEN_XRPUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 110201 Aug 20 10:23 PHASE7_SHORT_MODEL_FROZEN_BNBUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 109640 Aug 20 10:23 PHASE7_SHORT_MODEL_FROZEN_BTCUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 110134 Aug 20 10:23 PHASE7_SHORT_MODEL_FROZEN_ETHUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 109613 Aug 20 10:23 PHASE7_SHORT_MODEL_FROZEN_SOLUSDT.pkl\n-rw-rw-rw-  1 ophelia ophelia 109930 Aug 20 10:23 PHASE7_SHORT_MODEL_FROZEN_XRPUSDT.pkl\ndrwxr-xr-x  2 ophelia ophelia   4096 Aug 16 12:09 __pycache__\ndrwxrwxrwx  2 ophelia ophelia   4096 Aug  7 03:39 app\n-rw-r--r--  1 root    root     68407 Aug 23 09:20 backup_control_plane_20260823_pre_nlg.tar.gz\n-rw-rw-rw-  1 ophelia ophelia   1360 Aug 14 17:08 bot.py\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 16 10:27 brokers\n-rw-rw-rw-  1 ophelia ophelia   3635 Aug 16 10:28 config.py\n-rw-------  1 root    root       349 Aug 25 10:14 control.env\ndrwxr-xr-x  2 ophelia ophelia   4096 Aug 22 11:19 control_data\ndrwxr-xr-x  3 root    root      4096 Aug 25 19:10 control_plane\ndrwxr-xr-x  3 root    root      4096 Aug 25 12:57 control_plane.old\ndrwxr-xr-x  3 root    root      4096 Aug 25 12:55 control_plane.old2\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 18 01:36 core\ndrwxr-xr-x  2 ophelia ophelia   4096 Aug 26 12:35 data\ndrwxrwxrwx  2 ophelia ophelia   4096 Aug 16 10:40 deploy\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 18 01:07 exchange\ndrwxrwxrwx  4 ophelia ophelia   4096 Aug 16 12:25 external\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 10 05:45 indicators\ndrwxrwxrwx  7 ophelia ophelia   4096 Aug 18 01:07 institutional\ndrwxr-xr-x  2 ophelia ophelia   4096 Aug 18 01:06 logs\n-rw-rw-rw-  1 ophelia ophelia    160 Aug  4 10:37 main.py\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug  7 12:03 models\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug  7 03:40 paper\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug  7 03:40 portfolio\n-rw-rw-rw-  1 ophelia ophelia     68 Aug  8 04:55 requirements.txt\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug  7 03:41 risk\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 23 18:42 scripts\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 11 09:11 strategies\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 18 01:36 telegram\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug 16 10:40 tests\ndrwxrwxrwx  3 ophelia ophelia   4096 Aug  7 03:41 utils\n",
+    "stderr": ""
+  },
+  "git_status": {
+    "stdout": "",
+    "stderr": "fatal: not a git repository (or any of the parent directories): .git\n"
+  },
+  "git_log": {
+    "stdout": "",
+    "stderr": "fatal: not a git repository (or any of the parent directories): .git\n"
+  },
+  "systemd_services": {
+    "stdout": "  ophelia-control.service                        loaded active running Ophelia Control Plane (Telegram + LLM + Data + News)\n  ophelia-shadow.service                         loaded active running Ophelia Trading Engine (Shadow Mode)\n",
+    "stderr": ""
+  },
+  "ollama_status": {
+    "stdout": "\u25cf ollama.service - Ollama Service\n     Loaded: loaded (/etc/systemd/system/ollama.service; enabled; preset: enabled)\n     Active: active (running) since Sat 2026-08-22 10:27:57 UTC; 4 days ago\n Invocation: 9d67b72e45a9426692a6f126c83eea54\n   Main PID: 237810 (ollama)\n      Tasks: 34 (limit: 7957)\n     Memory: 5.6G (peak: 6.1G)\n        CPU: 3h 1min 5.109s\n     CGroup: /system.slice/ollama.service\n             \u251c\u2500237810 /usr/local/bin/ollama serve\n             \u2514\u2500297847 /usr/local/lib/ollama/llama-server --model /usr/share/ollama/.ollama/models/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f --port 44917 --host 127.0.0.1 --no-webui --offline -c 4096 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --load-mode none --flash-attn auto -b 512 -ub 512 --context-shift --keep 4\n",
+    "stderr": ""
+  },
+  "ollama_list": {
+    "stdout": "NAME          ID              SIZE      MODIFIED     \nqwen3:1.7b    8f68893c685c    1.4 GB    26 hours ago    \nqwen3:4b      359d7dd4bcda    2.5 GB    4 days ago      \n",
+    "stderr": ""
+  },
+  "control_plane_files": {
+    "stdout": "total 240\ndrwxr-xr-x  3 root    root     4096 Aug 25 19:10 .\ndrwxr-xr-x 30 ophelia ophelia  4096 Aug 25 19:10 ..\n-rw-rw-rw-  1 root    root        0 Aug 22 11:00 __init__.py\n-rw-rw-rw-  1 root    root     2042 Aug 25 09:51 __main__.py\ndrwxrwxrwx  2 root    root     4096 Aug 25 19:10 __pycache__\n-rw-rw-rw-  1 root    root     7622 Aug 25 12:49 account.py\n-rw-rw-rw-  1 root    root    19426 Aug 25 09:43 analytics.py\n-rw-rw-rw-  1 root    root     7329 Aug 25 12:56 bingx_client.py\n-rw-rw-rw-  1 root    root     1888 Aug 25 09:29 config.py\n-rw-rw-rw-  1 root    root    31766 Aug 25 12:11 core.py\n-rw-rw-rw-  1 root    root    15806 Aug 25 19:05 db.py\n-rw-rw-rw-  1 root    root     3508 Aug 25 09:44 ingest.py\n-rw-rw-rw-  1 root    root    12812 Aug 25 09:40 llm.py\n-rw-rw-rw-  1 root    root     3907 Aug 22 10:36 news.py\n-rw-rw-rw-  1 root    root    26804 Aug 25 12:45 nlg.py\n-rw-rw-rw-  1 root    root     1397 Aug 25 09:43 sessions.py\n-rw-rw-rw-  1 root    root    78008 Aug 25 19:09 telegram_bot.py\n",
+    "stderr": ""
+  },
+  "db_schema": {
+    "stdout": "No DB\n",
+    "stderr": ""
+  }
+}

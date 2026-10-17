@@ -1,0 +1,47 @@
+{
+  "LONG": {
+    "total_signals": 29,
+    "target_hits": 15,
+    "stop_hits": 14,
+    "ambiguous": 0,
+    "success_rate": 51.724137931034484,
+    "average_risk_%": 0.4203280984689051,
+    "average_target_%": 0.6304921477033577,
+    "median_risk_%": 0.3727338895963123,
+    "median_target_%": 0.5591008343944684,
+    "mean_return_%": 0.27364414962719147,
+    "median_return_%": 0.34858557192655787,
+    "mean_holding_bars": 61.206896551724135,
+    "median_holding_bars": 32.0
+  },
+  "SHORT": {
+    "total_signals": 21,
+    "target_hits": 7,
+    "stop_hits": 14,
+    "ambiguous": 0,
+    "success_rate": 33.33333333333333,
+    "average_risk_%": 0.4095257046318831,
+    "average_target_%": 0.6142885569478264,
+    "median_risk_%": 0.35478317596791814,
+    "median_target_%": 0.5321747639518867,
+    "mean_return_%": -0.11852400994391399,
+    "median_return_%": -0.23912956837113816,
+    "mean_holding_bars": 48.904761904761905,
+    "median_holding_bars": 32.0
+  },
+  "COMBINED": {
+    "total_signals": 50,
+    "target_hits": 22,
+    "stop_hits": 28,
+    "ambiguous": 0,
+    "success_rate": 44.0,
+    "average_risk_%": 0.415791093057356,
+    "average_target_%": 0.6236866395860345,
+    "median_risk_%": 0.37188729860586184,
+    "median_target_%": 0.5578309479087927,
+    "mean_return_%": 0.1089335226073272,
+    "median_return_%": -0.20523497329875995,
+    "mean_holding_bars": 56.04,
+    "median_holding_bars": 32.0
+  }
+}

@@ -1,0 +1,303 @@
+{
+    "features": {
+        "fvg_confirmation_v1": {
+            "feature_id": "fvg_confirmation_v1",
+            "name": "FVG Confirmation",
+            "definition": "Fair Value Gap completion confirmed by subsequent candle closure",
+            "raw_dependencies": [
+                "klines"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "REJECTED",
+            "rejection_reason": "Empirical evidence fails to support feature. Negative expectancy after costs."
+        },
+        "pool_confirmation_v1": {
+            "feature_id": "pool_confirmation_v1",
+            "name": "Liquidity Pool Confirmation",
+            "definition": "Price entering a historical volume node and rejecting",
+            "raw_dependencies": [
+                "klines",
+                "volume_profile"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "REJECTED",
+            "rejection_reason": "Empirical evidence fails to support feature. Negative expectancy after costs."
+        },
+        "liquidity_sweep_v1": {
+            "feature_id": "liquidity_sweep_v1",
+            "name": "Liquidity Sweep",
+            "definition": "Price wicking through a structural extreme and immediately reversing",
+            "raw_dependencies": [
+                "klines"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "INCONCLUSIVE",
+            "rejection_reason": "INCONCLUSIVE / INSUFFICIENT_DATA"
+        },
+        "flow_price_divergence_v1": {
+            "feature_id": "flow_price_divergence_v1",
+            "name": "Flow-Price Divergence",
+            "definition": "max(0, Z_R - Z_DeltaOI) conditioned on Z_DeltaOI < -tau",
+            "raw_dependencies": [
+                "klines",
+                "open_interest"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": "exp_037_039",
+            "dataset_hash": "D2E839EDECFAE88B798993CFF9545FA626071EFCB722F266FBE15E0BEA3E20B5",
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "REJECTED",
+            "rejection_reason": "No demonstrated incremental OOS predictive value after economic costs; original inference additionally contained methodological defects, therefore no statistical promotion claim is permitted."
+        },
+        "book_slope": {
+            "feature_id": "book_slope",
+            "name": "Book Slope",
+            "definition": "Bid Slope - Ask Slope / Bid Slope + Ask Slope (Requires L2 Depth)",
+            "raw_dependencies": [
+                "depth_snapshots"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "UNTESTED",
+            "rejection_reason": "DATA_UNAVAILABLE_FOR_HISTORICAL_EVALUATION"
+        },
+        "true_queue_imbalance": {
+            "feature_id": "true_queue_imbalance",
+            "name": "True Queue Imbalance",
+            "definition": "Imbalance of sizes at the best bid and ask (Requires BBA/L2 Depth)",
+            "raw_dependencies": [
+                "book_ticker",
+                "depth_snapshots"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "UNTESTED",
+            "rejection_reason": "DATA_UNAVAILABLE_FOR_HISTORICAL_EVALUATION"
+        },
+        "trade_aggressiveness_proxy_v1": {
+            "feature_id": "trade_aggressiveness_proxy_v1",
+            "name": "Trade Aggressiveness Proxy",
+            "definition": "Delta V / Volume (Aggressive Buy Vol - Aggressive Sell Vol / Total Vol)",
+            "raw_dependencies": [
+                "trades"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "REJECTED",
+            "rejection_reason": "Tested in Phase 7. Showed statistical association but failed to overcome standard taker costs. Not true queue imbalance."
+        },
+        "evidence_entropy_v1": {
+            "feature_id": "evidence_entropy_v1",
+            "name": "Evidence Entropy",
+            "definition": "Shannon entropy of cross-sectional feature probabilities",
+            "raw_dependencies": [
+                "klines"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "REJECTED",
+            "rejection_reason": "Failed incrementality over constituent features."
+        },
+        "microprice": {
+            "feature_id": "microprice",
+            "name": "Microprice",
+            "definition": "Volume-weighted mid price",
+            "raw_dependencies": [
+                "book_ticker"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "UNTESTED",
+            "rejection_reason": "DATA_UNAVAILABLE_FOR_HISTORICAL_EVALUATION"
+        },
+        "depth_imbalance": {
+            "feature_id": "depth_imbalance",
+            "name": "Depth Imbalance",
+            "definition": "Imbalance of sizes up to N levels deep",
+            "raw_dependencies": [
+                "depth_snapshots"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": null,
+            "dataset_hash": null,
+            "parameters": {},
+            "parameter_selection_method": "",
+            "dev_performance": {},
+            "oos_performance": {},
+            "transaction_cost_performance": {},
+            "statistical_methodology": "",
+            "multiple_testing_treatment": "",
+            "stability_results": {},
+            "status": "UNTESTED",
+            "rejection_reason": "DATA_UNAVAILABLE_FOR_HISTORICAL_EVALUATION"
+        },
+        "s1_vol_scaled_tsmom_v1": {
+            "feature_id": "s1_vol_scaled_tsmom_v1",
+            "name": "Volatility-Scaled TSMOM",
+            "definition": "sign(R_L) / sigma_L",
+            "raw_dependencies": [
+                "klines"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": "exp_044_s1",
+            "dataset_hash": "D2E839EDECFAE88B798993CFF9545FA626071EFCB722F266FBE15E0BEA3E20B5",
+            "parameters": {
+                "lookback": "1h",
+                "horizon": "4h",
+                "label": "label_vol_adj_4h"
+            },
+            "parameter_selection_method": "DEV Fold 0 Rank Correlation",
+            "dev_performance": {
+                "IC": -0.005491
+            },
+            "oos_performance": {
+                "gross_bps": -1.03,
+                "t_stat": -1.3,
+                "n": 1747
+            },
+            "transaction_cost_performance": {
+                "net_bps": -13.03
+            },
+            "statistical_methodology": "Calendar-Time Portfolio (Non-Overlapping)",
+            "multiple_testing_treatment": "Strict candidate grid pre-registration",
+            "stability_results": {
+                "high_vol": 0.49,
+                "low_vol": -0.72
+            },
+            "status": "REJECTED",
+            "rejection_reason": "Negative IC in DEV. Negative expectancy in OOS before and after costs."
+        },
+        "s2_beta_adj_residual_momentum_v1": {
+            "feature_id": "s2_beta_adj_residual_momentum_v1",
+            "name": "Beta-Adjusted Residual Momentum",
+            "definition": "sign(epsilon) where epsilon = R_i - beta*R_BTC",
+            "raw_dependencies": [
+                "klines"
+            ],
+            "exchange": "Binance UM",
+            "timeframe": "1m",
+            "experiment_id": "exp_045_s2",
+            "dataset_hash": "D2E839EDECFAE88B798993CFF9545FA626071EFCB722F266FBE15E0BEA3E20B5",
+            "parameters": {
+                "beta_window": "24h",
+                "lookback": "24h",
+                "horizon": "4h",
+                "label": "label_vol_adj_4h"
+            },
+            "parameter_selection_method": "DEV Fold 0 Rank Correlation",
+            "dev_performance": {
+                "IC": -0.010755
+            },
+            "oos_performance": {
+                "gross_bps": 2.16,
+                "t_stat": 1.08,
+                "n": 1747
+            },
+            "transaction_cost_performance": {
+                "net_bps": -9.84
+            },
+            "statistical_methodology": "Calendar-Time Portfolio (Non-Overlapping)",
+            "multiple_testing_treatment": "Strict candidate grid pre-registration",
+            "stability_results": {
+                "high_vol": 0.93,
+                "low_vol": 2.05
+            },
+            "status": "REJECTED",
+            "rejection_reason": "Failed COST_PASS (net -9.84 bps). Underperformed market drift baseline. Market neutral evaluation INCONCLUSIVE due to insufficient breadth."
+        }
+    },
+    "families": {}
+}

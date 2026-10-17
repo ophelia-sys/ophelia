@@ -1,0 +1,85 @@
+{
+    "1m_completeness": [
+        {
+            "symbol": "BTCUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        },
+        {
+            "symbol": "ETHUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        },
+        {
+            "symbol": "SOLUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        },
+        {
+            "symbol": "XRPUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        },
+        {
+            "symbol": "BNBUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        },
+        {
+            "symbol": "ADAUSDT",
+            "expected": 1051200,
+            "actual": 1051200,
+            "missing": 0,
+            "duplicates": 0,
+            "first": 1640995200000,
+            "last": 1704067140000,
+            "malformed": 0,
+            "nan_inf": 0,
+            "status": "COMPLETE"
+        }
+    ],
+    "native_vs_resampled": {
+        "diff_open": 0.0,
+        "diff_high": 0.0,
+        "diff_low": 0.0,
+        "diff_close": 0.0,
+        "diff_vol": 3.637978807091713e-12,
+        "match_count": 8928,
+        "expected_count": 8928
+    }
+}

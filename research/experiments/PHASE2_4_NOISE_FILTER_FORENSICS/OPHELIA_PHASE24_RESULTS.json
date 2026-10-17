@@ -1,0 +1,8 @@
+{
+    "total_trades": 121,
+    "total_bad": 58,
+    "total_good": 63,
+    "most_bad_removed": "risk_0.4_rejected",
+    "most_unique_bad": "risk_0.4_rejected",
+    "most_destructive": "risk_0.4_rejected"
+}

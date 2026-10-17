@@ -1,0 +1,12 @@
+{
+  "Phase1.6_VWAP_Cross": {
+    "trades": 14,
+    "target_first": 3,
+    "stop_first": 11,
+    "target_rate": 0.21428571428571427,
+    "mean_return_bps": 2.302058650696157,
+    "median_return_bps": -9.00249327827154,
+    "mean_holding_bars": 19.357142857142858,
+    "median_holding_bars": 3.5
+  }
+}

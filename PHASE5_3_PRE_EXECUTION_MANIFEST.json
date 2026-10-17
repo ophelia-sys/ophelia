@@ -1,0 +1,57 @@
+{
+  "experiment_id": "PHASE5_3_CVD_ABLATION",
+  "master_seed": 42,
+  "target": "target_60_up_10",
+  "target_horizon": 60,
+  "data_period": ["2022-01-01", "2023-12-31"],
+  "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "ADAUSDT"],
+  "cross_validation": {
+    "type": "PurgedWalkForward",
+    "n_folds": 3,
+    "purge": 60,
+    "embargo": 60,
+    "independent_symbol_training": true
+  },
+  "models": {
+    "A": "BASE",
+    "A_MATCHED": "BASE_MATCHED_G",
+    "B": "BASE + CVD_DELTA",
+    "C": "BASE + CVD_IMBALANCE",
+    "D": "BASE + CVD_ZSCORE",
+    "E": "BASE + CVD_ACCELERATION",
+    "F": "BASE + NORMALIZED_CVD",
+    "G": "BASE + ALL_FROZEN_CVD"
+  },
+  "primary_model_architecture": {
+    "algorithm": "LogisticRegression",
+    "penalty": "l2",
+    "C": 1.0,
+    "solver": "lbfgs",
+    "max_iter": 1000
+  },
+  "statistical_tests": {
+    "diebold_mariano": {
+      "variance_estimator": "HAC",
+      "max_lag": 59
+    },
+    "block_bootstrap": {
+      "replications": 1000,
+      "primary_block_length": 60,
+      "sensitivity_lengths": [30, 120]
+    },
+    "block_permutation": {
+      "iterations": 1000,
+      "block_length": 60
+    },
+    "multiple_comparison": {
+      "method": "Benjamini-Hochberg FDR",
+      "q_value": 0.05
+    }
+  },
+  "cost_sweep_bps": [0, 5, 10, 15, 20, 25],
+  "decision_thresholds": {
+    "brier_max_deterioration": 0.0005,
+    "min_improving_symbols": 4,
+    "min_improving_folds": 2
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "actual_first_candle_utc": "2026-07-08T05:25:00+00:00",
+  "api_history_horizon_utc": "2026-07-08T04:32:22.382000+00:00",
+  "candle_count_deduped": 6847,
+  "candle_count_raw": 6847,
+  "contract_type": "USD-M perpetual swap",
+  "csv_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\validation\\exchange_10_4_two_months\\bingx_sol_5m_2026_07.csv",
+  "csv_sha256": "23935353c306874694a1b0ae67542839931123c0714693ff826a6d88cc1b4cef",
+  "duplicate_rows_removed": 0,
+  "end_utc_exclusive": "2026-08-01T00:00:00+00:00",
+  "endpoint": "https://open-api.bingx.com/openApi/swap/v3/quote/klines",
+  "exchange": "BINGX",
+  "interval": "5m",
+  "pages_fetched": 7,
+  "raw_pages_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\validation\\exchange_10_4_two_months\\raw\\bingx_raw_pages.json",
+  "requested_window_start_utc": "2026-06-01T00:00:00+00:00",
+  "retrieval_completed_utc": "2026-08-22T05:21:23.484237+00:00",
+  "symbol_api": "SOL-USDT",
+  "timezone": "UTC (epoch ms)",
+  "window_note": "BingX v3 klines serve only ~45 days of history; June 2026 is unavailable from the official endpoint. Sample = maximal contiguous BingX-native window ending 2026-07-31 23:55 UTC."
+}

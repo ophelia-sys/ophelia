@@ -1,0 +1,17 @@
+[Unit]
+Description=Ophelia Shadow Telegram Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=ophelia
+WorkingDirectory=/opt/ophelia
+Environment=PYTHONUNBUFFERED=1
+# Expecting the user to supply telegram token inside /opt/ophelia/.env
+EnvironmentFile=/opt/ophelia/.env
+ExecStart=/opt/ophelia/.venv/bin/python -m telegram.shadow_monitor
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

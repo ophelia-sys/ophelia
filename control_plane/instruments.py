@@ -1,9 +1,12 @@
-"""Canonical Multi-Asset Instrument Resolution Engine for Ophelia.
+"""Canonical Multi-Asset Multi-Venue Instrument Resolution Engine for Ophelia.
 
 Layer: control_plane/instruments.py
 Contract:
 - Canonical identity across Crypto, US Equities (TradFi), and Commodities.
-- Authoritative discovery directly from live BingX perpetual contracts metadata.
+- Dual-venue authoritative discovery:
+  - Primary Market Intelligence Venue: Binance USD-M Futures (https://fapi.binance.com/fapi/v1/exchangeInfo)
+  - Execution Venue: BingX Perpetual Swap (https://open-api.bingx.com/openApi/swap/v2/quote/contracts)
+- Explicit mapping states: UNRESOLVED, RESOLVED, TRADABLE_BOTH, BINANCE_ONLY, BINGX_ONLY, MISMATCH, STALE, INVALID.
 - Thread-safe caching with explicit TTL (10 minutes) and on-demand invalidation.
 - Segregated asset class resolution preventing cross-asset pollution.
 - Generic display and alias normalization without hardcoded per-ticker if-branches.
@@ -18,7 +21,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-from models.instrument import CanonicalInstrument
+from models.instrument import CanonicalInstrument, MappingStatus
 from . import config, db
 
 logger = logging.getLogger("ophelia.instruments")
@@ -46,6 +49,7 @@ class InstrumentResolver:
         self._inst_lock = threading.Lock()
         self._instruments_by_id: Dict[str, CanonicalInstrument] = {}
         self._instruments_by_venue_sym: Dict[str, CanonicalInstrument] = {}
+        self._instruments_by_binance_sym: Dict[str, CanonicalInstrument] = {}
         self._alias_map: Dict[str, str] = {}  # alias_key -> internal_instrument_id
         self._asset_class_index: Dict[str, List[str]] = {"CRYPTO": [], "US_EQUITY": [], "COMMODITIES": []}
         self._last_refreshed_ms: int = 0
@@ -71,34 +75,56 @@ class InstrumentResolver:
             return bool(self._instruments_by_id) and (now_ms - self._last_refreshed_ms < self._ttl_ms)
 
     def refresh(self, force: bool = False) -> int:
-        """Fetch authoritative instrument metadata from BingX swap contracts endpoint."""
+        """Fetch authoritative instrument metadata from BingX swap contracts and Binance USD-M exchangeInfo."""
         now_ms = int(time.time() * 1000)
         with self._inst_lock:
             if not force and self._instruments_by_id and (now_ms - self._last_refreshed_ms < self._ttl_ms):
                 return len(self._instruments_by_id)
 
+        # 1. Fetch BingX contracts
         base_url = getattr(config, "BINGX_BASE_URL", "https://open-api.bingx.com")
-        url = f"{base_url}/openApi/swap/v2/quote/contracts"
-        rows: List[dict] = []
+        bingx_url = f"{base_url}/openApi/swap/v2/quote/contracts"
+        bingx_rows: List[dict] = []
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "ophelia-instruments/1.0"})
+            req = urllib.request.Request(bingx_url, headers={"User-Agent": "ophelia-instruments/1.0"})
             with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                rows = data.get("data", [])
+                bingx_rows = data.get("data", [])
         except Exception as e:
             logger.warning("Live BingX contract query failed (%s). Attempting local fallback.", e)
-            rows = []
+            bingx_rows = []
 
-        if not rows:
-            # Fallback to local DB if network fails
+        # 2. Fetch Binance USD-M exchangeInfo
+        binance_url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+        binance_symbols_map: Dict[str, dict] = {}  # baseAsset -> binance symbol info
+        binance_by_sym: Dict[str, dict] = {}
+        try:
+            req_bn = urllib.request.Request(binance_url, headers={"User-Agent": "ophelia-instruments/1.0"})
+            with urllib.request.urlopen(req_bn, timeout=12) as resp_bn:
+                data_bn = json.loads(resp_bn.read().decode("utf-8"))
+                for s in data_bn.get("symbols", []):
+                    if s.get("contractType") == "PERPETUAL" and s.get("quoteAsset") in ("USDT", "USDC"):
+                        sym_name = s.get("symbol", "")
+                        base_asset = s.get("baseAsset", "").upper()
+                        binance_by_sym[sym_name] = s
+                        # Prioritize USDT perp for base asset mapping
+                        if base_asset not in binance_symbols_map or s.get("quoteAsset") == "USDT":
+                            binance_symbols_map[base_asset] = s
+        except Exception as e:
+            logger.warning("Live Binance exchangeInfo query failed (%s). Continuing with BingX metadata.", e)
+
+        if not bingx_rows and not binance_symbols_map:
+            # Fallback to seed instruments if both remote queries fail
             return self._load_from_fallback()
 
         new_by_id: Dict[str, CanonicalInstrument] = {}
         new_by_venue: Dict[str, CanonicalInstrument] = {}
+        new_by_bn: Dict[str, CanonicalInstrument] = {}
         new_aliases: Dict[str, str] = {}
         new_asset_index: Dict[str, List[str]] = {"CRYPTO": [], "US_EQUITY": [], "COMMODITIES": []}
 
-        for row in rows:
+        # Process BingX rows and correlate with Binance
+        for row in bingx_rows:
             venue_sym = str(row.get("symbol") or "").strip().upper()
             if not venue_sym or not (venue_sym.endswith("-USDT") or venue_sym.endswith("-USDC")):
                 continue
@@ -111,37 +137,43 @@ class InstrumentResolver:
             if venue_sym.startswith("NCSK"):
                 asset_class = "US_EQUITY"
                 venue_product = "TRADFI_PERPETUAL"
-                # Extract ticker: displayName "NFLX-USDT" -> "NFLX"
                 if display_name and "-" in display_name:
                     disp_sym = display_name.split("-")[0].strip().upper()
                 else:
                     m = re.match(r"^NCSK([A-Z0-9]+)2USD", asset_raw or venue_sym)
                     disp_sym = m.group(1) if m else venue_sym
                 internal_id = f"US_EQUITY:{disp_sym}"
+                base_asset_lookup = disp_sym
             elif venue_sym.startswith("NCCO"):
                 asset_class = "COMMODITIES"
                 venue_product = "TRADFI_PERPETUAL"
-                # Canonical gold & silver primary contracts
                 if venue_sym == "NCCOGOLD2USD-USDT" or display_name.startswith("GOLD(XAU)"):
                     disp_sym = "GOLD"
+                    base_asset_lookup = "PAXG"  # correlate with gold tokens or direct commodities
                 elif venue_sym == "NCCOXAG2USD-USDT" or display_name.startswith("SILVER(XAG)"):
                     disp_sym = "SILVER"
+                    base_asset_lookup = "XAG"
                 elif "OILBRENT" in venue_sym:
                     disp_sym = "OIL_BRENT"
+                    base_asset_lookup = "BRENT"
                 elif "OILWTI" in venue_sym:
                     disp_sym = "OIL_WTI"
+                    base_asset_lookup = "WTI"
                 elif display_name and "-" in display_name:
                     disp_sym = display_name.split("-")[0].strip().upper()
+                    base_asset_lookup = disp_sym
                 else:
                     disp_sym = venue_sym.replace("NCCO", "").replace("2USD-USDT", "")
+                    base_asset_lookup = disp_sym
                 internal_id = f"COMMODITIES:{disp_sym}"
             else:
                 asset_class = "CRYPTO"
                 venue_product = "STANDARD_PERPETUAL"
                 disp_sym = venue_sym
                 internal_id = f"CRYPTO:{disp_sym}"
+                base_asset_lookup = disp_sym.split("-")[0].strip().upper()
 
-            # Precision & sizing rules
+            # BingX precision & sizing rules
             p_prec = int(row.get("pricePrecision") or 2)
             q_prec = int(row.get("quantityPrecision") or 4)
             min_qty = float(row.get("tradeMinQuantity") or row.get("minQty") or 0.01)
@@ -159,42 +191,93 @@ class InstrumentResolver:
             else:
                 trad_status = "UNAVAILABLE"
 
+            # Check Binance correlation
+            bn_match = binance_symbols_map.get(base_asset_lookup)
+            if not bn_match:
+                # Try direct symbol match (e.g. BTCUSDT)
+                bn_direct_sym = venue_sym.replace("-", "")
+                bn_match = binance_by_sym.get(bn_direct_sym)
+
+            if bn_match:
+                bn_sym = bn_match.get("symbol", "")
+                bn_status = bn_match.get("status", "TRADING")
+                bn_p_prec = int(bn_match.get("pricePrecision") or p_prec)
+                bn_q_prec = int(bn_match.get("quantityPrecision") or q_prec)
+                bn_min_qty = 0.001
+                bn_min_notional = 5.0
+                for f in bn_match.get("filters", []):
+                    if f.get("filterType") == "LOT_SIZE":
+                        bn_min_qty = float(f.get("minQty") or 0.001)
+                    elif f.get("filterType") == "MIN_NOTIONAL":
+                        bn_min_notional = float(f.get("notional") or 5.0)
+
+                mapping_status = MappingStatus.TRADABLE_BOTH.value if (trad_status == "TRADABLE" and bn_status == "TRADING") else MappingStatus.RESOLVED.value
+            else:
+                bn_sym = ""
+                bn_status = "NOT_AVAILABLE"
+                bn_p_prec = p_prec
+                bn_q_prec = q_prec
+                bn_min_qty = min_qty
+                bn_min_notional = 5.0
+                mapping_status = MappingStatus.BINGX_ONLY.value
+
             inst = CanonicalInstrument(
+                canonical_instrument_id=internal_id,
+                asset=base_asset_lookup,
+                quote_currency=currency,
+                asset_class=asset_class,
                 display_symbol=disp_sym,
                 internal_instrument_id=internal_id,
-                asset_class=asset_class,
-                venue="BINGX",
+                venue="MULTI_VENUE" if bn_sym else "BINGX",
                 venue_product=venue_product,
                 venue_symbol=venue_sym,
-                quote_currency=currency,
                 order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol=venue_sym,
+                market_data_symbol=bn_sym or venue_sym,
                 price_precision=p_prec,
                 quantity_precision=q_prec,
                 min_order_size=min_qty,
                 min_notional=min_notional,
                 leverage_rules={"max_leverage": int(max_lev), "default_leverage": min(5, int(max_lev))},
                 trading_status=trad_status,
-                source="BINGX_REST_CONTRACTS",
+                source="MULTI_VENUE_DISCOVERY",
                 discovery_timestamp=now_ms,
-                last_refreshed=now_ms
+                last_refreshed=now_ms,
+                binance_symbol=bn_sym,
+                binance_product="USDM_PERPETUAL" if bn_sym else "NOT_AVAILABLE",
+                binance_contract_type="PERPETUAL" if bn_sym else "NOT_AVAILABLE",
+                binance_status=bn_status,
+                binance_precision=bn_p_prec,
+                binance_min_quantity=bn_min_qty,
+                binance_min_notional=bn_min_notional,
+                binance_discovery_timestamp=now_ms if bn_sym else 0,
+                bingx_symbol=venue_sym,
+                bingx_product=venue_product,
+                bingx_status=trad_status,
+                bingx_precision=p_prec,
+                bingx_min_quantity=min_qty,
+                bingx_min_notional=min_notional,
+                bingx_discovery_timestamp=now_ms,
+                canonical_status="ACTIVE",
+                mapping_status=mapping_status,
+                mapping_source="DYNAMIC_DISCOVERY",
+                mapping_confidence=1.0 if bn_sym else 0.8
             )
 
             new_by_id[internal_id] = inst
             new_by_venue[venue_sym] = inst
+            if bn_sym:
+                if currency == "USDT" or bn_sym not in new_by_bn:
+                    new_by_bn[bn_sym] = inst
+                    new_aliases[bn_sym] = internal_id
             if internal_id not in new_asset_index[asset_class]:
                 new_asset_index[asset_class].append(internal_id)
 
             # Build generic aliases for safe user lookup
-            # 1. Exact internal ID
             new_aliases[internal_id.upper()] = internal_id
-            # 2. Exact venue symbol (e.g. NCSKNETFLIX2USD-USDT)
             new_aliases[venue_sym] = internal_id
-            # 3. Clean display symbol (e.g. NFLX, BTC-USDT, GOLD)
             new_aliases[f"{asset_class}:{disp_sym}"] = internal_id
             if currency == "USDT" or disp_sym not in new_aliases:
                 new_aliases[disp_sym] = internal_id
-            # 4. DisplayName from exchange (e.g. NFLX-USDT, GOLD(XAU)-USDT)
             if display_name:
                 new_aliases[display_name.upper()] = internal_id
                 if "-" in display_name:
@@ -203,7 +286,6 @@ class InstrumentResolver:
                         new_aliases[base] = internal_id
                         new_aliases[f"{asset_class}:{base}"] = internal_id
 
-            # 5. Asset name / underlying (e.g. NCSKNETFLIX2USD -> NETFLIX)
             if asset_raw:
                 clean_asset = asset_raw.replace("NCSK", "").replace("2USD", "").replace("NCCO", "")
                 if clean_asset:
@@ -211,15 +293,14 @@ class InstrumentResolver:
                         new_aliases[clean_asset] = internal_id
                         new_aliases[f"{asset_class}:{clean_asset}"] = internal_id
 
-            # 6. Crypto specific aliases (e.g. BTC -> BTC-USDT, BTCUSDT -> BTC-USDT)
             if asset_class == "CRYPTO":
                 base_crypto = disp_sym.split("-")[0].strip().upper()
                 if currency == "USDT" or base_crypto not in new_aliases:
                     new_aliases[base_crypto] = internal_id
                     new_aliases[f"CRYPTO:{base_crypto}"] = internal_id
                     new_aliases[disp_sym.replace("-", "")] = internal_id
+                    new_aliases[f"{base_crypto}USDT"] = internal_id
 
-            # 7. Commodities specific aliases
             if asset_class == "COMMODITIES":
                 if disp_sym == "GOLD":
                     for g_alias in ["XAU", "XAUUSD", "GOLD (XAU)", "GOLD-USDT", "XAU-USDT", "GOLD(XAU)"]:
@@ -233,12 +314,13 @@ class InstrumentResolver:
         with self._inst_lock:
             self._instruments_by_id = new_by_id
             self._instruments_by_venue_sym = new_by_venue
+            self._instruments_by_binance_sym = new_by_bn
             self._alias_map = new_aliases
             self._asset_class_index = new_asset_index
             self._last_refreshed_ms = now_ms
 
-        logger.info("InstrumentResolver refreshed: %d instruments discovered (%d US Equities, %d Commodities, %d Crypto)",
-                    len(new_by_id), len(new_asset_index["US_EQUITY"]), len(new_asset_index["COMMODITIES"]), len(new_asset_index["CRYPTO"]))
+        logger.info("InstrumentResolver refreshed: %d instruments discovered (%d dual-venue mapped)",
+                    len(new_by_id), len(new_by_bn))
         return len(new_by_id)
 
     def _load_from_fallback(self) -> int:
@@ -246,113 +328,106 @@ class InstrumentResolver:
         now_ms = int(time.time() * 1000)
         seed_instruments = [
             CanonicalInstrument(
+                canonical_instrument_id="CRYPTO:BTC-USDT", asset="BTC", quote_currency="USDT", asset_class="CRYPTO",
                 display_symbol="BTC-USDT", internal_instrument_id="CRYPTO:BTC-USDT",
-                asset_class="CRYPTO", venue="BINGX", venue_product="STANDARD_PERPETUAL",
-                venue_symbol="BTC-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="BTC-USDT", price_precision=1, quantity_precision=4,
+                venue="MULTI_VENUE", venue_product="STANDARD_PERPETUAL",
+                venue_symbol="BTC-USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                market_data_symbol="BTCUSDT", price_precision=1, quantity_precision=4,
                 min_order_size=0.0001, min_notional=2.0, leverage_rules={"max_leverage": 125, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="BTCUSDT", binance_status="TRADING", binance_precision=1, binance_min_quantity=0.001, binance_min_notional=5.0,
+                bingx_symbol="BTC-USDT", bingx_status="TRADABLE", bingx_precision=1, bingx_min_quantity=0.0001, bingx_min_notional=2.0,
+                mapping_status=MappingStatus.TRADABLE_BOTH.value
             ),
             CanonicalInstrument(
+                canonical_instrument_id="CRYPTO:ETH-USDT", asset="ETH", quote_currency="USDT", asset_class="CRYPTO",
                 display_symbol="ETH-USDT", internal_instrument_id="CRYPTO:ETH-USDT",
-                asset_class="CRYPTO", venue="BINGX", venue_product="STANDARD_PERPETUAL",
-                venue_symbol="ETH-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="ETH-USDT", price_precision=2, quantity_precision=4,
+                venue="MULTI_VENUE", venue_product="STANDARD_PERPETUAL",
+                venue_symbol="ETH-USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                market_data_symbol="ETHUSDT", price_precision=2, quantity_precision=4,
                 min_order_size=0.001, min_notional=2.0, leverage_rules={"max_leverage": 100, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="ETHUSDT", binance_status="TRADING", binance_precision=2, binance_min_quantity=0.001, binance_min_notional=5.0,
+                bingx_symbol="ETH-USDT", bingx_status="TRADABLE", bingx_precision=2, bingx_min_quantity=0.001, bingx_min_notional=2.0,
+                mapping_status=MappingStatus.TRADABLE_BOTH.value
             ),
             CanonicalInstrument(
+                canonical_instrument_id="CRYPTO:SOL-USDT", asset="SOL", quote_currency="USDT", asset_class="CRYPTO",
                 display_symbol="SOL-USDT", internal_instrument_id="CRYPTO:SOL-USDT",
-                asset_class="CRYPTO", venue="BINGX", venue_product="STANDARD_PERPETUAL",
-                venue_symbol="SOL-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="SOL-USDT", price_precision=3, quantity_precision=2,
+                venue="MULTI_VENUE", venue_product="STANDARD_PERPETUAL",
+                venue_symbol="SOL-USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                market_data_symbol="SOLUSDT", price_precision=3, quantity_precision=2,
                 min_order_size=0.01, min_notional=2.0, leverage_rules={"max_leverage": 50, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="SOLUSDT", binance_status="TRADING", binance_precision=3, binance_min_quantity=0.01, binance_min_notional=5.0,
+                bingx_symbol="SOL-USDT", bingx_status="TRADABLE", bingx_precision=3, bingx_min_quantity=0.01, bingx_min_notional=2.0,
+                mapping_status=MappingStatus.TRADABLE_BOTH.value
             ),
             CanonicalInstrument(
+                canonical_instrument_id="CRYPTO:XRP-USDT", asset="XRP", quote_currency="USDT", asset_class="CRYPTO",
                 display_symbol="XRP-USDT", internal_instrument_id="CRYPTO:XRP-USDT",
-                asset_class="CRYPTO", venue="BINGX", venue_product="STANDARD_PERPETUAL",
-                venue_symbol="XRP-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="XRP-USDT", price_precision=4, quantity_precision=1,
+                venue="MULTI_VENUE", venue_product="STANDARD_PERPETUAL",
+                venue_symbol="XRP-USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                market_data_symbol="XRPUSDT", price_precision=4, quantity_precision=1,
                 min_order_size=1.0, min_notional=2.0, leverage_rules={"max_leverage": 50, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="XRPUSDT", binance_status="TRADING", binance_precision=4, binance_min_quantity=0.1, binance_min_notional=5.0,
+                bingx_symbol="XRP-USDT", bingx_status="TRADABLE", bingx_precision=4, bingx_min_quantity=1.0, bingx_min_notional=2.0,
+                mapping_status=MappingStatus.TRADABLE_BOTH.value
             ),
             CanonicalInstrument(
+                canonical_instrument_id="COMMODITIES:GOLD", asset="GOLD", quote_currency="USDT", asset_class="COMMODITIES",
                 display_symbol="GOLD", internal_instrument_id="COMMODITIES:GOLD",
-                asset_class="COMMODITIES", venue="BINGX", venue_product="TRADFI_PERPETUAL",
-                venue_symbol="NCCOGOLD2USD-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                venue="BINGX", venue_product="TRADFI_PERPETUAL",
+                venue_symbol="NCCOGOLD2USD-USDT", order_endpoint="/openApi/swap/v2/trade/order",
                 market_data_symbol="NCCOGOLD2USD-USDT", price_precision=2, quantity_precision=3,
                 min_order_size=0.01, min_notional=2.0, leverage_rules={"max_leverage": 50, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="", binance_status="NOT_AVAILABLE",
+                bingx_symbol="NCCOGOLD2USD-USDT", bingx_status="TRADABLE",
+                mapping_status=MappingStatus.BINGX_ONLY.value
             ),
             CanonicalInstrument(
-                display_symbol="SILVER", internal_instrument_id="COMMODITIES:SILVER",
-                asset_class="COMMODITIES", venue="BINGX", venue_product="TRADFI_PERPETUAL",
-                venue_symbol="NCCOXAG2USD-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="NCCOXAG2USD-USDT", price_precision=3, quantity_precision=2,
-                min_order_size=0.1, min_notional=2.0, leverage_rules={"max_leverage": 50, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
-            ),
-            CanonicalInstrument(
+                canonical_instrument_id="US_EQUITY:NFLX", asset="NFLX", quote_currency="USDT", asset_class="US_EQUITY",
                 display_symbol="NFLX", internal_instrument_id="US_EQUITY:NFLX",
-                asset_class="US_EQUITY", venue="BINGX", venue_product="TRADFI_PERPETUAL",
-                venue_symbol="NCSKNETFLIX2USD-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
+                venue="BINGX", venue_product="TRADFI_PERPETUAL",
+                venue_symbol="NCSKNETFLIX2USD-USDT", order_endpoint="/openApi/swap/v2/trade/order",
                 market_data_symbol="NCSKNETFLIX2USD-USDT", price_precision=2, quantity_precision=4,
                 min_order_size=0.0294, min_notional=2.0, leverage_rules={"max_leverage": 20, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
-            ),
-            CanonicalInstrument(
-                display_symbol="AAPL", internal_instrument_id="US_EQUITY:AAPL",
-                asset_class="US_EQUITY", venue="BINGX", venue_product="TRADFI_PERPETUAL",
-                venue_symbol="NCSKAAPL2USD-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="NCSKAAPL2USD-USDT", price_precision=2, quantity_precision=4,
-                min_order_size=0.01, min_notional=2.0, leverage_rules={"max_leverage": 20, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
-            ),
-            CanonicalInstrument(
-                display_symbol="NVDA", internal_instrument_id="US_EQUITY:NVDA",
-                asset_class="US_EQUITY", venue="BINGX", venue_product="TRADFI_PERPETUAL",
-                venue_symbol="NCSKNVDA2USD-USDT", quote_currency="USDT", order_endpoint="/openApi/swap/v2/trade/order",
-                market_data_symbol="NCSKNVDA2USD-USDT", price_precision=2, quantity_precision=4,
-                min_order_size=0.01, min_notional=2.0, leverage_rules={"max_leverage": 20, "default_leverage": 5},
-                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms
+                trading_status="TRADABLE", source="FALLBACK_SEED", discovery_timestamp=now_ms, last_refreshed=now_ms,
+                binance_symbol="", binance_status="NOT_AVAILABLE",
+                bingx_symbol="NCSKNETFLIX2USD-USDT", bingx_status="TRADABLE",
+                mapping_status=MappingStatus.BINGX_ONLY.value
             ),
         ]
         with self._inst_lock:
             for inst in seed_instruments:
                 self._instruments_by_id[inst.internal_instrument_id] = inst
                 self._instruments_by_venue_sym[inst.venue_symbol] = inst
+                if inst.binance_symbol:
+                    self._instruments_by_binance_sym[inst.binance_symbol] = inst
+                    self._alias_map[inst.binance_symbol] = inst.internal_instrument_id
                 self._alias_map[inst.display_symbol.upper()] = inst.internal_instrument_id
                 self._alias_map[inst.venue_symbol] = inst.internal_instrument_id
                 self._alias_map[inst.internal_instrument_id] = inst.internal_instrument_id
                 self._alias_map[f"{inst.asset_class}:{inst.display_symbol.upper()}"] = inst.internal_instrument_id
             self._alias_map["NETFLIX"] = "US_EQUITY:NFLX"
-            self._alias_map["APPLE"] = "US_EQUITY:AAPL"
-            self._alias_map["NVIDIA"] = "US_EQUITY:NVDA"
             self._alias_map["BITCOIN"] = "CRYPTO:BTC-USDT"
             self._alias_map["BTC"] = "CRYPTO:BTC-USDT"
+            self._alias_map["BTCUSDT"] = "CRYPTO:BTC-USDT"
             self._alias_map["ETH"] = "CRYPTO:ETH-USDT"
+            self._alias_map["ETHUSDT"] = "CRYPTO:ETH-USDT"
             self._alias_map["SOL"] = "CRYPTO:SOL-USDT"
+            self._alias_map["SOLUSDT"] = "CRYPTO:SOL-USDT"
             self._alias_map["XRP"] = "CRYPTO:XRP-USDT"
+            self._alias_map["XRPUSDT"] = "CRYPTO:XRP-USDT"
             self._alias_map["XAU"] = "COMMODITIES:GOLD"
             self._alias_map["GOLD (XAU)"] = "COMMODITIES:GOLD"
-            self._alias_map["XAG"] = "COMMODITIES:SILVER"
             self._last_refreshed_ms = now_ms
         return len(seed_instruments)
 
     def resolve(self, input_symbol: str, asset_class: str | None = None) -> CanonicalInstrument:
-        """Resolve any user-facing symbol or alias to a CanonicalInstrument.
-        
-        Args:
-            input_symbol: User-facing ticker, display name, internal ID, or venue symbol
-            asset_class: Optional constraint ('CRYPTO', 'US_EQUITY', 'COMMODITIES')
-            
-        Returns:
-            CanonicalInstrument with verified venue parameters
-            
-        Raises:
-            InstrumentResolutionError with standard error code
-        """
+        """Resolve any user-facing symbol, Binance symbol, or BingX symbol to a CanonicalInstrument."""
         if not input_symbol or not isinstance(input_symbol, str):
             raise InstrumentResolutionError("INSTRUMENT_NOT_FOUND", "Empty or non-string symbol provided")
 
@@ -362,7 +437,7 @@ class InstrumentResolver:
         clean = input_symbol.strip().upper()
 
         with self._inst_lock:
-            # 1. Try qualified asset class lookup if asset_class provided
+            # 1. Try qualified asset class lookup
             if asset_class:
                 ac_key = f"{asset_class.upper()}:{clean}"
                 if ac_key in self._alias_map:
@@ -381,7 +456,7 @@ class InstrumentResolver:
                         )
                     return inst
 
-            # 3. Direct venue symbol match
+            # 3. Direct BingX venue symbol match
             if clean in self._instruments_by_venue_sym:
                 inst = self._instruments_by_venue_sym[clean]
                 if asset_class and inst.asset_class != asset_class.upper():
@@ -391,7 +466,17 @@ class InstrumentResolver:
                     )
                 return inst
 
-            # 4. Direct internal ID match
+            # 4. Direct Binance venue symbol match
+            if clean in self._instruments_by_binance_sym:
+                inst = self._instruments_by_binance_sym[clean]
+                if asset_class and inst.asset_class != asset_class.upper():
+                    raise InstrumentResolutionError(
+                        "PRODUCT_NOT_SUPPORTED",
+                        f"Binance symbol '{clean}' is {inst.asset_class}, not {asset_class}"
+                    )
+                return inst
+
+            # 5. Direct internal ID match
             if clean in self._instruments_by_id:
                 inst = self._instruments_by_id[clean]
                 if asset_class and inst.asset_class != asset_class.upper():
@@ -404,8 +489,12 @@ class InstrumentResolver:
         # Not found
         raise InstrumentResolutionError(
             "INSTRUMENT_NOT_AVAILABLE",
-            f"Symbol '{input_symbol}' could not be resolved to any active BingX contract"
+            f"Symbol '{input_symbol}' could not be resolved to any active canonical contract"
         )
+
+    def resolve_canonical(self, input_symbol: str, asset_class: str | None = None) -> CanonicalInstrument:
+        """Alias for resolve()."""
+        return self.resolve(input_symbol, asset_class=asset_class)
 
     def resolve_or_none(self, input_symbol: str, asset_class: str | None = None) -> CanonicalInstrument | None:
         try:
@@ -413,20 +502,35 @@ class InstrumentResolver:
         except InstrumentResolutionError:
             return None
 
-    def search(self, query: str, asset_class: str | None = None, limit: int = 50) -> List[CanonicalInstrument]:
-        """Search instruments matching a query substring."""
+    def get_binance_symbol(self, canonical_or_symbol: str) -> Optional[str]:
+        inst = self.resolve_or_none(canonical_or_symbol)
+        return inst.binance_symbol if inst and inst.binance_symbol else None
+
+    def get_bingx_symbol(self, canonical_or_symbol: str) -> Optional[str]:
+        inst = self.resolve_or_none(canonical_or_symbol)
+        return inst.bingx_symbol if inst and inst.bingx_symbol else None
+
+    def list_cross_venue_instruments(self, status: Optional[str] = None) -> List[CanonicalInstrument]:
         if not self.is_cache_valid():
             self.refresh()
+        with self._inst_lock:
+            all_insts = list(self._instruments_by_id.values())
+            if status:
+                return [i for i in all_insts if i.mapping_status == status]
+            return all_insts
 
+    def search(self, query: str, asset_class: str | None = None, limit: int = 50) -> List[CanonicalInstrument]:
+        if not self.is_cache_valid():
+            self.refresh()
         q = query.strip().upper()
         results: List[CanonicalInstrument] = []
         with self._inst_lock:
             for inst in self._instruments_by_id.values():
                 if asset_class and inst.asset_class != asset_class.upper():
                     continue
-                # Match display symbol, venue symbol, internal ID, or aliases
                 if (q in inst.display_symbol.upper() or
                     q in inst.venue_symbol.upper() or
+                    q in inst.binance_symbol.upper() or
                     q in inst.internal_instrument_id.upper()):
                     results.append(inst)
                 if len(results) >= limit:
@@ -435,10 +539,8 @@ class InstrumentResolver:
 
 
 def resolve_instrument(symbol: str, asset_class: str | None = None) -> CanonicalInstrument:
-    """Convenience helper to resolve instrument using the singleton InstrumentResolver."""
     return InstrumentResolver.get_instance().resolve(symbol, asset_class=asset_class)
 
 
 def get_instrument_resolver() -> InstrumentResolver:
-    """Return the singleton instance of InstrumentResolver."""
     return InstrumentResolver.get_instance()

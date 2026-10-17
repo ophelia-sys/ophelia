@@ -1,0 +1,128 @@
+{
+  "timestamp": 1790856583,
+  "stage_a_idle": {
+    "stage": "STAGE_A_IDLE",
+    "api_latency": {
+      "count": 10,
+      "min_ms": 111.2,
+      "max_ms": 812.3,
+      "avg_ms": 228.78
+    },
+    "automation_cycle_ms": 101.44,
+    "position_manager_cycle_ms": 0.37,
+    "telemetry": {
+      "cpu_pct": 100.0,
+      "ram_total_mb": 7746.0,
+      "ram_used_mb": 4825.4,
+      "ram_avail_mb": 2920.7,
+      "ram_used_pct": 62.3,
+      "swap_used_mb": 4085.1,
+      "swap_free_mb": 10.9,
+      "load_1m": 5.26,
+      "load_5m": 4.94,
+      "load_15m": 4.74
+    }
+  },
+  "stage_b_single": {
+    "stage": "STAGE_B_SINGLE_INFERENCE",
+    "timesfm_latency_ms": 12982.09,
+    "forecast_status": "SUCCESS",
+    "api_latencies_during_inf_ms": [
+      541.02,
+      790.32,
+      118.95
+    ],
+    "api_avg_ms": 483.43,
+    "automation_cycles_during_inf_ms": [
+      43.42,
+      35.57,
+      272.29
+    ],
+    "position_mgr_cycles_during_inf_ms": [
+      8.94,
+      1.57,
+      0.15
+    ],
+    "telemetry": {
+      "cpu_pct": 97.5,
+      "ram_total_mb": 7746.0,
+      "ram_used_mb": 6218.9,
+      "ram_avail_mb": 1527.1,
+      "ram_used_pct": 80.3,
+      "swap_used_mb": 4095.7,
+      "swap_free_mb": 0.3,
+      "load_1m": 5.44,
+      "load_5m": 4.99,
+      "load_15m": 4.76
+    }
+  },
+  "stage_c_repeated": {
+    "stage": "STAGE_C_REPEATED_INFERENCES",
+    "inferences_ms": [
+      1289.88,
+      1146.01,
+      1234.36
+    ],
+    "avg_inf_ms": 1223.42,
+    "telemetry": {
+      "cpu_pct": 100.0,
+      "ram_total_mb": 7746.0,
+      "ram_used_mb": 6219.9,
+      "ram_avail_mb": 1526.1,
+      "ram_used_pct": 80.3,
+      "swap_used_mb": 4095.7,
+      "swap_free_mb": 0.3,
+      "load_1m": 5.4,
+      "load_5m": 4.99,
+      "load_15m": 4.76
+    }
+  },
+  "stage_d_scheduler": {
+    "stage": "STAGE_D_SCHEDULER_CYCLE",
+    "scheduler_cycle_ms": 7268.73,
+    "telemetry": {
+      "cpu_pct": 100.0,
+      "ram_total_mb": 7746.0,
+      "ram_used_mb": 6226.0,
+      "ram_avail_mb": 1520.1,
+      "ram_used_pct": 80.4,
+      "swap_used_mb": 4094.5,
+      "swap_free_mb": 1.5,
+      "load_1m": 5.61,
+      "load_5m": 5.04,
+      "load_15m": 4.78
+    }
+  },
+  "stage_e_concurrency": {
+    "stage": "STAGE_E_HIGH_CONCURRENCY",
+    "timesfm_latency_ms": 1278.09,
+    "concurrent_api_latencies_ms": [
+      21.35,
+      23.27,
+      26.5,
+      27.8,
+      26.67,
+      28.56,
+      28.11,
+      29.23,
+      29.26,
+      32.16
+    ],
+    "concurrent_api_avg_ms": 27.29,
+    "concurrent_api_max_ms": 32.16,
+    "automation_cycle_ms": 46.01,
+    "position_manager_cycle_ms": 2.96,
+    "telemetry": {
+      "cpu_pct": 100.0,
+      "ram_total_mb": 7746.0,
+      "ram_used_mb": 6232.8,
+      "ram_avail_mb": 1513.2,
+      "ram_used_pct": 80.5,
+      "swap_used_mb": 4094.5,
+      "swap_free_mb": 1.5,
+      "load_1m": 5.61,
+      "load_5m": 5.04,
+      "load_15m": 4.78
+    }
+  }
+}

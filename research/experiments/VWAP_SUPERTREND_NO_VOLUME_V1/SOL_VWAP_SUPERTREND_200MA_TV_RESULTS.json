@@ -1,0 +1,46 @@
+{
+  "filtered": {
+    "LONG": {
+      "trades": 20,
+      "target_first": 7,
+      "stop_first": 13,
+      "target_rate": 0.35,
+      "mean_return_bps": 8.312040814165197,
+      "median_return_bps": -19.5521339956043,
+      "mean_holding_bars": 40.55,
+      "median_holding_bars": 25.0
+    },
+    "SHORT": {
+      "trades": 15,
+      "target_first": 3,
+      "stop_first": 12,
+      "target_rate": 0.2,
+      "mean_return_bps": -5.829629150087441,
+      "median_return_bps": -18.48454144644835,
+      "mean_holding_bars": 36.4,
+      "median_holding_bars": 31.0
+    }
+  },
+  "baseline": {
+    "LONG": {
+      "trades": 34,
+      "target_first": 12,
+      "stop_first": 22,
+      "target_rate": 0.35294117647058826,
+      "mean_return_bps": 0,
+      "median_return_bps": 0,
+      "mean_holding_bars": 41.14705882352941,
+      "median_holding_bars": 27.5
+    },
+    "SHORT": {
+      "trades": 28,
+      "target_first": 7,
+      "stop_first": 21,
+      "target_rate": 0.25,
+      "mean_return_bps": 0,
+      "median_return_bps": 0,
+      "mean_holding_bars": 34.464285714285715,
+      "median_holding_bars": 16.5
+    }
+  }
+}

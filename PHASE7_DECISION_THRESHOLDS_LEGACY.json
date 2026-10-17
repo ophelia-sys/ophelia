@@ -1,0 +1,60 @@
+{
+    "BTCUSDT": {
+        "threshold": 0.4913198114259935,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-05-03",
+        "oof_end": "2023-12-31",
+        "n_oof": 174239,
+        "version": "1.0.0",
+        "short_threshold": 0.4426006662511021,
+        "oof_short_n": 157448
+    },
+    "ETHUSDT": {
+        "threshold": 0.5049033820344755,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-05-03",
+        "oof_end": "2023-12-31",
+        "n_oof": 174230,
+        "version": "1.0.0",
+        "short_threshold": 0.4741888532080679,
+        "oof_short_n": 157448
+    },
+    "SOLUSDT": {
+        "threshold": 0.5060686445987735,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-04-22",
+        "oof_end": "2023-10-31",
+        "n_oof": 159590,
+        "version": "1.0.0",
+        "short_threshold": 0.48939805802472613,
+        "oof_short_n": 156368
+    },
+    "XRPUSDT": {
+        "threshold": 0.5027997299508135,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-05-05",
+        "oof_end": "2023-12-31",
+        "n_oof": 174232,
+        "version": "1.0.0",
+        "short_threshold": 0.46273935746312755,
+        "oof_short_n": 156368
+    },
+    "BNBUSDT": {
+        "threshold": 0.503424316454078,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-05-03",
+        "oof_end": "2023-12-31",
+        "n_oof": 174710,
+        "version": "1.0.0",
+        "short_threshold": 0.4471916810079056,
+        "oof_short_n": 157448
+    },
+    "ADAUSDT": {
+        "threshold": 0.5076450864426649,
+        "method": "chronological_OOF_p90",
+        "oof_start": "2022-05-03",
+        "oof_end": "2023-12-31",
+        "n_oof": 174229,
+        "version": "1.0.0"
+    }
+}

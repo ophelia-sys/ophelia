@@ -1,0 +1,8 @@
+[submodule "external/Kronos"]
+	path = external/Kronos
+	url = https://github.com/shiyu-coder/Kronos.git
+	ignore = untracked
+[submodule "vendor/TradingAgents"]
+	path = vendor/TradingAgents
+	url = https://github.com/TauricResearch/TradingAgents.git
+	ignore = untracked

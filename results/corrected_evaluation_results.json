@@ -1,0 +1,153 @@
+{
+  "corrected_deterministic": {
+    "trade_count": 40,
+    "winning_trades": 7,
+    "losing_trades": 29,
+    "breakeven_trades": 4,
+    "win_rate_pct": 17.5,
+    "profit_factor": 0.37,
+    "net_return_pct": -19.84,
+    "net_r": -26.51,
+    "expectancy_r": -0.66,
+    "max_drawdown_pct": 19.97,
+    "net_pnl_usdt": -198.37,
+    "gross_pnl_usdt": -122.64,
+    "total_fees_usdt": 75.76,
+    "liquidations_count": 0,
+    "average_win_r": 1.16,
+    "average_loss_r": -1.2,
+    "watchlist": [
+      "BTC-USDT",
+      "ETH-USDT",
+      "SOL-USDT",
+      "XRP-USDT"
+    ],
+    "diagnostics": {
+      "total_setups_found": 0,
+      "eligible_candidates": 232,
+      "unique_setup_ids": 232,
+      "duplicate_candidates": 0,
+      "capacity_rejected_count": 0,
+      "overlapping_rejected_count": 192,
+      "executed_trades_count": 40,
+      "liquidations_count": 0,
+      "is_liquidated": false
+    },
+    "performance_by_symbol": {
+      "BTC-USDT": {
+        "status": "CONFIRMED DATA",
+        "trades": 17,
+        "wins": 1,
+        "win_rate": 5.9,
+        "net_r": -13.52,
+        "net_pnl": -116.26
+      },
+      "ETH-USDT": {
+        "status": "CONFIRMED DATA",
+        "trades": 13,
+        "wins": 4,
+        "win_rate": 30.8,
+        "net_r": -6.45,
+        "net_pnl": -43.6
+      },
+      "SOL-USDT": {
+        "status": "CONFIRMED DATA",
+        "trades": 6,
+        "wins": 0,
+        "win_rate": 0.0,
+        "net_r": -7.55,
+        "net_pnl": -53.93
+      },
+      "XRP-USDT": {
+        "status": "CONFIRMED DATA",
+        "trades": 4,
+        "wins": 2,
+        "win_rate": 50.0,
+        "net_r": 1.01,
+        "net_pnl": 15.42
+      }
+    },
+    "performance_by_direction": {
+      "LONG": {
+        "trades": 16,
+        "wins": 5,
+        "win_rate": 31.2,
+        "net_r": -9.95,
+        "net_pnl": -72.82
+      },
+      "SHORT": {
+        "trades": 24,
+        "wins": 2,
+        "win_rate": 8.3,
+        "net_r": -16.56,
+        "net_pnl": -125.55
+      }
+    }
+  },
+  "inverted_diagnostic": {
+    "trade_count": 40,
+    "win_rate_pct": 17.5,
+    "profit_factor": 0.37,
+    "net_return_pct": -19.84,
+    "net_r": -26.51,
+    "expectancy_r": -0.66,
+    "max_drawdown_pct": 19.97,
+    "net_pnl_usdt": -198.37
+  },
+  "ablations": {
+    "no_vwap": {
+      "trade_count": 36,
+      "win_rate_pct": 25.0,
+      "profit_factor": 0.54,
+      "net_return_pct": -15.57,
+      "net_r": -18.36,
+      "expectancy_r": -0.51,
+      "max_drawdown_pct": 15.49
+    },
+    "no_cvd": {
+      "trade_count": 54,
+      "win_rate_pct": 22.22,
+      "profit_factor": 0.36,
+      "net_return_pct": -27.18,
+      "net_r": -36.01,
+      "expectancy_r": -0.67,
+      "max_drawdown_pct": 27.11
+    },
+    "no_rvol": {
+      "trade_count": 43,
+      "win_rate_pct": 27.91,
+      "profit_factor": 0.6,
+      "net_return_pct": -16.58,
+      "net_r": -19.46,
+      "expectancy_r": -0.45,
+      "max_drawdown_pct": 28.86
+    },
+    "no_fvg": {
+      "trade_count": 40,
+      "win_rate_pct": 17.5,
+      "profit_factor": 0.37,
+      "net_return_pct": -19.96,
+      "net_r": -26.75,
+      "expectancy_r": -0.67,
+      "max_drawdown_pct": 20.01
+    },
+    "no_retest": {
+      "trade_count": 40,
+      "win_rate_pct": 17.5,
+      "profit_factor": 0.37,
+      "net_return_pct": -19.96,
+      "net_r": -26.75,
+      "expectancy_r": -0.67,
+      "max_drawdown_pct": 20.01
+    },
+    "no_structure": {
+      "trade_count": 40,
+      "win_rate_pct": 17.5,
+      "profit_factor": 0.37,
+      "net_return_pct": -19.96,
+      "net_r": -26.75,
+      "expectancy_r": -0.67,
+      "max_drawdown_pct": 20.01
+    }
+  }
+}

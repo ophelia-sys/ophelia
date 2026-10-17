@@ -1,0 +1,70 @@
+{
+    "dataset_verification": {
+        "BTCUSDTUSDT": {
+            "feature_rows": 1051200,
+            "label_rows": 10410,
+            "start_time": "2024-08-14 00:00:00+00:00",
+            "end_time": "2026-08-13 23:59:00+00:00"
+        },
+        "ETHUSDTUSDT": {
+            "feature_rows": 1051200,
+            "label_rows": 10410,
+            "start_time": "2024-08-14 00:00:00+00:00",
+            "end_time": "2026-08-13 23:59:00+00:00"
+        },
+        "SOLUSDTUSDT": {
+            "feature_rows": 1051200,
+            "label_rows": 10410,
+            "start_time": "2024-08-14 00:00:00+00:00",
+            "end_time": "2026-08-13 23:59:00+00:00"
+        },
+        "XRPUSDTUSDT": {
+            "feature_rows": 1051200,
+            "label_rows": 10410,
+            "start_time": "2024-08-14 00:00:00+00:00",
+            "end_time": "2026-08-13 23:59:00+00:00"
+        },
+        "BNBUSDTUSDT": {
+            "feature_rows": 1051200,
+            "label_rows": 10410,
+            "start_time": "2024-08-14 00:00:00+00:00",
+            "end_time": "2026-08-13 23:59:00+00:00"
+        }
+    },
+    "symbols_verified": [
+        "BTCUSDTUSDT",
+        "ETHUSDTUSDT",
+        "SOLUSDTUSDT",
+        "XRPUSDTUSDT",
+        "BNBUSDTUSDT"
+    ],
+    "label_audit": {
+        "BTCUSDTUSDT": {
+            "error": "Missing event_start/event_end. Cols: ['candle_open_time_utc', 'label_long_15min', 'label_short_15min', 'label_long_1H', 'label_short_1H', 'label_long_4H', 'label_short_4H']",
+            "total_events": 10410
+        },
+        "ETHUSDTUSDT": {
+            "error": "Missing event_start/event_end. Cols: ['candle_open_time_utc', 'label_long_15min', 'label_short_15min', 'label_long_1H', 'label_short_1H', 'label_long_4H', 'label_short_4H']",
+            "total_events": 10410
+        },
+        "SOLUSDTUSDT": {
+            "error": "Missing event_start/event_end. Cols: ['candle_open_time_utc', 'label_long_15min', 'label_short_15min', 'label_long_1H', 'label_short_1H', 'label_long_4H', 'label_short_4H']",
+            "total_events": 10410
+        },
+        "XRPUSDTUSDT": {
+            "error": "Missing event_start/event_end. Cols: ['candle_open_time_utc', 'label_long_15min', 'label_short_15min', 'label_long_1H', 'label_short_1H', 'label_long_4H', 'label_short_4H']",
+            "total_events": 10410
+        },
+        "BNBUSDTUSDT": {
+            "error": "Missing event_start/event_end. Cols: ['candle_open_time_utc', 'label_long_15min', 'label_short_15min', 'label_long_1H', 'label_short_1H', 'label_long_4H', 'label_short_4H']",
+            "total_events": 10410
+        }
+    },
+    "aggregate_metrics": {
+        "total_events": 52050,
+        "non_overlapping_events": 52050,
+        "average_uniqueness": 0.045,
+        "cross_sectional_correlation": -0.0004,
+        "primary_feature_ar1": -0.4998
+    }
+}

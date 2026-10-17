@@ -58,6 +58,8 @@ fun AutonomousTradingScreen(
     var isTimesfmExpanded by remember { mutableStateOf(false) }
     var microstructureSummary by remember { mutableStateOf<MicrostructureSummaryResponse?>(null) }
     var isMicrostructureExpanded by remember { mutableStateOf(false) }
+    var crossVenueBasis by remember { mutableStateOf<CrossVenueBasisObservationModel?>(null) }
+    var isMultiVenueExpanded by remember { mutableStateOf(false) }
 
     fun refreshPipeline() {
         scope.launch {
@@ -86,6 +88,9 @@ fun AutonomousTradingScreen(
                 } catch (_: Exception) {}
                 try {
                     microstructureSummary = RetrofitClient.api.getMicrostructureSummary("BTC-USDT")
+                } catch (_: Exception) {}
+                try {
+                    crossVenueBasis = RetrofitClient.api.getCrossVenueBasis("BTC-USDT")
                 } catch (_: Exception) {}
             } catch (e: Exception) {
                 Toast.makeText(context, "Error loading autonomous status: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -546,7 +551,7 @@ fun AutonomousTradingScreen(
                     }
                 }
 
-                // COLLAPSIBLE 4: MICROSTRUCTURE RESEARCH (PHASE 6A & 6B)
+                // COLLAPSIBLE 4: MICROSTRUCTURE RESEARCH (PHASE 6A–6D)
                 item {
                     val tf = microstructureSummary?.tradeFlow
                     val td = microstructureSummary?.tradeDuration
@@ -554,6 +559,8 @@ fun AutonomousTradingScreen(
                     val ls = microstructureSummary?.liquidityStress
                     val pi = microstructureSummary?.priceImpact
                     val tox = microstructureSummary?.toxicity
+                    val hb = microstructureSummary?.hasbrouck
+                    val vecm = microstructureSummary?.vecm
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -579,7 +586,7 @@ fun AutonomousTradingScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Column {
                                         Text(
-                                            "MICROSTRUCTURE RESEARCH (PHASE 6A, 6B & 6C)",
+                                            "MICROSTRUCTURE RESEARCH (PHASE 6A–6D)",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = PrimaryText,
@@ -598,7 +605,7 @@ fun AutonomousTradingScreen(
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        pi?.qualityState ?: tox?.qualityState ?: ob?.qualityState ?: tf?.qualityState ?: "RESEARCH",
+                                        hb?.qualityState ?: vecm?.qualityState ?: pi?.qualityState ?: tox?.qualityState ?: ob?.qualityState ?: tf?.qualityState ?: "RESEARCH",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF60A5FA)
@@ -723,6 +730,159 @@ fun AutonomousTradingScreen(
                                     Text("Spread Ctx: ${tox?.spreadStressContext?.let { String.format("%.2f", it) } ?: "N/A"}", fontSize = 10.sp, color = SecondaryText)
                                     Text("Samples: ${tox?.sampleCount ?: 0}", fontSize = 10.sp, color = SecondaryText)
                                     Text("Quality: ${tox?.qualityState ?: "INSUFFICIENT_SAMPLE"}", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("HASBROUCK-STYLE VAR (MODULE 7 - PRICE DISCOVERY)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("STATUS", "${hb?.status ?: "NOT_AVAILABLE"}", if (hb?.status == "VALID") AccentGreen else if (hb?.status in listOf("UNSTABLE_SYSTEM", "NON_STATIONARY")) BearishRed else SecondaryText)
+                                    MetricColumn("SELECTED LAG", "${hb?.selectedLag ?: "N/A"}", PrimaryText)
+                                    MetricColumn("PERM IMPACT", "${hb?.cumulativeImpact?.let { String.format("%.6f", it) } ?: "N/A"}", AccentCyan)
+                                    MetricColumn("FLOW VAR %", "${hb?.varianceShareFlow?.let { String.format("%.1f%%", it * 100) } ?: "N/A"}", Color(0xFFF59E0B))
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Method: ${hb?.methodologyVersion ?: "HASBROUCK_STYLE_RESEARCH"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Samples: ${hb?.sampleCount ?: 0}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Stable: ${if (hb?.isStable == true) "YES" else if (hb?.isStable == false) "NO" else "N/A"}", fontSize = 10.sp, color = if (hb?.isStable == true) AccentGreen else BearishRed)
+                                    Text("Max Root: ${hb?.maxEigenvalueModulus?.let { String.format("%.3f", it) } ?: "N/A"}", fontSize = 10.sp, color = SecondaryText)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("VECM RESEARCH (MODULE 8 - SPOT VS PERP COINTEGRATION)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6366F1))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("STATUS", "${vecm?.status ?: "NOT_AVAILABLE"}", if (vecm?.status == "VALID") AccentGreen else if (vecm?.status in listOf("UNSTABLE_SYSTEM", "NOT_I1", "NO_COINTEGRATION")) BearishRed else SecondaryText)
+                                    MetricColumn("RANK", "${vecm?.cointegrationRank ?: "N/A"}", Color(0xFF6366F1))
+                                    MetricColumn("TRACE STAT", "${vecm?.traceStat?.let { String.format("%.2f", it) } ?: "N/A"}", PrimaryText)
+                                    MetricColumn("GG SHARES", "${if (vecm?.ggShare1 != null && vecm.ggShare2 != null) String.format("%.0f/%.0f", vecm.ggShare1 * 100, vecm.ggShare2 * 100) else "N/A"}", AccentCyan)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Pairs: ${vecm?.series1 ?: "SPOT"} / ${vecm?.series2 ?: "PERP"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Align: ${vecm?.alignmentMethod ?: "NEAREST_PRIOR"}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Samples: ${vecm?.sampleCount ?: 0}", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Stable: ${if (vecm?.isStable == true) "YES" else if (vecm?.isStable == false) "NO" else "N/A"}", fontSize = 10.sp, color = if (vecm?.isStable == true) AccentGreen else BearishRed)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==========================================
+                // COLLAPSIBLE 5: MULTI-VENUE INTELLIGENCE & TIMESFM COMPATIBILITY (PHASE 10)
+                // ==========================================
+                item {
+                    val basis = crossVenueBasis
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isMultiVenueExpanded = !isMultiVenueExpanded },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (isMultiVenueExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = AccentCyan,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            "MULTI-VENUE & TIMESFM 5M VALIDATION (PHASE 10.1)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryText,
+                                            letterSpacing = 1.sp
+                                        )
+                                        Text(
+                                            "BINANCE PRIMARY • BINGX EXECUTION • SHADOW ONLY",
+                                            fontSize = 10.sp,
+                                            color = AccentCyan
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            if (basis?.state == "ALIGNED") AccentGreen.copy(alpha = 0.15f) else WarningAmber.copy(alpha = 0.15f),
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        basis?.state ?: "RESEARCH",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (basis?.state == "ALIGNED") AccentGreen else WarningAmber
+                                    )
+                                }
+                            }
+
+                            if (isMultiVenueExpanded) {
+                                Spacer(Modifier.height(12.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("CROSS-VENUE BASIS (BINANCE USD-M vs BINGX SWAP)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("BINANCE", "${basis?.binancePrice ?: 0.0}", PrimaryText)
+                                    MetricColumn("BINGX", "${basis?.bingxPrice ?: 0.0}", PrimaryText)
+                                    MetricColumn("BASIS", "${basis?.basisAbs ?: 0.0} (${basis?.basisPct ?: 0.0}%)", if (basis?.basisPct != null && kotlin.math.abs(basis.basisPct) < 0.05) AccentGreen else WarningAmber)
+                                    MetricColumn("Z-SCORE", "${basis?.basisZscore?.let { String.format("%.2f", it) } ?: "0.0"}", AccentCyan)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Bin Age: ${basis?.binanceDataAgeMs ?: 0}ms", fontSize = 10.sp, color = SecondaryText)
+                                    Text("BingX Age: ${basis?.bingxDataAgeMs ?: 0}ms", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Sync Δ: ${basis?.timestampDeltaMs ?: 0}ms", fontSize = 10.sp, color = SecondaryText)
+                                    Text("Est Slip: ${basis?.estimatedSlippagePct ?: 0.0}%", fontSize = 10.sp, color = AccentGreen)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Divider(color = BorderColor.copy(alpha = 0.3f))
+                                Spacer(Modifier.height(8.dp))
+
+                                Text("TIMESFM 5M FORECAST & MULTI-METRIC COMPATIBILITY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricColumn("PRIMARY ARCH", "5m / 12-Step Path", AccentCyan)
+                                    MetricColumn("CONTEXT", "AT ENTRY_READY", AccentGreen)
+                                    MetricColumn("DIMENSIONS", "DIR / DISP / COMPAT", Color(0xFFF59E0B))
+                                    MetricColumn("CALIBRATION", "NOT CALIBRATED", WarningAmber)
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(SurfaceDark.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                        .border(1.dp, BorderColor.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        "SAFETY INVARIANT: ADVISORY RESEARCH ONLY • ZERO AUTONOMOUS TRADING AUTHORITY • NO REAL ORDERS OR SLOT MUTATIONS BY ML",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = WarningAmber
+                                    )
                                 }
                             }
                         }

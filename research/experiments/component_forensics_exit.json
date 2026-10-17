@@ -1,0 +1,434 @@
+{
+  "SOLUSDT_Exit_A_Cost_8": {
+    "trades": 53,
+    "mean_gross_bps": 4.9209231194648595,
+    "mean_net_bps": -3.0790768805351414,
+    "median_net_bps": 87.99999999999942,
+    "win_rate": 0.660377358490566,
+    "avg_holding_bars": 20.92452830188679,
+    "profit_factor": 1.096191401443557
+  },
+  "SOLUSDT_Exit_A_Cost_12": {
+    "trades": 53,
+    "mean_gross_bps": 4.9209231194648595,
+    "mean_net_bps": -7.079076880535138,
+    "median_net_bps": 83.99999999999942,
+    "win_rate": 0.660377358490566,
+    "avg_holding_bars": 20.92452830188679,
+    "profit_factor": 1.096191401443557
+  },
+  "SOLUSDT_Exit_A_Cost_16": {
+    "trades": 53,
+    "mean_gross_bps": 4.9209231194648595,
+    "mean_net_bps": -11.079076880535148,
+    "median_net_bps": 79.99999999999942,
+    "win_rate": 0.660377358490566,
+    "avg_holding_bars": 20.92452830188679,
+    "profit_factor": 1.096191401443557
+  },
+  "SOLUSDT_Exit_A_Cost_20": {
+    "trades": 53,
+    "mean_gross_bps": 4.9209231194648595,
+    "mean_net_bps": -15.079076880535146,
+    "median_net_bps": 75.99999999999942,
+    "win_rate": 0.660377358490566,
+    "avg_holding_bars": 20.92452830188679,
+    "profit_factor": 1.096191401443557
+  },
+  "SOLUSDT_Exit_B_Cost_8": {
+    "trades": 96,
+    "mean_gross_bps": 1.9801470926702571,
+    "mean_net_bps": -6.019852907329747,
+    "median_net_bps": -14.382304160503782,
+    "win_rate": 0.3854166666666667,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.0677026101616394
+  },
+  "SOLUSDT_Exit_B_Cost_12": {
+    "trades": 96,
+    "mean_gross_bps": 1.9801470926702571,
+    "mean_net_bps": -10.019852907329739,
+    "median_net_bps": -18.38230416050378,
+    "win_rate": 0.3541666666666667,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.0677026101616394
+  },
+  "SOLUSDT_Exit_B_Cost_16": {
+    "trades": 96,
+    "mean_gross_bps": 1.9801470926702571,
+    "mean_net_bps": -14.019852907329739,
+    "median_net_bps": -22.382304160503782,
+    "win_rate": 0.3333333333333333,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.0677026101616394
+  },
+  "SOLUSDT_Exit_B_Cost_20": {
+    "trades": 96,
+    "mean_gross_bps": 1.9801470926702571,
+    "mean_net_bps": -18.019852907329753,
+    "median_net_bps": -26.382304160503782,
+    "win_rate": 0.3125,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.0677026101616394
+  },
+  "SOLUSDT_Exit_C_Cost_8": {
+    "trades": 96,
+    "mean_gross_bps": -5.5586889298198106,
+    "mean_net_bps": -13.558688929819812,
+    "median_net_bps": -10.833243252586826,
+    "win_rate": 0.3541666666666667,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 0.8413133402050987
+  },
+  "SOLUSDT_Exit_C_Cost_12": {
+    "trades": 96,
+    "mean_gross_bps": -5.5586889298198106,
+    "mean_net_bps": -17.55868892981981,
+    "median_net_bps": -14.833243252586824,
+    "win_rate": 0.34375,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 0.8413133402050987
+  },
+  "SOLUSDT_Exit_C_Cost_16": {
+    "trades": 96,
+    "mean_gross_bps": -5.5586889298198106,
+    "mean_net_bps": -21.558688929819805,
+    "median_net_bps": -18.833243252586826,
+    "win_rate": 0.3125,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 0.8413133402050987
+  },
+  "SOLUSDT_Exit_C_Cost_20": {
+    "trades": 96,
+    "mean_gross_bps": -5.5586889298198106,
+    "mean_net_bps": -25.558688929819823,
+    "median_net_bps": -22.833243252586826,
+    "win_rate": 0.2708333333333333,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 0.8413133402050987
+  },
+  "SOLUSDT_Exit_D_Cost_8": {
+    "trades": 96,
+    "mean_gross_bps": -2.9770953464883925,
+    "mean_net_bps": -10.977095346488394,
+    "median_net_bps": -8.167633352332054,
+    "win_rate": 0.4270833333333333,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 0.9296673333399076
+  },
+  "SOLUSDT_Exit_D_Cost_12": {
+    "trades": 96,
+    "mean_gross_bps": -2.9770953464883925,
+    "mean_net_bps": -14.977095346488396,
+    "median_net_bps": -12.167633352332052,
+    "win_rate": 0.3854166666666667,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 0.9296673333399076
+  },
+  "SOLUSDT_Exit_D_Cost_16": {
+    "trades": 96,
+    "mean_gross_bps": -2.9770953464883925,
+    "mean_net_bps": -18.97709534648839,
+    "median_net_bps": -16.167633352332054,
+    "win_rate": 0.34375,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 0.9296673333399076
+  },
+  "SOLUSDT_Exit_D_Cost_20": {
+    "trades": 96,
+    "mean_gross_bps": -2.9770953464883925,
+    "mean_net_bps": -22.977095346488404,
+    "median_net_bps": -20.167633352332054,
+    "win_rate": 0.3333333333333333,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 0.9296673333399076
+  },
+  "SOLUSDT_Exit_E_Cost_8": {
+    "trades": 94,
+    "mean_gross_bps": -10.823079535489724,
+    "mean_net_bps": -18.823079535489722,
+    "median_net_bps": -49.631066770070895,
+    "win_rate": 0.2765957446808511,
+    "avg_holding_bars": 42.43617021276596,
+    "profit_factor": 0.84608624823799
+  },
+  "SOLUSDT_Exit_E_Cost_12": {
+    "trades": 94,
+    "mean_gross_bps": -10.823079535489724,
+    "mean_net_bps": -22.823079535489732,
+    "median_net_bps": -53.63106677007089,
+    "win_rate": 0.2765957446808511,
+    "avg_holding_bars": 42.43617021276596,
+    "profit_factor": 0.84608624823799
+  },
+  "SOLUSDT_Exit_E_Cost_16": {
+    "trades": 94,
+    "mean_gross_bps": -10.823079535489724,
+    "mean_net_bps": -26.82307953548973,
+    "median_net_bps": -57.63106677007089,
+    "win_rate": 0.2765957446808511,
+    "avg_holding_bars": 42.43617021276596,
+    "profit_factor": 0.84608624823799
+  },
+  "SOLUSDT_Exit_E_Cost_20": {
+    "trades": 94,
+    "mean_gross_bps": -10.823079535489724,
+    "mean_net_bps": -30.823079535489736,
+    "median_net_bps": -61.63106677007089,
+    "win_rate": 0.26595744680851063,
+    "avg_holding_bars": 42.43617021276596,
+    "profit_factor": 0.84608624823799
+  },
+  "SOLUSDT_Exit_F_Cost_8": {
+    "trades": 94,
+    "mean_gross_bps": -20.12388999055179,
+    "mean_net_bps": -28.123889990551778,
+    "median_net_bps": -64.48651529040927,
+    "win_rate": 0.26595744680851063,
+    "avg_holding_bars": 49.09574468085106,
+    "profit_factor": 0.7662031845458951
+  },
+  "SOLUSDT_Exit_F_Cost_12": {
+    "trades": 94,
+    "mean_gross_bps": -20.12388999055179,
+    "mean_net_bps": -32.123889990551774,
+    "median_net_bps": -68.48651529040926,
+    "win_rate": 0.24468085106382978,
+    "avg_holding_bars": 49.09574468085106,
+    "profit_factor": 0.7662031845458951
+  },
+  "SOLUSDT_Exit_F_Cost_16": {
+    "trades": 94,
+    "mean_gross_bps": -20.12388999055179,
+    "mean_net_bps": -36.12388999055179,
+    "median_net_bps": -72.48651529040927,
+    "win_rate": 0.23404255319148937,
+    "avg_holding_bars": 49.09574468085106,
+    "profit_factor": 0.7662031845458951
+  },
+  "SOLUSDT_Exit_F_Cost_20": {
+    "trades": 94,
+    "mean_gross_bps": -20.12388999055179,
+    "mean_net_bps": -40.1238899905518,
+    "median_net_bps": -76.48651529040927,
+    "win_rate": 0.23404255319148937,
+    "avg_holding_bars": 49.09574468085106,
+    "profit_factor": 0.7662031845458951
+  },
+  "ETHUSDT_Exit_A_Cost_8": {
+    "trades": 64,
+    "mean_gross_bps": 22.318530080425734,
+    "mean_net_bps": 14.31853008042573,
+    "median_net_bps": 39.999999999999986,
+    "win_rate": 0.53125,
+    "avg_holding_bars": 16.296875,
+    "profit_factor": 1.9229600249552754
+  },
+  "ETHUSDT_Exit_A_Cost_12": {
+    "trades": 64,
+    "mean_gross_bps": 22.318530080425734,
+    "mean_net_bps": 10.318530080425736,
+    "median_net_bps": 35.99999999999999,
+    "win_rate": 0.53125,
+    "avg_holding_bars": 16.296875,
+    "profit_factor": 1.9229600249552754
+  },
+  "ETHUSDT_Exit_A_Cost_16": {
+    "trades": 64,
+    "mean_gross_bps": 22.318530080425734,
+    "mean_net_bps": 6.318530080425727,
+    "median_net_bps": 31.99999999999999,
+    "win_rate": 0.53125,
+    "avg_holding_bars": 16.296875,
+    "profit_factor": 1.9229600249552754
+  },
+  "ETHUSDT_Exit_A_Cost_20": {
+    "trades": 64,
+    "mean_gross_bps": 22.318530080425734,
+    "mean_net_bps": 2.318530080425731,
+    "median_net_bps": 27.999999999999986,
+    "win_rate": 0.53125,
+    "avg_holding_bars": 16.296875,
+    "profit_factor": 1.9229600249552754
+  },
+  "ETHUSDT_Exit_B_Cost_8": {
+    "trades": 167,
+    "mean_gross_bps": 11.071797335787151,
+    "mean_net_bps": 3.0717973357871515,
+    "median_net_bps": -14.807903651953051,
+    "win_rate": 0.2934131736526946,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.7109587349055864
+  },
+  "ETHUSDT_Exit_B_Cost_12": {
+    "trades": 167,
+    "mean_gross_bps": 11.071797335787151,
+    "mean_net_bps": -0.9282026642128481,
+    "median_net_bps": -18.80790365195305,
+    "win_rate": 0.2694610778443114,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.7109587349055864
+  },
+  "ETHUSDT_Exit_B_Cost_16": {
+    "trades": 167,
+    "mean_gross_bps": 11.071797335787151,
+    "mean_net_bps": -4.928202664212852,
+    "median_net_bps": -22.80790365195305,
+    "win_rate": 0.24550898203592814,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.7109587349055864
+  },
+  "ETHUSDT_Exit_B_Cost_20": {
+    "trades": 167,
+    "mean_gross_bps": 11.071797335787151,
+    "mean_net_bps": -8.928202664212856,
+    "median_net_bps": -26.80790365195305,
+    "win_rate": 0.23353293413173654,
+    "avg_holding_bars": 3.0,
+    "profit_factor": 1.7109587349055864
+  },
+  "ETHUSDT_Exit_C_Cost_8": {
+    "trades": 167,
+    "mean_gross_bps": 14.047564276927725,
+    "mean_net_bps": 6.047564276927725,
+    "median_net_bps": -12.070037200138987,
+    "win_rate": 0.32335329341317365,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 1.8250881265254582
+  },
+  "ETHUSDT_Exit_C_Cost_12": {
+    "trades": 167,
+    "mean_gross_bps": 14.047564276927725,
+    "mean_net_bps": 2.047564276927725,
+    "median_net_bps": -16.070037200138987,
+    "win_rate": 0.2994011976047904,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 1.8250881265254582
+  },
+  "ETHUSDT_Exit_C_Cost_16": {
+    "trades": 167,
+    "mean_gross_bps": 14.047564276927725,
+    "mean_net_bps": -1.9524357230722789,
+    "median_net_bps": -20.070037200138987,
+    "win_rate": 0.2694610778443114,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 1.8250881265254582
+  },
+  "ETHUSDT_Exit_C_Cost_20": {
+    "trades": 167,
+    "mean_gross_bps": 14.047564276927725,
+    "mean_net_bps": -5.952435723072284,
+    "median_net_bps": -24.070037200138987,
+    "win_rate": 0.25748502994011974,
+    "avg_holding_bars": 6.0,
+    "profit_factor": 1.8250881265254582
+  },
+  "ETHUSDT_Exit_D_Cost_8": {
+    "trades": 167,
+    "mean_gross_bps": 12.489729718552782,
+    "mean_net_bps": 4.4897297185527805,
+    "median_net_bps": -17.76306780159586,
+    "win_rate": 0.32934131736526945,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 1.5104088061554721
+  },
+  "ETHUSDT_Exit_D_Cost_12": {
+    "trades": 167,
+    "mean_gross_bps": 12.489729718552782,
+    "mean_net_bps": 0.4897297185527835,
+    "median_net_bps": -21.763067801595856,
+    "win_rate": 0.2994011976047904,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 1.5104088061554721
+  },
+  "ETHUSDT_Exit_D_Cost_16": {
+    "trades": 167,
+    "mean_gross_bps": 12.489729718552782,
+    "mean_net_bps": -3.5102702814472186,
+    "median_net_bps": -25.76306780159586,
+    "win_rate": 0.2994011976047904,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 1.5104088061554721
+  },
+  "ETHUSDT_Exit_D_Cost_20": {
+    "trades": 167,
+    "mean_gross_bps": 12.489729718552782,
+    "mean_net_bps": -7.510270281447227,
+    "median_net_bps": -29.76306780159586,
+    "win_rate": 0.2694610778443114,
+    "avg_holding_bars": 12.0,
+    "profit_factor": 1.5104088061554721
+  },
+  "ETHUSDT_Exit_E_Cost_8": {
+    "trades": 163,
+    "mean_gross_bps": 11.814770765393641,
+    "mean_net_bps": 3.8147707653936402,
+    "median_net_bps": -44.339833875045365,
+    "win_rate": 0.3006134969325153,
+    "avg_holding_bars": 44.828220858895705,
+    "profit_factor": 1.2483074977639947
+  },
+  "ETHUSDT_Exit_E_Cost_12": {
+    "trades": 163,
+    "mean_gross_bps": 11.814770765393641,
+    "mean_net_bps": -0.18522923460636123,
+    "median_net_bps": -48.33983387504536,
+    "win_rate": 0.294478527607362,
+    "avg_holding_bars": 44.828220858895705,
+    "profit_factor": 1.2483074977639947
+  },
+  "ETHUSDT_Exit_E_Cost_16": {
+    "trades": 163,
+    "mean_gross_bps": 11.814770765393641,
+    "mean_net_bps": -4.18522923460636,
+    "median_net_bps": -52.33983387504536,
+    "win_rate": 0.2883435582822086,
+    "avg_holding_bars": 44.828220858895705,
+    "profit_factor": 1.2483074977639947
+  },
+  "ETHUSDT_Exit_E_Cost_20": {
+    "trades": 163,
+    "mean_gross_bps": 11.814770765393641,
+    "mean_net_bps": -8.18522923460637,
+    "median_net_bps": -56.33983387504536,
+    "win_rate": 0.27607361963190186,
+    "avg_holding_bars": 44.828220858895705,
+    "profit_factor": 1.2483074977639947
+  },
+  "ETHUSDT_Exit_F_Cost_8": {
+    "trades": 166,
+    "mean_gross_bps": 23.553403866559748,
+    "mean_net_bps": 15.553403866559748,
+    "median_net_bps": -31.095535084651786,
+    "win_rate": 0.3072289156626506,
+    "avg_holding_bars": 43.71686746987952,
+    "profit_factor": 1.6008392702524423
+  },
+  "ETHUSDT_Exit_F_Cost_12": {
+    "trades": 166,
+    "mean_gross_bps": 23.553403866559748,
+    "mean_net_bps": 11.55340386655974,
+    "median_net_bps": -35.095535084651786,
+    "win_rate": 0.30120481927710846,
+    "avg_holding_bars": 43.71686746987952,
+    "profit_factor": 1.6008392702524423
+  },
+  "ETHUSDT_Exit_F_Cost_16": {
+    "trades": 166,
+    "mean_gross_bps": 23.553403866559748,
+    "mean_net_bps": 7.553403866559744,
+    "median_net_bps": -39.095535084651786,
+    "win_rate": 0.29518072289156627,
+    "avg_holding_bars": 43.71686746987952,
+    "profit_factor": 1.6008392702524423
+  },
+  "ETHUSDT_Exit_F_Cost_20": {
+    "trades": 166,
+    "mean_gross_bps": 23.553403866559748,
+    "mean_net_bps": 3.5534038665597363,
+    "median_net_bps": -43.095535084651786,
+    "win_rate": 0.26506024096385544,
+    "avg_holding_bars": 43.71686746987952,
+    "profit_factor": 1.6008392702524423
+  }
+}

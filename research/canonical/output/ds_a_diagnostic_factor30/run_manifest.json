@@ -1,0 +1,27 @@
+{
+  "anchor_check": "I7 ANCHOR MISMATCH: got 183/96/87 expected 121/58/63",
+  "bootstrap_seed": 290719,
+  "config_sha256": "641fc245b9fad4052829c675cf744a216009af528948758983f5607f8e69a559",
+  "counts": {
+    "signals": 183,
+    "skipped": 49,
+    "trades": 134,
+    "unfilled_eod": 0
+  },
+  "created_utc": "2026-08-22T03:55:49.628923+00:00",
+  "dataset_id": "DS-A",
+  "dataset_manifest": {},
+  "dataset_sha256": "652da237e21ecbb81b161e3556d7b7bb46f55130935fd367e84196be0fa77bb3",
+  "dataset_version": "DS-A.v1",
+  "engine_version": "2.9.0",
+  "git_commit": "ecfcff0412f6fafb9faa9ef174293026cda62069",
+  "git_dirty_flag": true,
+  "output_file_hashes": {
+    "OPHELIA_CANONICAL_AUDIT.md": "c4e6ef23b2e90b729ac018774cd8b697cac1d5baf38c76bfbf75547695bdd50a",
+    "OPHELIA_CANONICAL_METRICS.json": "dd85e89148f5ffa04327a44f474b12cd3c6755b9e62841df3853b695083a0ffc",
+    "OPHELIA_CANONICAL_SIGNAL_LEDGER.csv": "582d1144784b6974b05fb838f08985cf858f503be02d7145ccc4c823f6acf2ec",
+    "OPHELIA_CANONICAL_TRADE_LEDGER.csv": "83bd68bd762c6749b8336ee9cb189935afe4e1f79b41742465e1aabb454b286c"
+  },
+  "run_id": "313194de4f1a",
+  "spec_version": "1.0"
+}

@@ -1,0 +1,1 @@
+{"phase": "SHADOW_RUNNING", "shadow_started_at": 1787128800.0, "observations": 1152, "long_candidates": 14, "short_candidates": 125, "holds": 1013, "conflicts": 3, "telemetry_counts": {"dtr": 4, "flp": 0, "div": 3, "abs": 4}, "last_update": 1787214901}

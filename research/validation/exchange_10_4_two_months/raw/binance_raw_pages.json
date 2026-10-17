@@ -1,0 +1,86 @@
+[
+  {
+    "page": 1,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1780272000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:51.944325+00:00"
+  },
+  {
+    "page": 2,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1780722000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:52.354990+00:00"
+  },
+  {
+    "page": 3,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1781172000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:52.765727+00:00"
+  },
+  {
+    "page": 4,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1781622000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:53.174299+00:00"
+  },
+  {
+    "page": 5,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1782072000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:54.009115+00:00"
+  },
+  {
+    "page": 6,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1782522000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:54.419513+00:00"
+  },
+  {
+    "page": 7,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1782972000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:54.829719+00:00"
+  },
+  {
+    "page": 8,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1783422000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:55.236720+00:00"
+  },
+  {
+    "page": 9,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1783872000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:55.767134+00:00"
+  },
+  {
+    "page": 10,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1784322000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:56.459142+00:00"
+  },
+  {
+    "page": 11,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1784772000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1500,
+    "retrieved_utc": "2026-08-22T04:25:56.937586+00:00"
+  },
+  {
+    "page": 12,
+    "url": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=5m&startTime=1785222000000&endTime=1785542399999&limit=1500",
+    "status": 200,
+    "rows_returned": 1068,
+    "retrieved_utc": "2026-08-22T04:25:57.777147+00:00"
+  }
+]

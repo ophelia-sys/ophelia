@@ -1,0 +1,5 @@
+tolerance,bingx_signals,binance_signals,matched,bingx_only,binance_only
+exact,54,128,15,39,28
+pm5m,54,128,23,31,20
+pm10m,54,128,25,29,18
+pm15m,54,128,27,27,16

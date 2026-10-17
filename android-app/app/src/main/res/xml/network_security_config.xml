@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <debug-overrides>
+        <trust-anchors>
+            <!-- Trust user added CAs -->
+            <certificates src="user" />
+            <!-- Trust the self-signed cert from the VPS -->
+            <certificates src="@raw/vps_cert" />
+        </trust-anchors>
+    </debug-overrides>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+            <certificates src="@raw/vps_cert" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

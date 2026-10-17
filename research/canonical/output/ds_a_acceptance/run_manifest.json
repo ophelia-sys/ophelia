@@ -1,0 +1,51 @@
+{
+  "anchor_check": "I7 ANCHOR MISMATCH: got 183/96/87 expected 121/58/63",
+  "bootstrap_seed": 290719,
+  "config_sha256": "d48290a97786c67c7a728f714a2cae31173e843e3cf71d2b1512ded3fc21ce4f",
+  "counts": {
+    "signals": 183,
+    "skipped": 49,
+    "trades": 134,
+    "unfilled_eod": 0
+  },
+  "created_utc": "2026-08-22T03:51:46.672649+00:00",
+  "dataset_id": "DS-A",
+  "dataset_manifest": {
+    "_tf_ms": 300000,
+    "candle_count": 14240,
+    "canonical_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\data\\canonical\\DS-A.v1_candles.csv",
+    "canonical_sha256": "652da237e21ecbb81b161e3556d7b7bb46f55130935fd367e84196be0fa77bb3",
+    "created_utc": "2026-08-22T03:51:45.947748+00:00",
+    "dataset_id": "DS-A",
+    "duplicate_timestamp_count": 0,
+    "first_candle_open_time": 1783045800000,
+    "ingestion_script_path": "research/canonical/data_contract.py",
+    "invalid_ohlc_count": 0,
+    "last_candle_open_time": 1787317500000,
+    "missing_candle_count": 0,
+    "partial_final_candle_dropped": false,
+    "raw_export_filename": "C:\\Users\\dopa.mine\\Desktop\\ophelia\\research\\data\\raw\\tv_exports\\DS-A_BINGX_SOL_5M.csv",
+    "raw_export_sha256": "23668626df2a820a1175358cd8a40e99203d68bd3675a7ab848617f16f100a4f",
+    "source_description": "TradingView export of BINGX:SOLUSDT.P",
+    "symbol": "SOLUSDT",
+    "timeframe": "5m",
+    "timezone": "UTC",
+    "venue": "BINGX (via TradingView)",
+    "version": "DS-A.v1",
+    "volume_available": false,
+    "zero_volume_bar_count": 0
+  },
+  "dataset_sha256": "652da237e21ecbb81b161e3556d7b7bb46f55130935fd367e84196be0fa77bb3",
+  "dataset_version": "DS-A.v1",
+  "engine_version": "2.9.0",
+  "git_commit": "ecfcff0412f6fafb9faa9ef174293026cda62069",
+  "git_dirty_flag": true,
+  "output_file_hashes": {
+    "OPHELIA_CANONICAL_AUDIT.md": "d5a22fbd0dbc0df4d0f6efc14f9937f1536ec17e55bfeaaa26f4e8d58d0b834f",
+    "OPHELIA_CANONICAL_METRICS.json": "dd85e89148f5ffa04327a44f474b12cd3c6755b9e62841df3853b695083a0ffc",
+    "OPHELIA_CANONICAL_SIGNAL_LEDGER.csv": "582d1144784b6974b05fb838f08985cf858f503be02d7145ccc4c823f6acf2ec",
+    "OPHELIA_CANONICAL_TRADE_LEDGER.csv": "83bd68bd762c6749b8336ee9cb189935afe4e1f79b41742465e1aabb454b286c"
+  },
+  "run_id": "ecbcd3326d66",
+  "spec_version": "1.0"
+}
