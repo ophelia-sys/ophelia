@@ -339,9 +339,10 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
         "timestamp": "first", "open": "first", "high": "max",
         "low": "min", "close": "last", "volume": "sum",
     }
-    for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+    flow_columns = ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume")
+    for flow_col in flow_columns:
         if flow_col in df.columns:
-            agg_5m[flow_col] = lambda series: series.sum(min_count=1)
+            agg_5m[flow_col] = lambda series: series.sum(min_count=5)
 
     df_5m = df.resample("5min", label="left", closed="left").agg(agg_5m)
     valid_5m_count = valid_1m.resample("5min", label="left", closed="left").sum()
@@ -349,11 +350,17 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
         subset=["timestamp", "open", "high", "low", "close", "volume"]
     ).copy()
 
-    # Preserve explicit absence. A missing order-flow column stays NaN rather than
-    # becoming a bar count or zero-volume imbalance.
-    for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+    # Preserve explicit absence and partial-source gaps. A flow value is available
+    # only when all five constituent 1m values were available. Never turn absence
+    # into a bar count or zero flow.
+    for flow_col in flow_columns:
         if flow_col not in df_5m.columns:
             df_5m[flow_col] = np.nan
+        elif flow_col in df.columns:
+            flow_count = df[flow_col].notna().astype("int8").resample(
+                "5min", label="left", closed="left"
+            ).sum()
+            df_5m.loc[flow_count.reindex(df_5m.index).fillna(0).astype(int) != 5, flow_col] = np.nan
 
     def _complete_htf(rule: str, expected_minutes: int, include_volume: bool) -> pd.DataFrame:
         agg = {
@@ -560,9 +567,10 @@ class Phase13DiscoveryEngine:
         swing_low_1h_arr = df_5m["swing_low_1h"].values
         swing_high_1h_arr = df_5m["swing_high_1h"].values
 
-        # Rolling 24h (288 5m bars) volume profile approximate quantile levels
-        rolling_close_p30 = df_5m["close"].rolling(288, min_periods=50).quantile(0.30).values
-        rolling_close_p70 = df_5m["close"].rolling(288, min_periods=50).quantile(0.70).values
+        # Rolling close-price quantile levels, not true volume-at-price value area.
+        # Shift one completed 5m bar so the tested candle cannot define its own level.
+        rolling_close_p30 = df_5m["close"].rolling(288, min_periods=50).quantile(0.30).shift(1).values
+        rolling_close_p70 = df_5m["close"].rolling(288, min_periods=50).quantile(0.70).shift(1).values
 
         # Scan each 5m bar causally
         for i in range(50, n_5m - 25):  # Leave room for lookback and forward 120m
@@ -637,7 +645,7 @@ class Phase13DiscoveryEngine:
             elif not np.isnan(prior_15m_high) and high_p > prior_15m_high * 1.001 and close_p < prior_15m_high:
                 detected_events.append(("LIQUIDITY_SWEEP_SFP", "SHORT"))
 
-            # 7. Value Area Boundary Rejection
+            # 7. Rolling Close-Quantile Rejection (approximation, not volume profile)
             val = rolling_close_p30[i]
             vah = rolling_close_p70[i]
             if not np.isnan(val) and low_p <= val and close_p > val:
