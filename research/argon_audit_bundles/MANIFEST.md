@@ -1,6 +1,6 @@
 # Ophelia — Gemini Argon Plaintext Audit Manifest
 
-**Source Commit Hash:** `38f3fc9eb06a6b8f36c56b6a388ec4c2eef025fa`  
+**Source Commit Hash:** `38f3fc96a00cb14ed94108dcdce6aa3be922909d`  
 **Source Checkpoint Branch:** `checkpoint/pre-argon-review-2026-10-17`  
 **Target Audit Branch:** `checkpoint/argon-plaintext-audit-bundles`  
 **Encoding:** UTF-8 Plaintext (RFC 3629 compliant, zero compression, zero truncation)  
