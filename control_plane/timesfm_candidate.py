@@ -178,6 +178,10 @@ def generate_candidate_forecast(
     ).hexdigest()[:16]
 
     if len(causal_bars) < 12:
+        if require_timesfm:
+            raise RuntimeError(
+                f"Required TimesFM inference cannot run: only {len(causal_bars)} completed context bars; 12 required"
+            )
         logger.warning("Insufficient causal context bars (%d < 12) for candidate %s", len(causal_bars), context.candidate_id)
         cur_price = context.entry_price
         path = {"15m": cur_price, "30m": cur_price, "45m": cur_price, "60m": cur_price}
