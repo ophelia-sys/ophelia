@@ -81,6 +81,7 @@ from .timesfm_candidate import (
     CandidateForecastResult,
     generate_candidate_forecast,
     get_timesfm_provider,
+    autoregressive_baseline_forecast,
     TIMESFM_CHECKPOINT,
     TIMESFM_MODEL_VERSION,
     TIMESFM_PRIMARY_5M,
@@ -224,6 +225,8 @@ class Phase12Candidate:
     reforecast_delta_reachability: float = 0.0
     reforecast_policy: str = "CONTINUE"  # "CONTINUE", "EARLY_EXIT"
     reforecast_net_r_base: float = 0.0
+    reforecast_exit_price: Optional[float] = None
+    actual_close_60m: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -440,8 +443,11 @@ class Phase12TimesFMValidationEngine:
         # Future 12 bars (60m)
         future_all = [c for c in self.candles_5m[sym] if int(c["ts"]) > ts]
         future_60m = future_all[:12]
-        if len(future_60m) < 3:
+        # Phase 12 labels outcomes at 60m. Short, truncated paths must not be
+        # reported as 60m observations in the final tail of the dataset.
+        if len(future_60m) < 12:
             return None
+        actual_close_60m = float(future_60m[-1]["close"])
 
         # Structural Quality Features (Variant D)
         h5 = [float(c["high"]) for c in hist_5m]
@@ -499,15 +505,22 @@ class Phase12TimesFMValidationEngine:
         base_vwap = (cum_vp / max(1e-6, cum_vol)) if cum_vol > 0 else entry
         base_ar = entry
 
-        # 2. TimesFM 3.0 Pre-Entry Forecast (at ENTRY_READY)
-        # Authoritative Execution: Evaluated on all frozen D4H candidates (Cohort C)
+        # Compute a genuinely independent AR baseline for every candidate, regardless
+        # of whether TimesFM is eligible. It must never be copied from the TimesFM path.
+        ar_path = autoregressive_baseline_forecast(np.asarray(c5[-128:], dtype=np.float64), horizon=12)
+        base_ar = float(ar_path[11])
+
+        # 2. TimesFM 3.0 Pre-Entry Forecast (at the confirmed ENTRY_READY candle close)
+        # Research cohort must fail closed if neural TimesFM or model quantiles are unavailable.
         if pass_d4h:
             fc_context = CandidateForecastContext(
                 candidate_id=cand_id,
                 canonical_instrument_id=f"CRYPTO:{sym}",
                 symbol=sym,
                 direction=direction,
-                candidate_timestamp_ms=ts,
+                # Candidate timestamp from the generator is the signal candle's open time.
+                # The decision is not available until that 5m candle has closed.
+                candidate_timestamp_ms=ts + 5 * 60 * 1000,
                 entry_price=entry,
                 sl_price=sl,
                 tp1_price=tp1,
@@ -518,7 +531,9 @@ class Phase12TimesFMValidationEngine:
                 retest_state="ENTRY_READY"
             )
 
-            fc_res = generate_candidate_forecast(fc_context, hist_5m, timeframe_mode=TIMESFM_PRIMARY_5M)
+            fc_res = generate_candidate_forecast(
+                fc_context, hist_5m, timeframe_mode=TIMESFM_PRIMARY_5M, require_timesfm=True
+            )
             p15 = fc_res.path.get("15m", entry)
             p30 = fc_res.path.get("30m", entry)
             p45 = fc_res.path.get("45m", entry)
@@ -530,7 +545,6 @@ class Phase12TimesFMValidationEngine:
             dispersion_pct = fc_res.forecast_dispersion_pct
             path_slope = (p60 - p15) / entry
             curvature = ((p60 - p30) - (p30 - p15)) / entry
-            base_ar = p60
 
             # Primary Hypothesis Reachability:
             if direction == "LONG":
@@ -573,6 +587,7 @@ class Phase12TimesFMValidationEngine:
             delta_reach = 0.0
             reforecast_policy = "CONTINUE"
             reforecast_net_r_base = net_r_base
+            reforecast_exit_price = None
 
             if len(future_all) >= 3:
                 reforecast_performed = True
@@ -585,7 +600,9 @@ class Phase12TimesFMValidationEngine:
                     canonical_instrument_id=f"CRYPTO:{sym}",
                     symbol=sym,
                     direction=direction,
-                    candidate_timestamp_ms=t_15m,
+                    # t_15m is the reforecast candle's open timestamp; the forecast
+                    # cutoff is its confirmed close, 5 minutes later.
+                    candidate_timestamp_ms=t_15m + 5 * 60 * 1000,
                     entry_price=px_15m,
                     sl_price=sl,
                     tp1_price=tp1,
@@ -595,11 +612,14 @@ class Phase12TimesFMValidationEngine:
                     structure_state="REFORECAST_EVAL",
                     retest_state="ENTRY_READY"
                 )
-                fc_15m = generate_candidate_forecast(ctx_15m, hist_15m, timeframe_mode=TIMESFM_PRIMARY_5M)
+                fc_15m = generate_candidate_forecast(
+                    ctx_15m, hist_15m, timeframe_mode=TIMESFM_PRIMARY_5M, require_timesfm=True
+                )
                 reforecast_q50 = fc_15m.quantiles.get("q50", px_15m)
                 reforecast_q10 = fc_15m.quantiles.get("q10", px_15m * 0.99)
                 reforecast_q90 = fc_15m.quantiles.get("q90", px_15m * 1.01)
 
+                reforecast_exit_price = px_15m
                 if direction == "LONG":
                     reforecast_reach_ratio = (reforecast_q90 - entry) / max(1e-6, tp1 - entry)
                     delta_q50 = reforecast_q50 - q50
@@ -653,6 +673,7 @@ class Phase12TimesFMValidationEngine:
             delta_reach = 0.0
             reforecast_policy = "CONTINUE"
             reforecast_net_r_base = net_r_base
+            reforecast_exit_price = None
 
         return Phase12Candidate(
             candidate_id=cand_id,
@@ -732,7 +753,9 @@ class Phase12TimesFMValidationEngine:
             reforecast_delta_q50=delta_q50,
             reforecast_delta_reachability=delta_reach,
             reforecast_policy=reforecast_policy,
-            reforecast_net_r_base=reforecast_net_r_base
+            reforecast_net_r_base=reforecast_net_r_base,
+            reforecast_exit_price=reforecast_exit_price,
+            actual_close_60m=actual_close_60m
         )
 
     def _compute_metrics(self) -> Dict[str, Any]:
@@ -896,20 +919,31 @@ class Phase12TimesFMValidationEngine:
             "h60m_primary": cohort_stats([c for c in d4h_test if c.tfm_reachability_ratio_60m >= 1.0])
         }
 
-        # 4. TimesFM vs Simple Baselines (Point Prediction MSE on TEST split)
-        mse_tfm = float(np.mean([(c.tfm_p60 - c.exit_price)**2 for c in test_cands]))
-        mse_persist = float(np.mean([(c.base_persistence_pred - c.exit_price)**2 for c in test_cands]))
-        mse_ema = float(np.mean([(c.base_ema_extrap_pred - c.exit_price)**2 for c in test_cands]))
-        mse_vwap = float(np.mean([(c.base_vwap_pred - c.exit_price)**2 for c in test_cands]))
-        mse_ar = float(np.mean([(c.base_ar_pred - c.exit_price)**2 for c in test_cands]))
-
-        baseline_comparison = {
-            "timesfm_3_0_rmse": round(math.sqrt(mse_tfm), 2),
-            "persistence_rmse": round(math.sqrt(mse_persist), 2),
-            "ema_extrapolation_rmse": round(math.sqrt(mse_ema), 2),
-            "session_vwap_rmse": round(math.sqrt(mse_vwap), 2),
-            "statistical_ar_rmse": round(math.sqrt(mse_ar), 2)
-        }
+        # 4. Compare point forecasts only on the same D4H test observations where
+        # genuine TimesFM inference ran, against the actual 60m close—not a barrier exit.
+        forecast_test = [
+            c for c in d4h_test
+            if c.tfm_model == "TimesFM_3.0_PyTorch"
+            and c.actual_close_60m is not None
+            and math.isfinite(float(c.actual_close_60m))
+        ]
+        baseline_comparison = {"sample_size": len(forecast_test)}
+        if forecast_test:
+            target_60m = [float(c.actual_close_60m) for c in forecast_test]
+            mse_tfm = float(np.mean([(c.tfm_p60 - y) ** 2 for c, y in zip(forecast_test, target_60m)]))
+            mse_persist = float(np.mean([(c.base_persistence_pred - y) ** 2 for c, y in zip(forecast_test, target_60m)]))
+            mse_ema = float(np.mean([(c.base_ema_extrap_pred - y) ** 2 for c, y in zip(forecast_test, target_60m)]))
+            mse_vwap = float(np.mean([(c.base_vwap_pred - y) ** 2 for c, y in zip(forecast_test, target_60m)]))
+            mse_ar = float(np.mean([(c.base_ar_pred - y) ** 2 for c, y in zip(forecast_test, target_60m)]))
+            baseline_comparison.update({
+                "timesfm_3_0_rmse": round(math.sqrt(mse_tfm), 2),
+                "persistence_rmse": round(math.sqrt(mse_persist), 2),
+                "ema_extrapolation_rmse": round(math.sqrt(mse_ema), 2),
+                "session_vwap_rmse": round(math.sqrt(mse_vwap), 2),
+                "statistical_ar_rmse": round(math.sqrt(mse_ar), 2)
+            })
+        else:
+            baseline_comparison["status"] = "NOT_AVAILABLE_NO_VERIFIED_TIMESFM_TEST_FORECASTS"
 
         # 5. Downside / Stop-Margin Analysis (TEST split)
         mae_coverage_pct = round(sum(1 for c in d4h_test if c.tfm_q10_covered_mae) / max(1, len(d4h_test)) * 100.0, 2)
