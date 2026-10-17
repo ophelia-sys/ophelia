@@ -57,6 +57,7 @@ FRICTION_CONSERVATIVE = 0.00141 # 14.1 bps (10.0 bps taker fee + 4.1 bps slippag
 
 # Stop Distance Regimes (Buckets)
 STOP_REGIMES = [
+    ("SUB_02", 0.0000, 0.0020),
     ("TIGHT_02_03", 0.0020, 0.0030),
     ("MOD_03_05", 0.0030, 0.0050),
     ("BALANCED_05_075", 0.0050, 0.0075),
@@ -111,6 +112,7 @@ class Phase13Event:
     volume_5m: float
     rvol_5m: float
     cvd_zscore: float
+    cvd_data_status: str
     vwap_deviation_sigma: float
     htf_trend_4h: str
     htf_aligned: bool
@@ -294,11 +296,16 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     cum_v = df["volume"].groupby(df.index.date).cumsum().replace(0, np.nan)
     vwap = cum_pv / cum_v
 
-    # Rolling standard deviation from VWAP
-    dev = (df["close"] - vwap) ** 2
-    cum_dev = dev.groupby(df.index.date).cumsum()
-    variance = cum_dev / cum_v
-    std_vwap = np.sqrt(variance.fillna(0)).replace(0, 1e-6)
+    # Volume-weighted population dispersion of closes about the cumulative VWAP.
+    # E[price^2] - E[price]^2 is the weighted variance; do not divide an
+    # unweighted squared-deviation sum by cumulative volume.
+    session = pd.Series(df.index.date, index=df.index)
+    weighted_price_sq = (df["close"].astype(float) ** 2) * df["volume"].astype(float).clip(lower=0.0)
+    cum_pv2 = weighted_price_sq.groupby(session).cumsum()
+    variance = (cum_pv2 / cum_v - vwap ** 2).clip(lower=0.0)
+    # A zero/undefined dispersion is unavailable; a tiny fabricated sigma
+    # would create enormous z-scores and spurious deviation events.
+    std_vwap = np.sqrt(variance).where(np.isfinite(variance) & (variance > 0.0))
     return vwap.fillna(df["close"]), std_vwap
 
 
@@ -311,6 +318,119 @@ def compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: in
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr = tr.ewm(alpha=1.0 / period, adjust=False).mean()
     return atr
+
+
+def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Resample only complete, valid OHLCV bars; never synthesize order-flow values."""
+    required = ["timestamp", "open", "high", "low", "close", "volume"]
+    missing = [column for column in required if column not in df_1m.columns]
+    if missing:
+        raise ValueError(f"Phase 13 requires source columns {missing}; refusing to infer missing market data")
+    if not isinstance(df_1m.index, pd.DatetimeIndex):
+        raise ValueError("Phase 13 resampling requires a DatetimeIndex")
+    if df_1m.index.has_duplicates:
+        raise ValueError("Phase 13 source has duplicate 1m timestamps; de-duplicate and audit upstream")
+    df = df_1m.sort_index().copy()
+    df.index.name = "dt"
+
+    valid_1m = df[required].notna().all(axis=1).astype("int8")
+
+    agg_5m = {
+        "timestamp": "first", "open": "first", "high": "max",
+        "low": "min", "close": "last", "volume": "sum",
+    }
+    for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+        if flow_col in df.columns:
+            agg_5m[flow_col] = lambda series: series.sum(min_count=1)
+
+    df_5m = df.resample("5min", label="left", closed="left").agg(agg_5m)
+    valid_5m_count = valid_1m.resample("5min", label="left", closed="left").sum()
+    df_5m = df_5m.loc[valid_5m_count[valid_5m_count == 5].index].dropna(
+        subset=["timestamp", "open", "high", "low", "close", "volume"]
+    ).copy()
+
+    # Preserve explicit absence. A missing order-flow column stays NaN rather than
+    # becoming a bar count or zero-volume imbalance.
+    for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+        if flow_col not in df_5m.columns:
+            df_5m[flow_col] = np.nan
+
+    def _complete_htf(rule: str, expected_minutes: int, include_volume: bool) -> pd.DataFrame:
+        agg = {
+            "timestamp": "first", "open": "first", "high": "max",
+            "low": "min", "close": "last",
+        }
+        if include_volume:
+            agg["volume"] = "sum"
+        resampled = df.resample(rule, label="left", closed="left").agg(agg)
+        valid_count = valid_1m.resample(rule, label="left", closed="left").sum()
+        resampled = resampled.loc[valid_count[valid_count == expected_minutes].index]
+        return resampled.dropna(subset=["open", "high", "low", "close"]).copy()
+
+    df_15m = _complete_htf("15min", 15, include_volume=True)
+    df_1h = _complete_htf("1h", 60, include_volume=True)
+    df_4h = _complete_htf("4h", 240, include_volume=False)
+    return df_5m, df_15m, df_1h, df_4h
+
+
+def merge_completed_htf_features(
+    df_5m: pd.DataFrame,
+    df_15m: pd.DataFrame,
+    df_1h: pd.DataFrame,
+    df_4h: pd.DataFrame,
+) -> pd.DataFrame:
+    """Join HTF indicators only when the source candle has fully closed.
+
+    5m signals are decided at the 5m candle close. All HTF features therefore
+    use an explicit completion/availability timestamp and never the HTF bar-open
+    label. Stale/missing HTF data is represented by NaN.
+    """
+    left = df_5m.copy()
+    left.index.name = "dt"
+    left = left.reset_index().rename(columns={"dt": "dt_open"})
+    left["decision_ts"] = left["dt_open"] + pd.Timedelta(minutes=5)
+    left = left.sort_values("decision_ts")
+
+    right_15m = pd.DataFrame(index=df_15m.index)
+    right_15m["atr_15m"] = df_15m["atr_14"]
+    right_15m["swing_low_15m"] = df_15m["low"].rolling(8, min_periods=8).min()
+    right_15m["swing_high_15m"] = df_15m["high"].rolling(8, min_periods=8).max()
+    right_15m["available_15m_ts"] = right_15m.index + pd.Timedelta(minutes=15)
+    right_15m = right_15m.reset_index(drop=True).sort_values("available_15m_ts")
+
+    right_1h = pd.DataFrame(index=df_1h.index)
+    right_1h["atr_1h"] = df_1h["atr_14"]
+    right_1h["swing_low_1h"] = df_1h["low"].rolling(6, min_periods=6).min()
+    right_1h["swing_high_1h"] = df_1h["high"].rolling(6, min_periods=6).max()
+    right_1h["available_1h_ts"] = right_1h.index + pd.Timedelta(hours=1)
+    right_1h = right_1h.reset_index(drop=True).sort_values("available_1h_ts")
+
+    right_4h = df_4h[["trend_4h"]].copy()
+    right_4h["available_4h_ts"] = right_4h.index + pd.Timedelta(hours=4)
+    right_4h = right_4h.reset_index(drop=True).sort_values("available_4h_ts")
+
+    merged = pd.merge_asof(
+        left, right_15m, left_on="decision_ts", right_on="available_15m_ts", direction="backward"
+    )
+    merged = pd.merge_asof(
+        merged.sort_values("decision_ts"), right_1h,
+        left_on="decision_ts", right_on="available_1h_ts", direction="backward"
+    )
+    merged = pd.merge_asof(
+        merged.sort_values("decision_ts"), right_4h,
+        left_on="decision_ts", right_on="available_4h_ts", direction="backward"
+    )
+
+    # A missing completed interval must not leave an indefinitely stale value in use.
+    for key, maximum_age, feature_columns in (
+        ("available_15m_ts", pd.Timedelta(minutes=15), ["atr_15m", "swing_low_15m", "swing_high_15m"]),
+        ("available_1h_ts", pd.Timedelta(hours=1), ["atr_1h", "swing_low_1h", "swing_high_1h"]),
+        ("available_4h_ts", pd.Timedelta(hours=4), ["trend_4h"]),
+    ):
+        stale = merged[key].isna() | ((merged["decision_ts"] - merged[key]) >= maximum_age)
+        merged.loc[stale, feature_columns] = np.nan
+
+    return merged.set_index("dt_open").sort_index()
 
 
 def compute_benjamini_hochberg(p_values: List[float], alpha: float = 0.05) -> Tuple[List[bool], List[float]]:
@@ -387,44 +507,9 @@ class Phase13DiscoveryEngine:
 
         df_1m = df_1m.sort_index()
 
-        # Resample to 5m, 15m, 1H, 4H causally
-        df_5m = df_1m.resample("5min").agg({
-            "timestamp": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-            "delta_v": "sum" if "delta_v" in df_1m.columns else "count",
-            "aggressive_buy_volume": "sum" if "aggressive_buy_volume" in df_1m.columns else "count",
-            "aggressive_sell_volume": "sum" if "aggressive_sell_volume" in df_1m.columns else "count",
-        }).dropna()
-
-        df_15m = df_1m.resample("15min").agg({
-            "timestamp": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }).dropna()
-
-        df_1h = df_1m.resample("1h").agg({
-            "timestamp": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }).dropna()
-
-        df_4h = df_1m.resample("4h").agg({
-            "timestamp": "first",
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-        }).dropna()
+        # Resample only complete bars; optional order-flow columns remain explicitly unavailable.
+        df_1m.index.name = "dt"
+        df_5m, df_15m, df_1h, df_4h = resample_phase13_bars(df_1m)
 
         # Compute indicators
         df_5m["atr_14"] = compute_atr(df_5m["high"], df_5m["low"], df_5m["close"], 14)
@@ -436,14 +521,14 @@ class Phase13DiscoveryEngine:
         df_5m["vwap"], df_5m["std_vwap"] = compute_vwap(df_5m)
         df_5m["vwap_zscore"] = (df_5m["close"] - df_5m["vwap"]) / df_5m["std_vwap"]
 
-        # 5m CVD acceleration
-        if "delta_v" in df_5m.columns:
-            cvd_1h = df_5m["delta_v"].rolling(12).sum()
+        # 5m CVD acceleration. Never synthesize order flow from bar counts or zeros.
+        if "delta_v" in df_5m.columns and df_5m["delta_v"].notna().any():
+            cvd_1h = df_5m["delta_v"].rolling(12, min_periods=12).sum()
             cvd_mean = cvd_1h.rolling(288, min_periods=24).mean()
-            cvd_std = cvd_1h.rolling(288, min_periods=24).std().replace(0, 1e-6)
-            df_5m["cvd_zscore"] = ((cvd_1h - cvd_mean) / cvd_std).fillna(0.0)
+            cvd_std = cvd_1h.rolling(288, min_periods=24).std().replace(0, np.nan)
+            df_5m["cvd_zscore"] = (cvd_1h - cvd_mean) / cvd_std
         else:
-            df_5m["cvd_zscore"] = 0.0
+            df_5m["cvd_zscore"] = np.nan
 
         # 15m & 1H ATR
         df_15m["atr_14"] = compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
@@ -455,16 +540,8 @@ class Phase13DiscoveryEngine:
         df_4h["trend_4h"] = np.where(df_4h["ema20"] > df_4h["ema50"] * 1.001, "BULL",
                             np.where(df_4h["ema20"] < df_4h["ema50"] * 0.999, "BEAR", "NEUTRAL"))
 
-        # Reindex HTF context onto 5m causally using merge_asof
-        df_5m_reset = df_5m.reset_index()
-        df_15m_reset = df_15m[["atr_14"]].rename(columns={"atr_14": "atr_15m"}).reset_index()
-        df_1h_reset = df_1h[["atr_14"]].rename(columns={"atr_14": "atr_1h"}).reset_index()
-        df_4h_reset = df_4h[["trend_4h"]].reset_index()
-
-        df_merged = pd.merge_asof(df_5m_reset, df_15m_reset, on="dt", direction="backward")
-        df_merged = pd.merge_asof(df_merged, df_1h_reset, on="dt", direction="backward")
-        df_merged = pd.merge_asof(df_merged, df_4h_reset, on="dt", direction="backward")
-        df_5m = df_merged.set_index("dt")
+        # Join higher-timeframe values only at their completion timestamps.
+        df_5m = merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
 
         # Fast arrays for 1m lookups
         timestamps_1m = df_1m["timestamp"].values
@@ -475,26 +552,13 @@ class Phase13DiscoveryEngine:
         n_5m = len(df_5m)
         logger.info("Iterating across %d 5m bars for %s...", n_5m, symbol)
 
-        # Precompute swing arrays for speed
-        # 5m swing high/low over 12 bars (1 hour)
+        # Precompute causal 5m stops and use the completed-HTF features already joined above.
         lows_5m_rolling = df_5m["low"].rolling(12).min().values
         highs_5m_rolling = df_5m["high"].rolling(12).max().values
-
-        # 15m swing structure reindexed
-        lows_15m_rolling = df_15m["low"].rolling(8).min()
-        highs_15m_rolling = df_15m["high"].rolling(8).max()
-        df_15m_swings = pd.DataFrame({"swing_low_15m": lows_15m_rolling, "swing_high_15m": highs_15m_rolling}, index=df_15m.index)
-        df_15m_swings_5m = pd.merge_asof(df_5m_reset[["dt"]], df_15m_swings.reset_index(), on="dt", direction="backward")
-        swing_low_15m_arr = df_15m_swings_5m["swing_low_15m"].values
-        swing_high_15m_arr = df_15m_swings_5m["swing_high_15m"].values
-
-        # 1H swing structure reindexed
-        lows_1h_rolling = df_1h["low"].rolling(6).min()
-        highs_1h_rolling = df_1h["high"].rolling(6).max()
-        df_1h_swings = pd.DataFrame({"swing_low_1h": lows_1h_rolling, "swing_high_1h": highs_1h_rolling}, index=df_1h.index)
-        df_1h_swings_5m = pd.merge_asof(df_5m_reset[["dt"]], df_1h_swings.reset_index(), on="dt", direction="backward")
-        swing_low_1h_arr = df_1h_swings_5m["swing_low_1h"].values
-        swing_high_1h_arr = df_1h_swings_5m["swing_high_1h"].values
+        swing_low_15m_arr = df_5m["swing_low_15m"].values
+        swing_high_15m_arr = df_5m["swing_high_15m"].values
+        swing_low_1h_arr = df_5m["swing_low_1h"].values
+        swing_high_1h_arr = df_5m["swing_high_1h"].values
 
         # Rolling 24h (288 5m bars) volume profile approximate quantile levels
         rolling_close_p30 = df_5m["close"].rolling(288, min_periods=50).quantile(0.30).values
@@ -513,12 +577,15 @@ class Phase13DiscoveryEngine:
             low_p = float(df_5m["low"].iloc[i])
             atr_5m = float(df_5m["atr_14"].iloc[i])
             atr_50 = float(df_5m["atr_50"].iloc[i])
-            atr_15m = float(df_5m["atr_15m"].iloc[i]) if not np.isnan(df_5m["atr_15m"].iloc[i]) else atr_5m
-            atr_1h = float(df_5m["atr_1h"].iloc[i]) if not np.isnan(df_5m["atr_1h"].iloc[i]) else atr_5m * 2.0
+            atr_15m_value = df_5m["atr_15m"].iloc[i]
+            atr_1h_value = df_5m["atr_1h"].iloc[i]
+            atr_15m = float(atr_15m_value) if pd.notna(atr_15m_value) and float(atr_15m_value) > 0 else float("nan")
+            atr_1h = float(atr_1h_value) if pd.notna(atr_1h_value) and float(atr_1h_value) > 0 else float("nan")
             rvol = float(df_5m["rvol"].iloc[i])
             cvd_z = float(df_5m["cvd_zscore"].iloc[i])
             vwap_z = float(df_5m["vwap_zscore"].iloc[i])
-            trend_4h = str(df_5m["trend_4h"].iloc[i])
+            trend_value = df_5m["trend_4h"].iloc[i]
+            trend_4h = str(trend_value) if pd.notna(trend_value) else "NOT_AVAILABLE"
 
             if atr_5m <= 0:
                 continue
@@ -606,11 +673,16 @@ class Phase13DiscoveryEngine:
             ts_close = ts_bar + 5 * 60 * 1000
             idx_1m = np.searchsorted(timestamps_1m, ts_close)
 
-            # Ensure we have at least 120 1m bars forward
-            if idx_1m + 120 > len(timestamps_1m):
+            # Do not shift a missing timestamp forward or treat gaps as continuous 1m outcomes.
+            if idx_1m + 120 > len(timestamps_1m) or idx_1m >= len(timestamps_1m):
+                continue
+            if int(timestamps_1m[idx_1m]) != ts_close:
+                continue
+            future_timestamps = np.asarray(timestamps_1m[idx_1m:idx_1m + 120], dtype=np.int64)
+            if len(future_timestamps) != 120 or not np.all(np.diff(future_timestamps) == 60_000):
                 continue
 
-            # Slice forward 120 1m bars
+            # Slice forward 120 contiguous 1m bars
             forward_bars = [
                 {"open": closes_1m[idx_1m + k - 1] if k > 0 else close_p,
                  "high": highs_1m[idx_1m + k],
@@ -624,13 +696,16 @@ class Phase13DiscoveryEngine:
             sl_5m_long = float(lows_5m_rolling[i - 1]) if not np.isnan(lows_5m_rolling[i - 1]) else close_p - 1.5 * atr_5m
             sl_5m_short = float(highs_5m_rolling[i - 1]) if not np.isnan(highs_5m_rolling[i - 1]) else close_p + 1.5 * atr_5m
 
-            # 15m swing
-            sl_15m_long = float(swing_low_15m_arr[i - 1]) if not np.isnan(swing_low_15m_arr[i - 1]) else close_p - 2.0 * atr_5m
-            sl_15m_short = float(swing_high_15m_arr[i - 1]) if not np.isnan(swing_high_15m_arr[i - 1]) else close_p + 2.0 * atr_5m
+            # HTF swing stops are unavailable until enough fully closed HTF bars exist.
+            sl_15m_low = swing_low_15m_arr[i - 1]
+            sl_15m_high = swing_high_15m_arr[i - 1]
+            sl_15m_long = float(sl_15m_low) if pd.notna(sl_15m_low) and np.isfinite(sl_15m_low) else None
+            sl_15m_short = float(sl_15m_high) if pd.notna(sl_15m_high) and np.isfinite(sl_15m_high) else None
 
-            # 1H swing
-            sl_1h_long = float(swing_low_1h_arr[i - 1]) if not np.isnan(swing_low_1h_arr[i - 1]) else close_p - 3.0 * atr_5m
-            sl_1h_short = float(swing_high_1h_arr[i - 1]) if not np.isnan(swing_high_1h_arr[i - 1]) else close_p + 3.0 * atr_5m
+            sl_1h_low = swing_low_1h_arr[i - 1]
+            sl_1h_high = swing_high_1h_arr[i - 1]
+            sl_1h_long = float(sl_1h_low) if pd.notna(sl_1h_low) and np.isfinite(sl_1h_low) else None
+            sl_1h_short = float(sl_1h_high) if pd.notna(sl_1h_high) and np.isfinite(sl_1h_high) else None
 
             # ATR envelope
             sl_atr_long = close_p - 1.5 * atr_5m
@@ -658,6 +733,7 @@ class Phase13DiscoveryEngine:
                     volume_5m=float(df_5m["volume"].iloc[i]),
                     rvol_5m=rvol,
                     cvd_zscore=cvd_z,
+                    cvd_data_status="AVAILABLE" if np.isfinite(cvd_z) else "NOT_AVAILABLE",
                     vwap_deviation_sigma=vwap_z,
                     htf_trend_4h=trend_4h,
                     htf_aligned=htf_aligned,
@@ -739,6 +815,9 @@ class Phase13DiscoveryEngine:
                 ]
 
                 for stop_model_name, sl_price in stop_candidates:
+                    # Do not substitute a lower-timeframe ATR stop for a missing HTF swing.
+                    if sl_price is None or not np.isfinite(float(sl_price)):
+                        continue
                     # Enforce directional sanity
                     if is_long and sl_price >= close_p:
                         sl_price = close_p - 1.0 * atr_5m
@@ -803,8 +882,8 @@ class Phase13DiscoveryEngine:
                         sl_distance_price=sl_dist_price,
                         sl_distance_pct=sl_dist_pct,
                         sl_distance_atr_5m=sl_dist_price / max(1e-6, atr_5m),
-                        sl_distance_atr_15m=sl_dist_price / max(1e-6, atr_15m),
-                        sl_distance_atr_1h=sl_dist_price / max(1e-6, atr_1h),
+                        sl_distance_atr_15m=(sl_dist_price / atr_15m) if np.isfinite(atr_15m) and atr_15m > 0 else float("nan"),
+                        sl_distance_atr_1h=(sl_dist_price / atr_1h) if np.isfinite(atr_1h) and atr_1h > 0 else float("nan"),
                         stop_regime=stop_regime,
                         rr=1.5,
                         resumption_class=res_class,
