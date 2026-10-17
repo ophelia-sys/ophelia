@@ -1,0 +1,3585 @@
+================================================================================
+FILE: AGENTS.md
+================================================================================
+# AGENTS.md
+> This document is the authoritative engineering guide for Ophelia.
+>
+> When repository code conflicts with this document,
+> preserve the repository unless the user explicitly requests an architectural change.
+>
+> AI agents should treat this file as mandatory guidance rather than optional documentation.
+
+# Ophelia AI Development Guide
+
+Version: 1.0
+
+Applies to:
+- GitHub Copilot
+- GitHub Copilot Agent
+- ChatGPT Codex
+- Claude Code
+- Gemini CLI
+- Continue.dev
+- Aider
+- Any autonomous coding agent
+
+---
+
+# PROJECT MISSION
+
+Ophelia is a production-grade algorithmic cryptocurrency trading system
+built specifically for BingX Perpetual Swap Futures.
+
+The objective is NOT simply to place trades.
+
+The objective is to build a trading platform that is:
+
+- deterministic
+- modular
+- fully typed
+- testable
+- maintainable
+- production safe
+
+Every code change must improve the quality of the platform.
+
+Never trade short-term convenience for long-term maintainability.
+
+---
+
+# PRIMARY GOALS
+
+Every contribution should improve one or more of the following:
+
+• correctness
+
+• readability
+
+• maintainability
+
+• type safety
+
+• reliability
+
+• reproducibility
+
+• operational safety
+
+If a proposed change makes any of these worse,
+do not implement it.
+
+---
+
+# CORE DESIGN PHILOSOPHY
+
+Ophelia follows a layered architecture.
+
+External systems must never leak into internal logic.
+
+Exchange payloads are external.
+
+Trading logic is internal.
+
+Serialization is the boundary.
+
+Every AI agent must preserve that boundary.
+
+---
+
+# ARCHITECTURE PRINCIPLE
+
+Flow of information:
+
+User
+↓
+
+Strategy
+
+↓
+
+Risk Management
+
+↓
+
+Order Request
+
+↓
+
+Validator
+
+↓
+
+BingXClient
+
+↓
+
+BingX REST API
+
+↓
+
+Serializer
+
+↓
+
+Typed Models
+
+↓
+
+Trading Logic
+
+No component may bypass another layer.
+
+---
+
+# GOLDEN RULES
+
+Never:
+
+- redesign the architecture
+- introduce shortcuts
+- duplicate business logic
+- bypass validation
+- bypass serialization
+- return raw exchange payloads
+- add hidden state
+- modify unrelated files
+
+Always:
+
+- preserve architecture
+- preserve public APIs
+- preserve strong typing
+- preserve separation of concerns
+
+---
+
+# PROJECT STATUS
+
+The project is currently under active development.
+
+Architecture is considered stable.
+
+Implementation is ongoing.
+
+Refactoring is permitted only when explicitly requested.
+
+Large redesigns are prohibited.
+
+---
+
+# CODING STANDARD
+
+Every contribution must satisfy all of the following:
+
+✓ readable
+
+✓ strongly typed
+
+✓ documented
+
+✓ minimal
+
+✓ deterministic
+
+✓ testable
+
+✓ production-safe
+
+---
+
+# MODIFICATION RULES
+
+AI agents must make the smallest change necessary.
+
+Do not refactor unrelated code.
+
+Do not rename files without explicit permission.
+
+Do not reorganize folders.
+
+Do not delete existing modules unless instructed.
+
+Do not introduce new dependencies unless requested.
+
+---
+
+# FILE OWNERSHIP
+
+Each module has one responsibility.
+
+Do not merge responsibilities.
+
+One file should solve one problem.
+
+Examples:
+
+exchange/
+    BingX communication only
+
+models/
+    typed data models only
+
+strategies/
+    signal generation only
+
+portfolio/
+    portfolio state only
+
+risk/
+    risk calculations only
+
+core/
+    orchestration only
+
+utils/
+    generic reusable helpers only
+
+---
+
+# SAFETY FIRST
+
+This repository is intended to manage real money.
+
+Every change must assume:
+
+A mistake can place a live trade.
+
+Therefore:
+
+Prefer rejecting invalid operations over guessing.
+
+Prefer explicit validation over implicit behavior.
+
+Prefer failing safely over continuing with unknown state.
+
+Never silently ignore exchange errors.
+
+Never swallow exceptions.
+
+Never retry order placement blindly.
+
+Always assume financial safety is the highest priority.
+
+---
+
+# REPOSITORY STRUCTURE
+
+The repository follows a layered architecture.
+
+Every layer has a single responsibility.
+
+Do not move responsibilities across layers.
+
+```
+app/
+```
+
+Application startup and dependency wiring.
+
+Responsibilities:
+
+- construct application
+- dependency injection
+- initialize services
+
+Must NOT:
+
+- contain trading logic
+- call BingX directly
+- implement strategies
+
+---
+
+```
+exchange/
+```
+
+Exchange communication only.
+
+Responsibilities:
+
+- REST API
+- request signing
+- authentication
+- retries
+- rate limiting
+- response retrieval
+
+Must NOT:
+
+- calculate indicators
+- evaluate signals
+- contain strategy logic
+- make portfolio decisions
+
+Only this layer communicates with BingX.
+
+---
+
+```
+models/
+```
+
+Typed domain objects.
+
+Responsibilities:
+
+- dataclasses
+- serialization targets
+- immutable business objects when practical
+
+Examples:
+
+- Position
+- OrderRequest
+- OrderResponse
+- Balance
+- Contract
+- Ticker
+
+Models must not contain business logic.
+
+---
+
+```
+core/
+```
+
+Business orchestration.
+
+Coordinates the system.
+
+Examples:
+
+- TradingEngine
+- Validator
+- Scanner
+- Serializer
+
+Must never communicate with BingX directly.
+
+Always use BingXClient.
+
+---
+
+```
+strategies/
+```
+
+Signal generation.
+
+A strategy answers only one question:
+
+Should a trade be opened?
+
+Strategies must not:
+
+- place orders
+- close orders
+- modify positions
+- manage risk
+
+Strategies return signals only.
+
+---
+
+```
+risk/
+```
+
+Risk calculations only.
+
+Examples:
+
+- position sizing
+- leverage checks
+- stop calculations
+- liquidation safety
+
+Risk modules never communicate with BingX.
+
+---
+
+```
+portfolio/
+```
+
+Portfolio state.
+
+Responsibilities:
+
+- open positions
+- closed positions
+- exposure
+- realized pnl
+- unrealized pnl
+
+Portfolio should never call the exchange.
+
+---
+
+```
+paper/
+```
+
+Paper trading implementation.
+
+PaperBroker should behave as closely as possible to BingX.
+
+Differences between paper and live execution should be minimized.
+
+---
+
+```
+dashboard/
+```
+
+Visualization only.
+
+Never place trades.
+
+Never modify portfolio state.
+
+Never call exchange endpoints directly.
+
+---
+
+# DEPENDENCY DIRECTION
+
+Dependencies always point downward.
+
+Correct:
+
+Strategy
+
+↓
+
+TradingEngine
+
+↓
+
+Validator
+
+↓
+
+BingXClient
+
+Incorrect:
+
+Strategy
+
+↓
+
+BingXClient
+
+---
+
+# IMPORT RULES
+
+Higher layers may depend on lower layers.
+
+Lower layers must never depend on higher layers.
+
+Forbidden:
+
+exchange/
+imports
+strategies/
+
+Forbidden:
+
+models/
+imports
+exchange/
+
+Forbidden:
+
+risk/
+imports
+dashboard/
+
+Allowed:
+
+TradingEngine
+↓
+
+Strategy
+
+Allowed:
+
+TradingEngine
+↓
+
+RiskManager
+
+Allowed:
+
+TradingEngine
+↓
+
+Portfolio
+
+Allowed:
+
+TradingEngine
+↓
+
+BingXClient
+
+---
+
+# SERIALIZATION BOUNDARY
+
+Raw BingX JSON must stop inside the exchange layer.
+
+Immediately convert responses into typed models.
+
+Never expose raw API payloads outside exchange/ unless explicitly intended for low-level debugging.
+
+Preferred:
+
+REST JSON
+
+↓
+
+Serializer
+
+↓
+
+Position
+
+↓
+
+TradingEngine
+
+Never:
+
+REST JSON
+
+↓
+
+Strategy
+
+---
+
+# MODIFICATION PRIORITY
+
+When modifying the project:
+
+1. Preserve architecture.
+2. Preserve public APIs.
+3. Preserve type safety.
+4. Preserve deterministic behavior.
+5. Preserve backward compatibility where practical.
+
+Only after these goals are satisfied should new features be added.
+
+---
+
+# WHEN IN DOUBT
+
+If multiple implementations are possible:
+
+Choose the one that:
+
+- reduces coupling
+- improves readability
+- improves typing
+- minimizes side effects
+- keeps responsibilities isolated
+
+Never optimize prematurely.
+
+Prefer maintainability over cleverness.
+
+---
+
+# BINGX API CONTRACT
+
+This repository communicates exclusively with the BingX Perpetual Futures API.
+
+The exchange layer is the only location where HTTP requests are permitted.
+
+Never call BingX directly from any other module.
+
+---
+
+# EXCHANGE LAYER
+
+All REST communication must flow through:
+
+exchange/BingXClient.py
+
+Responsibilities:
+
+- authentication
+- request signing
+- session management
+- retries
+- timeout handling
+- rate limiting
+- response validation
+- serialization
+
+No other module should implement HTTP requests.
+
+---
+
+# AUTHENTICATION
+
+Authentication is handled only by BingXClient.
+
+Never duplicate:
+
+- HMAC signing
+- timestamp generation
+- API key injection
+- session configuration
+
+Every authenticated request must use the shared signing implementation.
+
+---
+
+# REQUEST FLOW
+
+Every request follows the same lifecycle.
+
+TradingEngine
+
+↓
+
+Validator
+
+↓
+
+BingXClient
+
+↓
+
+HTTP Request
+
+↓
+
+HTTP Response
+
+↓
+
+Serializer
+
+↓
+
+Typed Model
+
+↓
+
+TradingEngine
+
+No layer may bypass another.
+
+---
+
+# ENDPOINT OWNERSHIP
+
+Each endpoint should have exactly one implementation.
+
+Correct:
+
+BingXClient.get_balance()
+
+Incorrect:
+
+MarketData.get_balance()
+
+Incorrect:
+
+TradingEngine.get_balance()
+
+Incorrect:
+
+Strategy.get_balance()
+
+---
+
+# RAW JSON
+
+Raw exchange payloads are external data.
+
+They are never business objects.
+
+Immediately convert exchange responses into typed models.
+
+Never expose raw dictionaries outside the exchange layer unless explicitly required for debugging.
+
+Preferred:
+
+JSON
+
+↓
+
+Serializer
+
+↓
+
+Position
+
+Incorrect:
+
+JSON
+
+↓
+
+Strategy
+
+---
+
+# SERIALIZER
+
+Serializer is the translation layer.
+
+Responsibilities:
+
+- normalize BingX payloads
+- map JSON to models
+- convert arrays to objects
+- convert numeric strings
+- handle optional fields
+
+Serializer must never:
+
+- place trades
+- validate strategies
+- manage portfolio
+
+---
+
+# VALIDATION
+
+Every outbound request must be validated before submission.
+
+Validator checks:
+
+- symbol
+- leverage
+- quantity
+- side
+- position side
+- stop values
+- take profit
+- order type
+
+Never submit invalid requests.
+
+Reject them early.
+
+---
+
+# GET REQUESTS
+
+GET requests are safe to retry when appropriate.
+
+Examples:
+
+- balance
+- ticker
+- contracts
+- positions
+- klines
+
+Retry only network failures or transient server errors.
+
+Never hide repeated failures.
+
+---
+
+# POST REQUESTS
+
+POST requests are NOT automatically safe.
+
+Examples:
+
+- place order
+- cancel order
+- close position
+
+Never blindly retry POST requests.
+
+Doing so may create duplicate orders.
+
+If retries are implemented:
+
+- use clientOrderId
+- ensure idempotent behavior
+- verify order status before retrying
+
+Financial safety is more important than request completion.
+
+---
+
+# DELETE REQUESTS
+
+DELETE requests should verify success before reporting completion.
+
+Never assume success.
+
+Always inspect the response.
+
+---
+
+# TIMEOUTS
+
+Timeouts must produce explicit errors.
+
+Never silently continue.
+
+Never fabricate successful responses.
+
+---
+
+# ERROR HANDLING
+
+Every BingX error should become a typed exception.
+
+Examples:
+
+AuthenticationError
+
+RateLimitError
+
+OrderRejected
+
+ValidationError
+
+NetworkError
+
+TimeoutError
+
+Avoid raising generic Exception where a domain-specific exception is appropriate.
+
+---
+
+# RATE LIMITS
+
+Respect BingX rate limits.
+
+Never implement busy loops.
+
+Preferred behavior:
+
+request
+
+↓
+
+429
+
+↓
+
+backoff
+
+↓
+
+retry
+
+Avoid hammering the API.
+
+---
+
+# MARKET DATA
+
+Market data must remain read-only.
+
+Responsibilities:
+
+- ticker
+- contracts
+- candles
+- funding
+- open interest
+
+MarketData must never place orders.
+
+---
+
+# ORDER MANAGEMENT
+
+Order placement belongs only inside the exchange layer.
+
+Responsibilities:
+
+- create orders
+- cancel orders
+- modify orders
+- close positions
+
+No strategy may submit REST requests directly.
+
+---
+
+# CANDLE NORMALIZATION
+
+BingX may return candles as arrays.
+
+Normalize every candle into a typed object before it reaches strategy logic.
+
+Strategy code should never know the original REST payload format.
+
+---
+
+# VERSION DIFFERENCES
+
+Different BingX API versions may expose different payload structures.
+
+Normalize every version inside Serializer.
+
+Never leak version-specific behavior into strategy logic.
+
+Strategy code should behave identically regardless of API version.
+
+---
+
+# LOGGING
+
+Log:
+
+- endpoint
+- latency
+- HTTP status
+- exchange code
+- exchange message
+
+Never log:
+
+- API secrets
+- signatures
+- private keys
+- authentication tokens
+
+Sensitive credentials must never appear in logs.
+
+---
+
+# TESTABILITY
+
+Exchange communication must remain mockable.
+
+TradingEngine should operate correctly when BingXClient is replaced by a fake implementation.
+
+Never tightly couple business logic to live HTTP requests.
+
+---
+
+# FUTURE COMPATIBILITY
+
+Future exchange integrations should require replacing only the exchange layer.
+
+Strategies, portfolio, risk management, and trading engine should remain exchange-independent.
+
+---
+
+# TYPED MODEL CONTRACT
+
+All business objects must be represented as strongly typed models.
+
+Never pass raw dictionaries through business logic.
+
+Typed models define the language of the application.
+
+---
+
+# MODEL RESPONSIBILITIES
+
+Models represent data.
+
+Models do NOT perform business decisions.
+
+Models should not:
+
+- place trades
+- call BingX
+- calculate indicators
+- manage positions
+- perform REST requests
+
+Models describe state only.
+
+---
+
+# MODEL DESIGN
+
+Prefer:
+
+- dataclasses
+- explicit typing
+- immutable fields when practical
+- descriptive names
+
+Avoid:
+
+- Any
+- dynamic attributes
+- hidden state
+- magic fields
+
+Every attribute must have an explicit type.
+
+---
+
+# REQUIRED MODELS
+
+The repository should expose strongly typed models for:
+
+Balance
+
+Contract
+
+Ticker
+
+Position
+
+OrderRequest
+
+OrderResponse
+
+Trade
+
+TradeFill
+
+Kline
+
+Account
+
+Leverage
+
+Margin
+
+Funding
+
+Additional models should follow the same conventions.
+
+---
+
+# FROM_API()
+
+Every exchange model should expose:
+
+from_api()
+
+Example:
+
+REST JSON
+
+↓
+
+Position.from_api()
+
+↓
+
+Position
+
+Never deserialize inside business logic.
+
+---
+
+# TO_API()
+
+Request models may expose:
+
+to_api()
+
+Example:
+
+OrderRequest
+
+↓
+
+to_api()
+
+↓
+
+Dictionary
+
+↓
+
+BingXClient
+
+Business logic should never manually build REST payloads.
+
+---
+
+# SERIALIZATION RULE
+
+Only Serializer and model conversion methods may understand BingX payload structure.
+
+Business logic must never depend on JSON field names.
+
+Correct:
+
+Position.average_price
+
+Incorrect:
+
+position["avgPrice"]
+
+---
+
+# OPTIONAL FIELDS
+
+Exchange APIs evolve.
+
+Models should gracefully support optional fields.
+
+Use explicit defaults.
+
+Never assume every key exists.
+
+---
+
+# TYPE CONVERSION
+
+Convert immediately.
+
+Examples:
+
+"123.45"
+
+↓
+
+123.45
+
+"20"
+
+↓
+
+20
+
+Never leave numeric values as strings.
+
+---
+
+# ENUMS
+
+Avoid magic strings.
+
+Preferred:
+
+OrderSide.BUY
+
+instead of
+
+"BUY"
+
+Preferred:
+
+PositionSide.LONG
+
+instead of
+
+"LONG"
+
+Use Enum whenever values are finite.
+
+---
+
+# MODEL VALIDATION
+
+Models should reject impossible states.
+
+Examples:
+
+negative quantity
+
+invalid leverage
+
+missing symbol
+
+unknown side
+
+Invalid objects should never enter business logic.
+
+---
+
+# IMMUTABILITY
+
+Prefer immutable models for:
+
+Orders
+
+Trades
+
+Contracts
+
+Ticker
+
+Market Data
+
+Mutable models should be limited to objects whose state naturally changes.
+
+Examples:
+
+Portfolio
+
+PaperPosition
+
+TradingSession
+
+---
+
+# EQUALITY
+
+Dataclasses should compare by value.
+
+Avoid custom equality unless required.
+
+---
+
+# STRING REPRESENTATION
+
+Every important model should provide useful debugging output.
+
+Readable:
+
+Position(
+    symbol="BTC-USDT",
+    side=LONG,
+    quantity=0.01
+)
+
+Not:
+
+<Position object at 0x7F2A...>
+
+---
+
+# MODEL SIZE
+
+Keep models focused.
+
+Large models should be decomposed.
+
+Avoid "God Objects."
+
+---
+
+# MODEL OWNERSHIP
+
+Each model owns its own conversion logic.
+
+Example:
+
+Position.from_api()
+
+Balance.from_api()
+
+Contract.from_api()
+
+Avoid placing conversion logic in unrelated modules.
+
+---
+
+# VERSION COMPATIBILITY
+
+Models should normalize differences between API versions.
+
+Business logic should never know whether data came from:
+
+V2
+
+V3
+
+future versions
+
+Normalization belongs inside conversion.
+
+---
+
+# NO HIDDEN BEHAVIOR
+
+Models should be predictable.
+
+Constructors should not:
+
+- place trades
+- perform validation against the exchange
+- execute HTTP requests
+
+Construction must remain lightweight.
+
+---
+
+# MODEL TESTING
+
+Every model should have unit tests verifying:
+
+- parsing
+- optional fields
+- missing fields
+- invalid fields
+- serialization
+- equality
+- string representation
+
+---
+
+# FUTURE EXPANSION
+
+When adding new models:
+
+- keep naming consistent
+- use dataclasses
+- preserve typing
+- add from_api()
+- add tests
+- document fields
+- avoid duplicate concepts
+
+---
+
+# TRADING ENGINE CONTRACT
+
+TradingEngine is the central coordinator of Ophelia.
+
+It orchestrates the trading system.
+
+It does NOT contain strategy logic.
+
+It does NOT communicate directly with REST endpoints.
+
+Its responsibility is coordination.
+
+---
+
+# TRADING ENGINE RESPONSIBILITIES
+
+TradingEngine is responsible for:
+
+- scheduling
+- orchestration
+- scanner execution
+- strategy execution
+- portfolio updates
+- risk checks
+- order submission
+- position monitoring
+
+TradingEngine should remain thin.
+
+Business logic belongs elsewhere.
+
+---
+
+# SIGNAL LIFECYCLE
+
+Every trade begins with a signal.
+
+Signal
+
+↓
+
+Validation
+
+↓
+
+Risk
+
+↓
+
+Order Request
+
+↓
+
+Exchange
+
+↓
+
+Serializer
+
+↓
+
+Portfolio
+
+Never skip a stage.
+
+---
+
+# STRATEGIES
+
+A strategy generates signals only.
+
+Strategies answer one question:
+
+Should a position be opened?
+
+Strategies must never:
+
+- place orders
+- close positions
+- manage stops
+- modify portfolio
+- calculate position size
+- communicate with BingX
+
+Strategies return typed signals.
+
+Nothing more.
+
+---
+
+# STRATEGY INPUT
+
+Strategies consume:
+
+- candles
+- indicators
+- market data
+
+Strategies should never receive:
+
+REST payloads
+
+raw dictionaries
+
+HTTP responses
+
+API clients
+
+---
+
+# STRATEGY OUTPUT
+
+Preferred output:
+
+TradeSignal
+
+Example fields:
+
+- symbol
+
+- side
+
+- confidence
+
+- timestamp
+
+- reason
+
+Never return raw dictionaries.
+
+---
+
+# SCANNER
+
+Scanner evaluates strategies.
+
+Responsibilities:
+
+- fetch market data
+- execute strategies
+- collect signals
+
+Scanner must not:
+
+- place trades
+- calculate risk
+- modify portfolio
+
+---
+
+# VALIDATION
+
+Every signal must pass validation.
+
+Validator confirms:
+
+- supported symbol
+- valid timeframe
+- quantity
+- leverage
+- stop values
+- take profit values
+
+Invalid signals never reach the exchange.
+
+---
+
+# RISK MANAGER
+
+RiskManager decides whether a trade is allowed.
+
+Responsibilities:
+
+- exposure
+- leverage
+- position sizing
+- liquidation safety
+- maximum positions
+- drawdown limits
+
+RiskManager never generates signals.
+
+RiskManager never submits orders.
+
+---
+
+# POSITION SIZING
+
+Position size belongs only inside RiskManager.
+
+Never calculate position size inside:
+
+Strategy
+
+TradingEngine
+
+Portfolio
+
+PaperBroker
+
+---
+
+# ORDER CREATION
+
+OrderRequest should be built after:
+
+signal
+
+↓
+
+validation
+
+↓
+
+risk
+
+↓
+
+OrderRequest
+
+↓
+
+BingXClient
+
+---
+
+# PORTFOLIO
+
+Portfolio represents current account state.
+
+Responsibilities:
+
+- open positions
+- closed positions
+- realized pnl
+- unrealized pnl
+- exposure
+- statistics
+
+Portfolio should not communicate with BingX.
+
+---
+
+# POSITION MANAGER
+
+PositionManager manages existing positions.
+
+Responsibilities:
+
+- stop updates
+- trailing stop
+- take profit
+- breakeven
+- position close
+
+PositionManager does not generate entries.
+
+---
+
+# PAPER BROKER
+
+PaperBroker should mimic BingX.
+
+Differences should be minimal.
+
+PaperBroker should:
+
+- fill orders
+- maintain positions
+- calculate pnl
+- simulate fees
+- simulate leverage
+
+PaperBroker should expose the same interface as BingXClient whenever practical.
+
+---
+
+# ORDER LIFECYCLE
+
+Signal
+
+↓
+
+Validated
+
+↓
+
+Risk Approved
+
+↓
+
+OrderRequest
+
+↓
+
+Exchange
+
+↓
+
+OrderResponse
+
+↓
+
+Portfolio Update
+
+↓
+
+Position Monitoring
+
+↓
+
+Exit Signal
+
+↓
+
+Close Position
+
+↓
+
+Trade Journal
+
+Never skip intermediate stages.
+
+---
+
+# POSITION LIFECYCLE
+
+Open
+
+↓
+
+Active
+
+↓
+
+Protected
+
+↓
+
+Trailing
+
+↓
+
+Closing
+
+↓
+
+Closed
+
+Every state transition should be explicit.
+
+---
+
+# REVERSALS
+
+If strategy supports reversals:
+
+LONG
+
+↓
+
+Close LONG
+
+↓
+
+Confirm close
+
+↓
+
+Open SHORT
+
+Never assume the first order succeeded.
+
+---
+
+# TRAILING STOPS
+
+Trailing logic belongs inside PositionManager.
+
+Strategies should not modify trailing stops.
+
+---
+
+# EXIT LOGIC
+
+Exit decisions may originate from:
+
+- strategy
+- stop loss
+- take profit
+- trailing stop
+- liquidation prevention
+- manual intervention
+
+All exits follow the same order submission pipeline.
+
+---
+
+# MARKET DATA
+
+TradingEngine never manipulates raw candles.
+
+MarketData normalizes:
+
+- candles
+- ticker
+- funding
+- contracts
+
+Strategies consume normalized data only.
+
+---
+
+# STATE MANAGEMENT
+
+Avoid hidden global state.
+
+Prefer explicit state objects.
+
+Every position should have a single owner.
+
+---
+
+# CONCURRENCY
+
+If concurrency is introduced:
+
+Protect:
+
+- portfolio
+- positions
+- order queue
+
+Avoid race conditions.
+
+Never allow duplicate order submission.
+
+---
+
+# LOGGING
+
+Every significant trading event should be logged.
+
+Examples:
+
+Signal generated
+
+Risk rejected
+
+Order submitted
+
+Order rejected
+
+Position opened
+
+Position closed
+
+Trailing updated
+
+Never log secrets.
+
+---
+
+# FAILURE HANDLING
+
+Failures should be explicit.
+
+Examples:
+
+Network failure
+
+↓
+
+Retry if safe
+
+↓
+
+Abort if unsafe
+
+↓
+
+Log
+
+↓
+
+Notify
+
+Never silently ignore failures.
+
+---
+
+# LIVE TRADING
+
+LIVE_TRADING is disabled by default.
+
+AI agents must never enable live trading.
+
+Any change affecting live execution requires explicit user approval.
+
+---
+
+# FUTURE FEATURES
+
+Future additions should integrate through existing contracts.
+
+Do not bypass:
+
+TradingEngine
+
+Validator
+
+RiskManager
+
+Serializer
+
+Portfolio
+
+Maintain the architecture as the system grows.
+
+---
+
+# DEVELOPMENT WORKFLOW
+
+All development must follow a predictable workflow.
+
+The objective is reliability rather than speed.
+
+Never sacrifice code quality for faster implementation.
+
+---
+
+# TASK SIZE
+
+AI agents should complete one logical task at a time.
+
+Examples of good tasks:
+
+- Fix one MyPy error
+- Implement one model
+- Implement one endpoint
+- Update one strategy
+- Add one unit test
+- Fix one bug
+
+Avoid:
+
+- "Fix the whole repository"
+- "Rewrite everything"
+- Large unrelated refactors
+
+---
+
+# BEFORE WRITING CODE
+
+Before making changes, understand:
+
+- the affected module
+- dependencies
+- public API
+- existing architecture
+
+Read surrounding code before editing.
+
+Never assume.
+
+---
+
+# CHANGE SCOPE
+
+Modify only files required for the requested task.
+
+Avoid touching unrelated files.
+
+Small pull requests are preferred.
+
+---
+
+# PUBLIC API
+
+Public APIs are considered stable.
+
+Never rename:
+
+- public classes
+- public methods
+- public modules
+
+unless explicitly instructed.
+
+Backward compatibility is preferred.
+
+---
+
+# BRANCH STRATEGY
+
+Every feature should have its own branch.
+
+Example:
+
+feature/market-data
+
+feature/risk-manager
+
+fix/mypy-position
+
+fix/order-validation
+
+Avoid committing unrelated work together.
+
+---
+
+# COMMITS
+
+Commits should represent one logical change.
+
+Good:
+
+Fix Position.from_api parsing
+
+Add trailing stop validation
+
+Implement FundingRate model
+
+Bad:
+
+Misc fixes
+
+Updates
+
+Changes
+
+---
+
+# PULL REQUESTS
+
+One pull request should solve one problem.
+
+Every PR should include:
+
+- purpose
+- affected modules
+- testing performed
+- remaining work
+
+Large PRs should be avoided.
+
+---
+
+# CODE STYLE
+
+Follow existing repository style.
+
+Prefer consistency over personal preference.
+
+Do not introduce a new coding style.
+
+---
+
+# TYPE HINTS
+
+Every new function must include type hints.
+
+Avoid:
+
+Any
+
+Prefer:
+
+Optional
+
+Literal
+
+Enum
+
+Typed dataclasses
+
+Protocols where appropriate
+
+---
+
+# DOCUMENTATION
+
+Public classes should include docstrings.
+
+Public methods should explain:
+
+- purpose
+- arguments
+- return value
+
+Complex algorithms should explain reasoning.
+
+Avoid redundant comments.
+
+---
+
+# LOGGING
+
+Log meaningful events.
+
+Do not log every line.
+
+Logs should help diagnose failures.
+
+Never expose:
+
+API keys
+
+Secrets
+
+Private tokens
+
+Signatures
+
+Passwords
+
+---
+
+# TESTING
+
+When modifying behavior:
+
+Update or add tests.
+
+Verify:
+
+happy path
+
+edge cases
+
+invalid input
+
+error handling
+
+Avoid reducing test coverage.
+
+---
+
+# STATIC ANALYSIS
+
+Before considering work complete:
+
+Run:
+
+ruff check .
+
+Run:
+
+mypy .
+
+Run:
+
+pytest
+
+when applicable.
+
+Resolve new warnings before submission.
+
+---
+
+# PERFORMANCE
+
+Do not optimize prematurely.
+
+Correctness comes first.
+
+Optimize only when:
+
+- measured
+- justified
+- documented
+
+---
+
+# DEPENDENCIES
+
+Avoid adding third-party libraries.
+
+Before introducing a dependency:
+
+Ask:
+
+Can the standard library solve this?
+
+Minimize dependency footprint.
+
+---
+
+# ERROR HANDLING
+
+Never hide exceptions.
+
+Raise meaningful domain-specific exceptions.
+
+Avoid generic Exception.
+
+Prefer:
+
+ValidationError
+
+OrderRejected
+
+AuthenticationError
+
+PositionError
+
+etc.
+
+---
+
+# CODE REVIEW CHECKLIST
+
+Before considering a task complete:
+
+✓ Architecture preserved
+
+✓ Public API preserved
+
+✓ Type hints complete
+
+✓ Validation maintained
+
+✓ Serializer unchanged unless required
+
+✓ No duplicate code introduced
+
+✓ No unrelated refactoring
+
+✓ Ruff passes
+
+✓ MyPy passes
+
+✓ Tests updated if needed
+
+---
+
+# DEFINITION OF DONE
+
+A task is complete only if:
+
+- implementation finished
+- code reviewed
+- static analysis clean
+- tests updated
+- documentation updated if required
+- no architectural violations introduced
+
+Working code alone is not sufficient.
+
+---
+
+# AI AGENT OPERATING RULES
+
+This section defines how AI coding agents must behave while working on
+the Ophelia repository.
+
+These rules override convenience.
+
+Never optimize for speed at the expense of correctness.
+
+---
+
+# GENERAL BEHAVIOR
+
+AI agents are contributors.
+
+Not architects.
+
+Do not redesign the repository unless explicitly instructed.
+
+Improve the implementation.
+
+Preserve the design.
+
+---
+
+# UNDERSTAND BEFORE EDITING
+
+Before modifying a file:
+
+Read:
+
+- the entire file
+- dependent modules
+- imported models
+- related interfaces
+
+Never edit code based on assumptions.
+
+Always understand surrounding context first.
+
+---
+
+# THINK BEFORE CODING
+
+Before writing code ask:
+
+What is the smallest correct solution?
+
+Can this reuse existing code?
+
+Will this introduce duplication?
+
+Will this violate architecture?
+
+Will this break compatibility?
+
+Only after answering these questions should implementation begin.
+
+---
+
+# MINIMUM CHANGE PRINCIPLE
+
+Always make the smallest change necessary.
+
+Avoid:
+
+large refactors
+
+renaming files
+
+moving folders
+
+changing architecture
+
+unless explicitly requested.
+
+---
+
+# DO NOT GUESS
+
+If information is missing:
+
+Stop.
+
+State what is missing.
+
+Request clarification.
+
+Never invent:
+
+API fields
+
+exchange responses
+
+business rules
+
+configuration values
+
+---
+
+# NO SILENT CHANGES
+
+Never change behavior unless requested.
+
+Examples:
+
+changing leverage
+
+changing stop logic
+
+changing default symbols
+
+changing retry counts
+
+changing risk calculations
+
+These require explicit approval.
+
+---
+
+# PREFER EXISTING CODE
+
+Before writing new code:
+
+Search for an existing implementation.
+
+Reuse it whenever practical.
+
+Avoid duplicate utilities.
+
+Avoid duplicate models.
+
+Avoid duplicate validation.
+
+---
+
+# FILE OWNERSHIP
+
+Respect module boundaries.
+
+Example:
+
+Serializer owns serialization.
+
+Validator owns validation.
+
+Strategy owns signals.
+
+RiskManager owns sizing.
+
+TradingEngine owns orchestration.
+
+Portfolio owns positions.
+
+Never move responsibilities across modules.
+
+---
+
+# AVOID ARCHITECTURAL DRIFT
+
+If multiple implementations exist:
+
+Prefer the established architecture.
+
+Do not introduce a second implementation.
+
+Consolidation should happen only when explicitly requested.
+
+---
+
+# EXPLAIN MAJOR CHANGES
+
+When making significant modifications:
+
+Explain:
+
+why
+
+what changed
+
+impact
+
+remaining work
+
+Never leave large unexplained edits.
+
+---
+
+# PULL REQUEST SIZE
+
+Preferred:
+
+100–400 lines
+
+Acceptable:
+
+400–800 lines
+
+Avoid:
+
+1000+ line PRs
+
+Break large work into multiple PRs.
+
+---
+
+# SAFE REFACTORING
+
+Refactor only when:
+
+behavior remains identical
+
+tests continue to pass
+
+architecture improves
+
+Avoid cosmetic refactoring.
+
+---
+
+# DUPLICATE CODE
+
+Remove duplication only when:
+
+the duplicated logic is clearly identical
+
+shared abstraction improves readability
+
+Do not create abstractions prematurely.
+
+---
+
+# STATIC ANALYSIS
+
+Never ignore Ruff or MyPy warnings.
+
+Do not suppress errors unless justified.
+
+Avoid:
+
+type: ignore
+
+noqa
+
+disable comments
+
+unless absolutely necessary.
+
+---
+
+# COMMENTS
+
+Write comments explaining:
+
+intent
+
+reasoning
+
+constraints
+
+Avoid comments that merely repeat the code.
+
+---
+
+# TESTS
+
+Never modify production behavior solely to satisfy a failing test.
+
+Update tests when APIs intentionally change.
+
+If tests reveal a bug:
+
+Fix the bug.
+
+Do not weaken the tests.
+
+---
+
+# ERROR MESSAGES
+
+Errors should help developers.
+
+Good:
+
+"Order quantity must be greater than zero."
+
+Bad:
+
+"Invalid."
+
+Include useful context.
+
+---
+
+# SECURITY
+
+Never:
+
+log secrets
+
+print API keys
+
+print signatures
+
+store secrets in source code
+
+commit .env
+
+Always assume repositories may become public.
+
+---
+
+# LIVE TRADING SAFETY
+
+Any change affecting live trading requires explicit user approval.
+
+Never enable:
+
+LIVE_TRADING=True
+
+Never remove:
+
+validation
+
+risk checks
+
+confirmation steps
+
+Never bypass:
+
+RiskManager
+
+Validator
+
+Serializer
+
+---
+
+# FINANCIAL SAFETY
+
+Financial correctness takes priority over software elegance.
+
+Reject uncertain operations.
+
+Never guess order quantities.
+
+Never fabricate exchange responses.
+
+Never assume order success.
+
+Verify every critical operation.
+
+---
+
+# WHEN CONFLICTS EXIST
+
+Priority order:
+
+1. Financial safety
+
+2. Correctness
+
+3. Architecture
+
+4. Type safety
+
+5. Maintainability
+
+6. Performance
+
+Never sacrifice higher priorities for lower ones.
+
+---
+
+# COMPLETION CHECKLIST
+
+Before declaring a task complete:
+
+✓ Scope respected
+
+✓ Architecture preserved
+
+✓ Public APIs preserved
+
+✓ Strong typing maintained
+
+✓ Validation preserved
+
+✓ Serialization preserved
+
+✓ No duplicate code
+
+✓ Ruff clean
+
+✓ MyPy clean
+
+✓ Tests updated if required
+
+✓ Documentation updated if required
+
+Only then is the task considered complete.
+
+---
+
+# PRODUCTION, PERFORMANCE & SECURITY STANDARDS
+
+This repository is intended to evolve into a production-grade automated
+trading platform.
+
+Every implementation should move the project closer to production quality.
+
+Never reduce operational safety.
+
+---
+
+# PRODUCTION READINESS
+
+Production readiness requires:
+
+- deterministic behavior
+- repeatable execution
+- strong typing
+- reliable logging
+- explicit validation
+- comprehensive testing
+
+Never merge experimental behavior into the main execution path.
+
+---
+
+# LIVE TRADING
+
+LIVE_TRADING must remain disabled by default.
+
+Changing live trading behavior requires explicit user approval.
+
+AI agents must never:
+
+- enable live trading
+- disable safety checks
+- bypass validation
+- bypass RiskManager
+- bypass Portfolio updates
+
+Financial safety always takes priority.
+
+---
+
+# CONFIGURATION
+
+Configuration belongs in configuration files.
+
+Avoid:
+
+hardcoded API keys
+
+hardcoded secrets
+
+hardcoded account identifiers
+
+hardcoded URLs when configurable
+
+Environment variables should be used whenever practical.
+
+---
+
+# ENVIRONMENT VARIABLES
+
+Sensitive values include:
+
+- API keys
+- Secret keys
+- Telegram tokens
+- Database passwords
+- Private endpoints
+
+Never:
+
+print them
+
+log them
+
+commit them
+
+embed them in source code
+
+Always use:
+
+.env
+
+or environment variables.
+
+---
+
+# LOGGING
+
+Logs should be useful for diagnosing failures.
+
+Log:
+
+application start
+
+shutdown
+
+exchange requests
+
+exchange failures
+
+order lifecycle
+
+position lifecycle
+
+exceptions
+
+Avoid excessive debug logging in production.
+
+Never log secrets.
+
+---
+
+# EXCEPTIONS
+
+Every unexpected failure should produce:
+
+- a meaningful exception
+- useful logging
+- enough context for debugging
+
+Avoid generic Exception.
+
+Prefer domain-specific exceptions.
+
+---
+
+# PERFORMANCE
+
+Correctness is more important than speed.
+
+Optimize only after measuring.
+
+Avoid premature optimization.
+
+When optimization is necessary:
+
+measure
+
+benchmark
+
+document
+
+verify correctness
+
+---
+
+# MEMORY
+
+Avoid unnecessary object creation.
+
+Reuse immutable objects when practical.
+
+Avoid hidden caches unless justified.
+
+---
+
+# CONCURRENCY
+
+If multithreading or async execution is introduced:
+
+Protect:
+
+Portfolio
+
+PositionManager
+
+Order Queue
+
+Trading Session
+
+Avoid race conditions.
+
+Never submit duplicate orders.
+
+---
+
+# NETWORKING
+
+Network failures are expected.
+
+Implement:
+
+timeouts
+
+retry policies
+
+backoff
+
+typed exceptions
+
+Never assume successful communication.
+
+---
+
+# DEPENDENCIES
+
+Every dependency increases maintenance cost.
+
+Before adding a dependency ask:
+
+Can the standard library solve this?
+
+Can an existing dependency solve this?
+
+Prefer minimal dependency count.
+
+---
+
+# CI/CD
+
+Every pull request should eventually run:
+
+ruff
+
+↓
+
+mypy
+
+↓
+
+pytest
+
+↓
+
+build validation
+
+Failures should block merges.
+
+---
+
+# TESTING LEVELS
+
+Preferred testing hierarchy:
+
+Unit Tests
+
+↓
+
+Integration Tests
+
+↓
+
+Paper Trading
+
+↓
+
+Demo Environment
+
+↓
+
+Live Trading
+
+Never skip directly to live trading.
+
+---
+
+# PAPER TRADING
+
+Every strategy should be validated in PaperBroker before live execution.
+
+PaperBroker should simulate:
+
+fees
+
+slippage
+
+partial fills
+
+margin
+
+liquidation behavior where practical
+
+---
+
+# RELEASES
+
+Releases should be versioned.
+
+Example:
+
+v1.0.0
+
+v1.1.0
+
+v2.0.0
+
+Breaking changes require a major version increment.
+
+---
+
+# BACKWARD COMPATIBILITY
+
+When practical:
+
+Preserve existing public APIs.
+
+If breaking changes are necessary:
+
+Document them.
+
+Explain migration.
+
+Update tests.
+
+---
+
+# DOCUMENTATION
+
+Every major feature should include:
+
+purpose
+
+architecture
+
+usage
+
+limitations
+
+Avoid undocumented behavior.
+
+---
+
+# SECURITY
+
+Assume repositories may become public.
+
+Never commit:
+
+.env
+
+credentials
+
+private certificates
+
+exchange secrets
+
+Always review commits before pushing.
+
+---
+
+# RECOVERY
+
+Failures should leave the application in a recoverable state.
+
+Never corrupt:
+
+Portfolio
+
+Position state
+
+Trade history
+
+Order tracking
+
+Recovery is preferred over silent failure.
+
+---
+
+# FUTURE DEVELOPMENT
+
+Every new module should:
+
+follow repository architecture
+
+use strong typing
+
+respect Serializer
+
+respect Validator
+
+respect RiskManager
+
+include tests
+
+include documentation
+
+avoid duplicate implementations
+
+Maintain consistency as the codebase grows.
+
+---
+
+# MASTER AI CHECKLIST
+
+Before completing ANY task, every AI agent must verify the following.
+
+If any answer is NO, the task is NOT complete.
+
+---
+
+## UNDERSTANDING
+
+□ I fully understood the requested task.
+
+□ I reviewed the affected modules.
+
+□ I understood existing architecture.
+
+□ I avoided making assumptions.
+
+---
+
+## ARCHITECTURE
+
+□ Architecture remains unchanged unless explicitly requested.
+
+□ Responsibilities remain in the correct modules.
+
+□ No architectural shortcuts were introduced.
+
+□ No duplicate implementations were created.
+
+---
+
+## CODE QUALITY
+
+□ Code is readable.
+
+□ Code is strongly typed.
+
+□ Code follows repository conventions.
+
+□ Public APIs remain compatible.
+
+□ No unnecessary complexity was introduced.
+
+---
+
+## MODELS
+
+□ Typed models were preserved.
+
+□ No raw exchange JSON leaked into business logic.
+
+□ Serialization remains centralized.
+
+□ Validation remains centralized.
+
+---
+
+## EXCHANGE
+
+□ BingX communication remains inside exchange/.
+
+□ Authentication remains centralized.
+
+□ Request signing remains centralized.
+
+□ POST requests are not blindly retried.
+
+□ Exchange errors remain typed.
+
+---
+
+## TRADING
+
+□ Strategies generate signals only.
+
+□ RiskManager owns risk decisions.
+
+□ Portfolio owns portfolio state.
+
+□ PositionManager owns position management.
+
+□ TradingEngine remains an orchestrator.
+
+---
+
+## SAFETY
+
+□ Financial safety was preserved.
+
+□ Validation was not bypassed.
+
+□ Risk checks remain active.
+
+□ LIVE_TRADING was not enabled.
+
+□ Secrets remain protected.
+
+---
+
+## TESTING
+
+□ Existing tests still make sense.
+
+□ New behavior has tests when appropriate.
+
+□ Edge cases were considered.
+
+□ Error handling was verified.
+
+---
+
+## STATIC ANALYSIS
+
+□ Ruff passes.
+
+□ MyPy passes.
+
+□ No unnecessary ignores were added.
+
+□ No warnings were hidden.
+
+---
+
+## DOCUMENTATION
+
+□ Public interfaces remain documented.
+
+□ Complex logic is explained.
+
+□ New behavior is documented where appropriate.
+
+---
+
+## PULL REQUEST
+
+□ The PR solves one logical problem.
+
+□ No unrelated files were modified.
+
+□ Commit message is meaningful.
+
+□ Changes are easy to review.
+
+---
+
+## PERFORMANCE
+
+□ No unnecessary allocations.
+
+□ No unnecessary dependencies.
+
+□ No premature optimization.
+
+□ Performance remains acceptable.
+
+---
+
+## SECURITY
+
+□ No secrets were committed.
+
+□ No credentials were logged.
+
+□ No API keys were exposed.
+
+□ Sensitive data remains protected.
+
+---
+
+## FINAL QUESTION
+
+Before declaring the task complete ask:
+
+Would I be comfortable deploying this code to a production trading system managing real money?
+
+If the answer is NO,
+
+the task is NOT complete.
+
+---
+
+# END OF AGENTS GUIDE
+
+# Revision History
+
+## Version 1.0
+
+- Initial engineering handbook.
+- Repository architecture defined.
+- AI development workflow defined.
+- Trading contracts defined.
+- Production safety standards defined.
+
+================================================================================
+FILE: GITHUB_CHECKPOINT_REPORT.md
+================================================================================
+# Ophelia GitHub Checkpoint & Work Preservation Report
+
+**Date:** 2026-10-17  
+**Repository URL:** `https://github.com/ophelia-sys/ophelia.git`  
+**Checkpoint Branch:** `checkpoint/pre-argon-review-2026-10-17`  
+**Base Checkpoint Commit:** `b874c51e5a05361082270c7bb8ed8fb265173d43`  
+**Push & Verification Status:** `VERIFIED_PUSHED_TO_REMOTE` (Fast-forward tracking branch active and matching origin)  
+**Total Committed / Tracked Files:** 1,386 files (1,100 files preserved in checkpoint commit)  
+**Total Tracked Working Tree Size:** 63.06 MB  
+
+---
+
+## 1. Preserved Research Artifacts & Evidence Dossiers
+
+All completed quantitative investigations, historical negative/inconclusive findings, and engineering artifacts across all 13 phases are preserved in full:
+
+### Phase 13 — Alpha Discovery Reset & Stop-Room Research
+- **Reports Delivered:**
+  - `docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md`: Comprehensive answers to all 19 Section 30 research questions.
+  - `docs/PHASE_13_STOP_ROOM_RESEARCH.md`: MAE distribution of winners vs. losers, Class B premature stop-out analysis, structural breathing room requirement ($\ge 0.50\% - 0.75\%$).
+  - `docs/PHASE_13_ECONOMIC_VALIDATION.md`: 4 friction scenarios evaluating notional fee impact as a function of stop distance in R.
+  - `docs/PHASE_13_EVENT_UNIVERSE_REPORT.md`: 423,130 broad microstructure events across full-year 2023 dataset.
+  - `docs/PHASE_13_STATISTICAL_VALIDATION.md`: Benjamini-Hochberg FDR control ($\alpha=0.05$) and block-bootstrap confidence intervals.
+- **Scripts & Tests:** `scripts/run_phase13_alpha_discovery.py`, `tests/test_phase13_discovery.py` (6/6 passing).
+- **Machine-Readable Results:** `data/phase13_results.json`, `data/phase13_stop_room.json`.
+
+### Phase 12 — Fresh Period OOS TimesFM & Friction Accounting Audit
+- **Reports Delivered:**
+  - `docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md`: Strict out-of-sample evaluation on unseen Q1 2024 data (Jan–Mar 2024).
+  - `docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md`: Structural mathematical proof of friction tax ($0.37R - 0.50R$) on tight stops.
+- **Scripts & Tests:** `scripts/run_phase12_incremental_timesfm.py`, `scripts/run_phase12_friction_audit.py`, `tests/test_phase12_incremental_timesfm.py`, `tests/test_phase12_friction_audit.py`.
+- **Machine-Readable Results:** `data/phase12_friction_audit.json`, `data/phase12_incremental_timesfm_results.json`.
+
+### Phase 11 & 11.5 — Deterministic Strategy Repair & HTF Regime Management
+- **Reports Delivered:**
+  - `docs/PHASE_11_DETERMINISTIC_STRATEGY_REPAIR_REPORT.md`: Parameter repair, CVD slope, and RVOL filter evaluation.
+  - `docs/PHASE_11_5_HTF_REGIME_TRADE_MANAGEMENT_REPORT.md`: Higher-timeframe regime conditioning and dynamic trade management.
+- **Scripts & Tests:** `scripts/run_phase11_repair.py`, `scripts/run_phase11_5_htf_research.py`, `tests/test_phase11_deterministic_repair.py`, `tests/test_phase11_5_htf_management.py`.
+- **Machine-Readable Results:** `data/phase11_repair_results.json`, `data/phase11_5_htf_results.json`.
+
+### Phase 10.1–10.3 — TimesFM Compatibility & Out-of-Sample Roles
+- **Reports Delivered:** `docs/PHASE_10_1_RETEST_TIMESFM_VALIDATION_REPORT.md`, `docs/PHASE_10_2_TIMESFM_FORECAST_ROLE_DISCOVERY_REPORT.md`, `docs/PHASE_10_3_TIMESFM_OUT_OF_SAMPLE_VALIDATION_REPORT.md`, `docs/PHASE_BINANCE_TIMESFM_COMPATIBILITY_REPORT.md`.
+- **Scripts & Tests:** `scripts/run_phase10_2_forensic_investigation.py`, `scripts/run_phase10_3_oos_validation.py`, `tests/test_phase10_3_out_of_sample.py`.
+- **Machine-Readable Results:** `data/phase10_3_validation_results.json`.
+
+### Phase 6A–6F — Microstructure Research Modules
+- **Reports Delivered:** `docs/PHASE_6A_MICROSTRUCTURE_REPORT.md`, `docs/PHASE_6B_MICROSTRUCTURE_REPORT.md`, `docs/PHASE_6C_MICROSTRUCTURE_REPORT.md`, `docs/PHASE_6D_MICROSTRUCTURE_REPORT.md`, `docs/PHASE_6D1_6E_6F_RESEARCH_REPORT.md`, `docs/MICROSTRUCTURE_METHODOLOGY_SPEC.md`.
+- **Source Modules:** `control_plane/microstructure_engine.py`, `institutional/` (CVD, Kyle $\lambda$, VPIN, spread stress, order book imbalance).
+
+### Phase 1–5 — Production Core, Multi-Tenant Architecture & Mobile Apps
+- **Control Plane Backend:** `control_plane/api.py`, `core.py`, `db.py`, `credential_vault.py`.
+- **Android Client:** `android-app/` full source code (Admin and User application flavors).
+- **Submodules:** `.gitmodules` mapping `external/Kronos` and `vendor/TradingAgents`.
+
+---
+
+## 2. Intentional Exclusions (Safety & Repository Hygiene)
+
+The following categories were intentionally excluded via updated `.gitignore` rules:
+
+1. **Credentials & Secrets:**
+   - `.env`, `.env.*`, `control.env` (No live credentials committed).
+   - `*.key`, `*.pem`, `*.id_rsa`, `*.id_ed25519`.
+   - Result: Verified 0 exposed credentials or private keys in Git history or staged files.
+2. **Databases & Local State:**
+   - `*.db`, `*.sqlite`, `*.sqlite3`, `ophelia.db` (Production/shadow databases excluded to prevent private data leakage).
+3. **Heavy Raw Datasets:**
+   - `data/raw/` (19.8 GB of raw Binance CSVs/zips).
+   - `data/normalized/`, `data/processed/` (multi-gigabyte normalized files).
+   - `data/*.parquet` (e.g. `phase13_forward_outcomes.parquet` 118.5 MB, which exceeds GitHub's 100 MB hard limit).
+   - Note: Data provenance and schema definitions are fully preserved in `data/manifests/` and reconstruction scripts.
+4. **Binary Models & Cache Dumps:**
+   - `*.pkl` (e.g. `PHASE5_3_OOS_PREDS.pkl` 392 MB).
+   - `*.tar.gz`, `*.bundle`, `*.zip`.
+   - Android build outputs (`android-app/**/build/`, `android-app/.gradle/`, `*.apk`, `*.hprof`, `jdk17/`).
+5. **Scratch Files:**
+   - `scratch/` (5,500+ temporary files, site-packages, DLLs, and UI dumps excluded, while retaining the 3 canonical verification scripts).
+
+---
+
+## 3. Repository Size & Gemini 4 Argon Compatibility
+
+- **Total Tracked File Count:** 1,386 files
+- **Total Tracked Working-Tree Size:** 63.06 MB
+- **Largest Tracked File:** 17.07 MB (`research/experiments/POWER_OF_STOCKS_5EMA_EVENT_ARCHITECTURE/OPHELIA_5EMA_EVENT_ALL.json`)
+- **Compatibility Assessment:** **100% Fully Compatible**. The repository size (63 MB) is well below Gemini's repository-import threshold (<500 MB), contains no binary Blobs exceeding 20 MB, and has clean, standard file encodings across all documents and source code.
+
+---
+
+## 4. Security Findings & Risk Summary
+
+- **Hardcoded Credentials Scan:** Passed with 0 violations across all candidate files and unpushed commit diffs.
+- **Authority Barrier Invariants:**
+  - `TRADING_AUTHORITY = FALSE`
+  - `EXECUTION_MODE = SHADOW`
+  - `LIVE_ORDER_PLACEMENT = FORBIDDEN`
+- **Submodule Hygiene:** Configured `.gitmodules` with `ignore = untracked` for `external/Kronos` and `vendor/TradingAgents`.
+
+---
+
+## 5. Working Tree Status & Remaining Local Work
+
+- **Branch:** `checkpoint/pre-argon-review-2026-10-17`
+- **Working Tree:** Clean (0 unstaged changes, 0 untracked files).
+- **Default Branch (`main`):** Preserved intact without modification or force-pushing.
+
+---
+
+## 6. Instructions for Importing Checkpoint into Gemini 4 Argon
+
+1. **GitHub Repository URL:** `https://github.com/ophelia-sys/ophelia`
+2. **Branch to Import:** `checkpoint/pre-argon-review-2026-10-17`
+3. **Commit Hash:** `b874c51e5a05361082270c7bb8ed8fb265173d43`
+4. **Primary Review Document:** Open [docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md) as the starting roadmap.
+5. **Recommended Prompt for Gemini 4 Argon:**
+   > "You are reviewing the Ophelia quantitative trading codebase at branch `checkpoint/pre-argon-review-2026-10-17` (commit `b874c51e5a05361082270c7bb8ed8fb265173d43`). Start by reading `docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md` and `AGENTS.md`. Focus your independent review on: (1) the mathematical conclusions in `docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md`, (2) the TimesFM incremental value audit in `docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md`, (3) the alpha discovery and stop-room findings in `docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md` and `docs/PHASE_13_STOP_ROOM_RESEARCH.md`, and (4) verify that deterministic risk and execution boundaries are strictly maintained."
+
+
+================================================================================
+FILE: docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md
+================================================================================
+# Ophelia: GitHub Checkpoint & Independent Review Index
+
+**Repository:** `ophelia-sys/ophelia`  
+**Purpose:** Production-grade algorithmic cryptocurrency trading and microstructure research system for BingX Perpetual Swap Futures.  
+**Checkpoint Date:** 2026-10-17  
+**Branch:** `checkpoint/pre-argon-review-2026-10-17`  
+**Target Reviewer:** Gemini 4 Argon  
+
+---
+
+## 1. Executive Summary & Core Research Context
+
+This repository checkpoint establishes a verified, secure, and reproducible snapshot of Ophelia across all development and quant research phases (Phases 1 through 13).
+
+Before independent review, the following empirical findings and research constraints define the state of the project:
+
+1. **Retest Strategy Edge Reality:** The current 5-minute breakout/retest deterministic strategy has **not** demonstrated a robust, economically viable edge once realistic friction (taker fees, slippage, and funding) is applied.
+2. **Microstructure & Conditional Interaction Reality:** While isolated linear microstructure signals (OFI, book imbalance, VPIN, delta OI) exhibit weak or decaying unconditioned standalone predictive power, previous findings do **not** establish that all conditional interactions or nonlinear regime-conditioned states lack alpha.
+3. **TimesFM Incremental Value:** Google TimesFM 3.0 was integrated with strict zero-lookahead, multi-scale causal feature alignment, and rigorous OOS evaluation. However, its value remains **unproven as a profitable incremental trading component** when combined with the baseline retest architecture.
+4. **Friction Accounting Law:** Friction must strictly be evaluated in terms of **executed-notional fees relative to structural stop distance** ($R$). A 0.08%–0.10% roundtrip notional taker fee imposes an insurmountable 0.37R to 0.50R penalty on tight 0.20%–0.25% stops, making small-timeframe scalping mathematically negative-expectancy regardless of win rate.
+5. **Stop-Room & Structural Invalidation:** High-frequency entry timeframe (e.g. 5m) swing stops suffer from frequent Class B premature stop-outs (price touches stop before reversing and hitting target). Decoupling entry timeframe from stop timeframe (`ENTRY TIMEFRAME != STOP TIMEFRAME`) and providing structural breathing room ($\ge 0.50\% - 0.75\%$) is an essential open direction.
+6. **Deterministic Trading Authority & ML Isolation:** Machine learning (LLM, TradingAgents, Qwen, TimesFM) remains strictly **advisory and research-only**. Deterministic Rust/Python modules retain absolute authority over position sizing, risk gating, and order lifecycle. Live execution is disabled (`EXECUTION_MODE = SHADOW`).
+
+---
+
+## 2. Repository Architecture & Key Entry Points
+
+Ophelia enforces a strict layered architecture:
+
+```
+[External Market Data / BingX REST & WS / Binance AggTrades]
+                           ↓
+                   [exchange/ & brokers/]
+                           ↓
+                     [models/ (Typed)]
+                           ↓
+        [institutional/ & control_plane/ (Core Logic)]
+                           ↓
+                 [risk/ & Validator]
+                           ↓
+              [PaperBroker / Shadow Execution]
+                           ↓
+                   [android-app/ UI]
+```
+
+### Main Entry Points
+- **Control Plane API Server:** [control_plane/api.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/api.py) — FastAPI application exposing REST endpoints for market diagnostics, candidates, slot management, microstructure metrics, and shadow telemetry.
+- **Control Plane Orchestrator:** [control_plane/core.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/core.py) — Coordinates data feeds, candidate evaluation, slot management, and shadow execution.
+- **Microstructure Engine:** [control_plane/microstructure_engine.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/microstructure_engine.py) — Evaluates Order Book Imbalance, Spread/Liquidity Stress, Kyle Price Impact, and VPIN Toxicity under strict causal forward constraints.
+- **Credential Vault:** [control_plane/credential_vault.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/credential_vault.py) — Enforces AES-GCM credential encryption and zero hardcoded secret storage.
+- **Typed Models:** [models/](file:///c:/Users/dopa.mine/Desktop/ophelia/models/) — Strongly-typed dataclass contracts for instruments, positions, orders, candidates, and microstructure features.
+- **Android Client:** [android-app/](file:///c:/Users/dopa.mine/Desktop/ophelia/android-app/) — Jetpack Compose native mobile client (Admin and User flavors) communicating exclusively via REST API.
+
+---
+
+## 3. Comprehensive Research Phase Map & Report Locations
+
+All major quantitative investigations are fully documented with corresponding scripts, test suites, and serialized results:
+
+| Research Phase | Core Topic & Finding | Formal Report Location | Key Scripts & Tests | Serialized Results |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phase 5D.3 / 5.5 / 5.6** | High-concurrency resource optimization & TimesFM steady-state CPU benchmarking | [docs/PHASE_5_5_RESOURCE_OPTIMIZATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_5_5_RESOURCE_OPTIMIZATION_REPORT.md)<br>[docs/PHASE_5_6_MANUAL_TERMINAL_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_5_6_MANUAL_TERMINAL_REPORT.md) | `scripts/benchmark_vps_runtime.py`<br>`tests/test_timesfm_phase6f.py` | `vps_evidence/timesfm_stress_benchmark.json` |
+| **Phase 6A–6D** | Microstructure metrics (OFI, Kyle $\lambda$, VPIN, Spread Stress) | [docs/PHASE_6A_MICROSTRUCTURE_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_6A_MICROSTRUCTURE_REPORT.md)<br>[docs/PHASE_6B_MICROSTRUCTURE_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_6B_MICROSTRUCTURE_REPORT.md)<br>[docs/PHASE_6C_MICROSTRUCTURE_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_6C_MICROSTRUCTURE_REPORT.md)<br>[docs/PHASE_6D_MICROSTRUCTURE_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_6D_MICROSTRUCTURE_REPORT.md) | `scripts/run_phase6_validation.py`<br>`tests/test_microstructure_phase6a.py`<br>`tests/test_microstructure_phase6d.py` | `institutional/` |
+| **Phase 10.1–10.3** | TimesFM forecast roles & out-of-sample retest validation | [docs/PHASE_10_1_RETEST_TIMESFM_VALIDATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_10_1_RETEST_TIMESFM_VALIDATION_REPORT.md)<br>[docs/PHASE_10_2_TIMESFM_FORECAST_ROLE_DISCOVERY_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_10_2_TIMESFM_FORECAST_ROLE_DISCOVERY_REPORT.md)<br>[docs/PHASE_10_3_TIMESFM_OUT_OF_SAMPLE_VALIDATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_10_3_TIMESFM_OUT_OF_SAMPLE_VALIDATION_REPORT.md) | `scripts/run_phase10_2_forensic_investigation.py`<br>`scripts/run_phase10_3_oos_validation.py`<br>`tests/test_phase10_3_out_of_sample.py` | [data/phase10_3_validation_results.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase10_3_validation_results.json) |
+| **Phase 11 & 11.5** | Deterministic strategy repair (CVD, RVOL, volume filters) & HTF regime management | [docs/PHASE_11_DETERMINISTIC_STRATEGY_REPAIR_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_11_DETERMINISTIC_STRATEGY_REPAIR_REPORT.md)<br>[docs/PHASE_11_5_HTF_REGIME_TRADE_MANAGEMENT_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_11_5_HTF_REGIME_TRADE_MANAGEMENT_REPORT.md) | `scripts/run_phase11_repair.py`<br>`scripts/run_phase11_5_htf_research.py`<br>`tests/test_phase11_deterministic_repair.py`<br>`tests/test_phase11_5_htf_management.py` | [data/phase11_repair_results.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase11_repair_results.json)<br>[data/phase11_5_htf_results.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase11_5_htf_results.json) |
+| **Phase 12** | Fresh period (Jan–Mar 2024) OOS TimesFM validation & friction accounting audit | [docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md)<br>[docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md) | `scripts/run_phase12_incremental_timesfm.py`<br>`scripts/run_phase12_friction_audit.py`<br>`tests/test_phase12_incremental_timesfm.py`<br>`tests/test_phase12_friction_audit.py` | [data/phase12_friction_audit.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase12_friction_audit.json)<br>[data/phase12_incremental_timesfm_results.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase12_incremental_timesfm_results.json) |
+| **Phase 13** | Alpha discovery reset (1.5M continuous candles, 423k events) & stop-room research | [docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md)<br>[docs/PHASE_13_STOP_ROOM_RESEARCH.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_STOP_ROOM_RESEARCH.md)<br>[docs/PHASE_13_ECONOMIC_VALIDATION.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_ECONOMIC_VALIDATION.md)<br>[docs/PHASE_13_EVENT_UNIVERSE_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_EVENT_UNIVERSE_REPORT.md)<br>[docs/PHASE_13_STATISTICAL_VALIDATION.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_STATISTICAL_VALIDATION.md) | `scripts/run_phase13_alpha_discovery.py`<br>`tests/test_phase13_discovery.py` | [data/phase13_results.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase13_results.json)<br>[data/phase13_stop_room.json](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase13_stop_room.json) |
+
+---
+
+## 4. Test Verification Suite & Reproduction
+
+All tests are designed to be reproducible locally:
+
+```bash
+# Run core Phase 11, 12, and 13 research test suite
+pytest tests/test_phase11_deterministic_repair.py tests/test_phase11_5_htf_management.py tests/test_phase12_friction_audit.py tests/test_phase12_incremental_timesfm.py tests/test_phase13_discovery.py -v
+
+# Run microstructure unit tests
+pytest tests/test_microstructure_phase6a.py tests/test_microstructure_phase6d.py tests/test_microstructure_phase6e.py -v
+
+# Run full project test suite
+pytest tests/
+```
+
+---
+
+## 5. Environment & Dependencies
+
+- **Python Runtime:** Python 3.11.x (tested on 3.11.9)
+- **Primary Dependencies:** [requirements.txt](file:///c:/Users/dopa.mine/Desktop/ophelia/requirements.txt) & [research-requirements.txt](file:///c:/Users/dopa.mine/Desktop/ophelia/research-requirements.txt)
+  - Core: `fastapi`, `uvicorn`, `pydantic`, `httpx`, `cryptography`, `pandas`, `numpy`, `scipy`
+  - Quant/ML: `scikit-learn`, `statsmodels`, `arch`, `torch`, `transformers`
+- **Android Mobile App:** JDK 17, Android SDK 34, Jetpack Compose (`android-app/`)
+
+---
+
+## 6. Dataset Provenance & Exclusions
+
+To comply with GitHub repository storage limits and clean revision tracking, multi-gigabyte raw market datasets have been excluded from git:
+- **Binance UM AggTrades & BookTicker:** Historical raw data resides locally in `data/raw/` and can be reconstructed using [scripts/download_and_normalize_btcusdt.py](file:///c:/Users/dopa.mine/Desktop/ophelia/scripts/download_and_normalize_btcusdt.py) and [scripts/download_expanded_dataset.py](file:///c:/Users/dopa.mine/Desktop/ophelia/scripts/download_expanded_dataset.py).
+- **Normalized Parquet Files:** Stored locally in `data/normalized/` and `data/processed/`.
+- **Manifests & Checkpoints:** Fully tracked under [data/manifests/](file:///c:/Users/dopa.mine/Desktop/ophelia/data/manifests/) with timestamp ranges, row counts, and column schemas.
+- **Machine-Readable Summaries:** All empirical results, contingency matrices, FDR p-values, and trade evaluations are preserved in version-controlled JSON files under [data/](file:///c:/Users/dopa.mine/Desktop/ophelia/data/) and [results/](file:///c:/Users/dopa.mine/Desktop/ophelia/results/).
+
+---
+
+## 7. Security Exclusions & Safety Boundaries
+
+- **Zero Hardcoded Secrets:** No live API keys, BingX secrets, Telegram tokens, SSH private keys, or passwords exist in version control.
+- **Excluded Files:** `.env`, `.env.*`, `control.env`, `*.key`, `*.pem`, `*.db`, `*.sqlite`, `*.pkl`, `*.hprof`.
+- **Operating Mode:** Ophelia is hard-locked to `SHADOW` execution mode. Live trading authority is `DISABLED`. AI models have zero execution authority.
+
+---
+
+## 8. Recommended Reading Order for Gemini 4 Argon
+
+When conducting an independent audit of Ophelia, follow this sequence:
+
+1. **System Mission & Rules:** [AGENTS.md](file:///c:/Users/dopa.mine/Desktop/ophelia/AGENTS.md) and [docs/OPHELIA_PLATFORM_ARCHITECTURE_AND_AGENCY_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/OPHELIA_PLATFORM_ARCHITECTURE_AND_AGENCY_REPORT.md)
+2. **Current Checkpoint Index:** This document ([docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/GITHUB_CHECKPOINT_AND_REVIEW_INDEX.md))
+3. **Friction Accounting Audit:** [docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_12_FRICTION_ACCOUNTING_AUDIT.md) — Crucial quantitative analysis explaining why 5m retest strategies fail under taker friction.
+4. **TimesFM OOS & Incremental Value:** [docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_12_FRESH_PERIOD_INCREMENTAL_TIMESFM_VALIDATION_REPORT.md) & [docs/PHASE_10_3_TIMESFM_OUT_OF_SAMPLE_VALIDATION_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_10_3_TIMESFM_OUT_OF_SAMPLE_VALIDATION_REPORT.md)
+5. **Alpha Discovery & Stop-Room Reality:** [docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_ALPHA_DISCOVERY_REPORT.md), [docs/PHASE_13_STOP_ROOM_RESEARCH.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_STOP_ROOM_RESEARCH.md), and [docs/PHASE_13_ECONOMIC_VALIDATION.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_13_ECONOMIC_VALIDATION.md)
+6. **Microstructure Methodology:** [docs/MICROSTRUCTURE_METHODOLOGY_SPEC.md](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/MICROSTRUCTURE_METHODOLOGY_SPEC.md) & Phase 6 reports.
+7. **Control Plane & Microstructure Source:** [control_plane/api.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/api.py), [control_plane/microstructure_engine.py](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/microstructure_engine.py), [models/microstructure.py](file:///c:/Users/dopa.mine/Desktop/ophelia/models/microstructure.py).
+
+
+================================================================================
+FILE: requirements.txt
+================================================================================
+requests>=2.28.0
+pandas>=1.5.0
+python-dotenv>=1.0.0
+urllib3>=1.26.0
+fastapi>=0.103.0
+uvicorn[standard]>=0.23.2
+websockets>=11.0.3
+pyjwt>=2.8.0
+bcrypt>=4.0.1
+cryptography>=41.0.3
+
+
+================================================================================
+FILE: research-requirements.txt
+================================================================================
+scikit-learn>=1.0.0
+lightgbm>=3.3.0
+xgboost>=1.7.0
+pandas>=1.5.0
+numpy>=1.22.0
+pyarrow>=10.0.0
+scipy>=1.9.0
+
+
+================================================================================
+FILE: pytest.ini
+================================================================================
+[pytest]
+testpaths = tests
+norecursedirs = vendor external data research .venv .git android-app
+python_files = test_*.py
+addopts = -v --ignore=tests/test_causal_alignment.py --ignore=tests/test_cvd_forward_tracker.py --ignore=tests/test_cvd_paper_signal.py --ignore=tests/test_cvd_research_live_parity.py --ignore=tests/test_ml4t_hmm.py --ignore=tests/test_ml4t_volatility_regime.py --ignore=tests/test_phase5_3_audit.py --ignore=tests/test_phase6_statistics.py --ignore=tests/test_pnl_convention_parity.py --ignore=tests/test_research_phase5_1.py --ignore=tests/test_research_phase5_3.py --ignore=tests/test_research_pipeline.py --ignore=tests/test_vwap_supertrend.py
+
+
+================================================================================
+FILE: model_capabilities.yaml
+================================================================================
+# Model Capabilities Registry
+#
+# This file is OPTIONAL. GSD works without it.
+# If present, it provides guidance for model selection.
+#
+# Usage: Reference this file when choosing models by capability.
+# Do NOT make any workflow depend on this file existing.
+
+# Capability definitions
+capabilities:
+  thinking_mode:
+    description: "Extended reasoning with internal monologue"
+    benefits:
+      - Better for complex planning
+      - Improved debugging hypotheses
+      - More thorough architecture analysis
+    
+  long_context:
+    description: "Context window > 100k tokens"
+    benefits:
+      - Can analyze multiple files at once
+      - Better for large refactors
+      - Full codebase reviews
+    
+  tools:
+    description: "Function/tool calling support"
+    benefits:
+      - Execute verification commands
+      - Interact with external systems
+      - Structured outputs
+    
+  speed_tier:
+    description: "Response latency tier"
+    values:
+      - fast: "< 2s average, good for iteration"
+      - standard: "2-5s average, balanced"
+      - reasoning: "> 5s average, deep analysis"
+
+# Example model profiles (illustrative, not exhaustive)
+# These show how to categorize models by capability type.
+
+profiles:
+  # Fast iteration models
+  fast_coder:
+    speed_tier: fast
+    thinking_mode: false
+    long_context: false
+    tools: true
+    best_for:
+      - Quick edits
+      - Simple implementations
+      - Frequent iteration cycles
+    examples:
+      - "Flash/Turbo variants"
+      - "Smaller parameter models"
+  
+  # Standard balanced models
+  standard:
+    speed_tier: standard
+    thinking_mode: false
+    long_context: true
+    tools: true
+    best_for:
+      - Most development tasks
+      - Moderate refactoring
+      - General coding
+    examples:
+      - "Pro/Standard variants"
+      - "Mid-tier models"
+  
+  # Deep reasoning models
+  reasoning:
+    speed_tier: reasoning
+    thinking_mode: true
+    long_context: true
+    tools: true
+    best_for:
+      - Architecture planning
+      - Complex debugging
+      - Security analysis
+    examples:
+      - "Thinking/Reasoning variants"
+      - "Advanced reasoning models"
+
+# Phase recommendations (suggestions, not requirements)
+phase_recommendations:
+  planning:
+    preferred_profile: reasoning
+    reason: "Complex decisions benefit from extended thinking"
+    
+  implementation:
+    preferred_profile: fast_coder
+    reason: "Frequent iteration needs speed"
+    
+  refactoring:
+    preferred_profile: standard
+    reason: "Balance of context and speed"
+    
+  debugging:
+    preferred_profile: reasoning
+    reason: "Hypothesis generation needs depth"
+    
+  review:
+    preferred_profile: standard
+    reason: "Large context for full diffs"
+
+# IMPORTANT: This file is for guidance only.
+# Never fail a workflow because a specific model capability is missing.
+
+
+================================================================================
+FILE: .gitmodules
+================================================================================
+[submodule "external/Kronos"]
+	path = external/Kronos
+	url = https://github.com/shiyu-coder/Kronos.git
+	ignore = untracked
+[submodule "vendor/TradingAgents"]
+	path = vendor/TradingAgents
+	url = https://github.com/TauricResearch/TradingAgents.git
+	ignore = untracked
+
+
