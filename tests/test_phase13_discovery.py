@@ -504,22 +504,27 @@ class TestPhase13HigherTimeframeCausality(unittest.TestCase):
         self.assertEqual(row_03_55["close_4h"], df_4h.loc[df_4h["timestamp"] == start_ms, "close"].iloc[0])
 
     def test_test4_future_corruption_invariance(self):
-        """Test 4: Mutating bars strictly after decision time T leaves all features at T byte-for-byte identical."""
-        start_ms = 1672531200000
-        df_1m = _make_1m_df(start_ms, 300)  # 5 hours
-        decision_offset_min = 120  # Decision at T = 2 hours
-        t_decision_ms = start_ms + decision_offset_min * 60_000
-        bar_open_ms = t_decision_ms - 5 * 60_000
+        """Test 4: Mutating bars strictly after decision time T leaves all features at T byte-for-byte identical.
 
-        # Run uncorrupted
+        Computes 4H EMA and trend independently from clean and corrupted source data without hardcoding.
+        """
+        start_ms = 1672531200000  # 2023-01-01 00:00:00 UTC
+        df_1m = _make_1m_df(start_ms, 720)  # 12 hours
+        decision_offset_min = 240  # Decision at T = 4 hours (04:00:00 UTC)
+        t_decision_ms = start_ms + decision_offset_min * 60_000
+        bar_open_ms = t_decision_ms - 5 * 60_000  # 03:55:00 UTC bar (closes at 04:00:00 UTC)
+
+        # 1. Run uncorrupted pipeline with independent 4H indicator computation
         df_5m_clean, df_15m_clean, df_1h_clean, df_4h_clean = p13.resample_phase13_bars(df_1m)
         df_15m_clean["atr_14"] = p13.compute_atr(df_15m_clean["high"], df_15m_clean["low"], df_15m_clean["close"], 14)
         df_1h_clean["atr_14"] = p13.compute_atr(df_1h_clean["high"], df_1h_clean["low"], df_1h_clean["close"], 14)
-        df_4h_clean["trend_4h"] = "BULL"
+        df_4h_clean["ema20"] = df_4h_clean["close"].ewm(span=20, adjust=False).mean()
+        df_4h_clean["ema50"] = df_4h_clean["close"].ewm(span=50, adjust=False).mean()
+        df_4h_clean["trend_4h"] = np.where(df_4h_clean["ema20"] > df_4h_clean["ema50"] * 1.001, "BULL", "BEAR")
         merged_clean = p13.merge_completed_htf_features(df_5m_clean, df_15m_clean, df_1h_clean, df_4h_clean)
         row_clean = merged_clean.loc[merged_clean["timestamp"] == bar_open_ms].iloc[0]
 
-        # Corrupt all bars with timestamp >= t_decision_ms (future bars)
+        # 2. Corrupt ONLY bars strictly after decision timestamp T (timestamp >= t_decision_ms)
         df_1m_corrupt = df_1m.copy()
         mask_future = df_1m_corrupt["timestamp"] >= t_decision_ms
         df_1m_corrupt.loc[mask_future, "close"] *= 1000.0
@@ -528,26 +533,36 @@ class TestPhase13HigherTimeframeCausality(unittest.TestCase):
         df_1m_corrupt.loc[mask_future, "volume"] = 9999999.0
         df_1m_corrupt.loc[mask_future, "delta_v"] = -888888.0
 
+        # 3. Compute indicators independently on the corrupted source
         df_5m_bad, df_15m_bad, df_1h_bad, df_4h_bad = p13.resample_phase13_bars(df_1m_corrupt)
         df_15m_bad["atr_14"] = p13.compute_atr(df_15m_bad["high"], df_15m_bad["low"], df_15m_bad["close"], 14)
         df_1h_bad["atr_14"] = p13.compute_atr(df_1h_bad["high"], df_1h_bad["low"], df_1h_bad["close"], 14)
-        df_4h_bad["trend_4h"] = "BULL"
+        df_4h_bad["ema20"] = df_4h_bad["close"].ewm(span=20, adjust=False).mean()
+        df_4h_bad["ema50"] = df_4h_bad["close"].ewm(span=50, adjust=False).mean()
+        df_4h_bad["trend_4h"] = np.where(df_4h_bad["ema20"] > df_4h_bad["ema50"] * 1.001, "BULL", "BEAR")
         merged_bad = p13.merge_completed_htf_features(df_5m_bad, df_15m_bad, df_1h_bad, df_4h_bad)
         row_bad = merged_bad.loc[merged_bad["timestamp"] == bar_open_ms].iloc[0]
 
-        # Verify all features at decision time T are identical
+        # 4. Verify all features available at decision time T (04:00) are identical
         test_features = [
             "open", "high", "low", "close", "volume",
             "close_15m", "high_15m", "low_15m", "atr_15m", "swing_low_15m", "swing_high_15m",
             "close_1h", "high_1h", "low_1h", "atr_1h", "swing_low_1h", "swing_high_1h",
+            "close_4h", "high_4h", "low_4h", "trend_4h",
         ]
         for feat in test_features:
             v_clean = row_clean[feat]
             v_bad = row_bad[feat]
-            if np.isnan(v_clean):
-                self.assertTrue(np.isnan(v_bad), f"Feature {feat} was NaN in clean but {v_bad} in corrupt")
+            if pd.isna(v_clean):
+                self.assertTrue(pd.isna(v_bad), f"Feature {feat} was NaN in clean but {v_bad} in corrupt")
             else:
-                self.assertEqual(v_clean, v_bad, f"Feature {feat} differed: {v_clean} vs {v_bad}")
+                self.assertEqual(v_clean, v_bad, f"Feature {feat} differed at decision T: clean={v_clean} vs corrupt={v_bad}")
+
+        # 5. Invariance sanity check: confirm future bar at 08:00 was significantly altered by the corruption
+        future_bar_open = start_ms + 475 * 60_000
+        future_clean = merged_clean.loc[merged_clean["timestamp"] == future_bar_open].iloc[0]
+        future_bad = merged_bad.loc[merged_bad["timestamp"] == future_bar_open].iloc[0]
+        self.assertNotEqual(future_clean["close_4h"], future_bad["close_4h"], "Corruption did not alter future 4H bar")
 
     def test_test5_incomplete_candles_and_data_gaps(self):
         """Test 5: Incomplete HTF candle dropped from pipeline; missing values remain NaN with zero fallbacks."""
@@ -634,6 +649,206 @@ class TestPhase13HigherTimeframeCausality(unittest.TestCase):
         self.assertAlmostEqual(res.realized_mae, 0.002, places=6)
         # Full window MAE contains minute 6
         self.assertAlmostEqual(res.full_window_mae, 0.012, places=6)
+
+
+class TestPhase13F02ReviewCorrections(unittest.TestCase):
+    """F-02.1 Review Corrections: Strict Constituent Timestamps, Stop Regimes, and Synthetic HTF Exclusion."""
+
+    def test_adversarial_index_and_timestamp_column_disagree(self):
+        """Confirm that resample_phase13_bars rejects mismatches between DatetimeIndex and 'timestamp'."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 60)
+        # Shift timestamp column by 1 minute while index remains original
+        df_1m["timestamp"] = df_1m["timestamp"] + 60_000
+        with self.assertRaises(ValueError) as ctx:
+            p13.resample_phase13_bars(df_1m)
+        self.assertIn("index dt and timestamp column disagree", str(ctx.exception))
+
+    def test_adversarial_duplicate_timestamps(self):
+        """Confirm that duplicate 1m timestamps are rejected."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 60)
+        # Duplicate row 5
+        dup_row = df_1m.iloc[[5]]
+        df_bad = pd.concat([df_1m, dup_row]).sort_values("timestamp")
+        with self.assertRaises(ValueError) as ctx:
+            p13.resample_phase13_bars(df_bad)
+        self.assertIn("duplicate 1m timestamps", str(ctx.exception))
+
+    def test_adversarial_non_finite_market_data(self):
+        """Confirm non-finite required market data (NaN, inf) raises ValueError."""
+        start_ms = 1672531200000
+        for col in ["open", "high", "low", "close", "volume"]:
+            df_nan = _make_1m_df(start_ms, 60)
+            df_nan.iloc[10, df_nan.columns.get_loc(col)] = np.nan
+            with self.assertRaises(ValueError) as ctx:
+                p13.resample_phase13_bars(df_nan)
+            self.assertIn("non-finite required market data", str(ctx.exception))
+
+            df_inf = _make_1m_df(start_ms, 60)
+            df_inf.iloc[10, df_inf.columns.get_loc(col)] = np.inf
+            with self.assertRaises(ValueError) as ctx:
+                p13.resample_phase13_bars(df_inf)
+            self.assertIn("non-finite required market data", str(ctx.exception))
+
+    def test_adversarial_negative_prices_and_inverted_bounds(self):
+        """Confirm negative prices or high < low bounds raise ValueError."""
+        start_ms = 1672531200000
+        # Negative close
+        df_neg = _make_1m_df(start_ms, 60)
+        df_neg.iloc[5, df_neg.columns.get_loc("close")] = -10.0
+        with self.assertRaises(ValueError) as ctx:
+            p13.resample_phase13_bars(df_neg)
+        self.assertIn("strictly positive", str(ctx.exception))
+
+        # high < low
+        df_inv = _make_1m_df(start_ms, 60)
+        df_inv.iloc[5, df_inv.columns.get_loc("high")] = df_inv.iloc[5, df_inv.columns.get_loc("low")] - 1.0
+        with self.assertRaises(ValueError) as ctx:
+            p13.resample_phase13_bars(df_inv)
+        self.assertIn("cannot be lower than low price", str(ctx.exception))
+
+    def test_adversarial_missing_minute_replaced_by_offgrid_row_all_intervals(self):
+        """Test all 4 intervals (5m, 15m, 1h, 4h): replacing a minute with an off-grid row drops the interval."""
+        start_ms = 1672531200000
+        # 240 minutes = 4 hours
+        df_1m = _make_1m_df(start_ms, 240)
+
+        # Replace minute 2 (00:02:00) with an off-grid row at 00:02:30 (30 seconds off-grid)
+        # Note: row count in the bucket is STILL exactly M (5, 15, 60, 240)
+        df_mod = df_1m.copy()
+        off_grid_ts = start_ms + 2 * 60_000 + 30_000
+        off_grid_dt = pd.to_datetime(off_grid_ts, unit="ms")
+        
+        row_dict = df_mod.iloc[2].to_dict()
+        row_dict["timestamp"] = off_grid_ts
+        df_without_min2 = df_mod.drop(df_mod.index[2])
+        df_offgrid = pd.concat([df_without_min2, pd.DataFrame([row_dict], index=[off_grid_dt])]).sort_values("timestamp")
+
+        # Under the old row-count check, 5/15/60/240 rows would pass.
+        # Under strict constituent timestamp grid validation, the bucket containing 00:02:30 is dropped.
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_offgrid)
+
+        # 5m: bucket 00:00 must be dropped (bucket 00:05 must survive)
+        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms]), 0, "5m bucket 00:00 was not dropped")
+        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms + 5 * 60_000]), 1, "5m bucket 00:05 missing")
+
+        # 15m: bucket 00:00 must be dropped (bucket 00:15 must survive)
+        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms]), 0, "15m bucket 00:00 was not dropped")
+        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms + 15 * 60_000]), 1, "15m bucket 00:15 missing")
+
+        # 1h: bucket 00:00 must be dropped (bucket 01:00 must survive)
+        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms]), 0, "1h bucket 00:00 was not dropped")
+        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms + 60 * 60_000]), 1, "1h bucket 01:00 missing")
+
+        # 4h: bucket 00:00 must be dropped
+        self.assertEqual(len(df_4h.loc[df_4h["timestamp"] == start_ms]), 0, "4h bucket 00:00 was not dropped")
+
+    def test_adversarial_shifted_timestamps_all_intervals(self):
+        """Test all 4 intervals (5m, 15m, 1h, 4h): sub-minute shifted timestamp drops the interval."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 240)
+
+        # Shift minute 2 timestamp by 500ms
+        df_mod = df_1m.copy()
+        shifted_ts = start_ms + 2 * 60_000 + 500
+        shifted_dt = pd.to_datetime(shifted_ts, unit="ms")
+        row_dict = df_mod.iloc[2].to_dict()
+        row_dict["timestamp"] = shifted_ts
+        df_without_min2 = df_mod.drop(df_mod.index[2])
+        df_shifted = pd.concat([df_without_min2, pd.DataFrame([row_dict], index=[shifted_dt])]).sort_values("timestamp")
+
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_shifted)
+        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms]), 0)
+        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms]), 0)
+        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms]), 0)
+        self.assertEqual(len(df_4h.loc[df_4h["timestamp"] == start_ms]), 0)
+
+    def test_sub_02_stop_regime_exhaustive_mapping(self):
+        """Verify SUB_02 stop regime bucket and complete partition of STOP_REGIMES."""
+        self.assertEqual(p13.STOP_REGIMES[0], ("SUB_02", 0.0000, 0.0020))
+        # Contiguous partition check
+        for idx in range(1, len(p13.STOP_REGIMES)):
+            prev_high = p13.STOP_REGIMES[idx - 1][2]
+            curr_low = p13.STOP_REGIMES[idx][1]
+            self.assertAlmostEqual(prev_high, curr_low, places=6)
+        self.assertEqual(p13.STOP_REGIMES[0][1], 0.0000)
+        self.assertEqual(p13.STOP_REGIMES[-1][2], 1.0000)
+
+        # classify_stop_regime mapping across all regimes
+        self.assertEqual(p13.classify_stop_regime(0.0005), "SUB_02")
+        self.assertEqual(p13.classify_stop_regime(0.0019), "SUB_02")
+        self.assertEqual(p13.classify_stop_regime(0.0025), "TIGHT_02_03")
+        self.assertEqual(p13.classify_stop_regime(0.0040), "MOD_03_05")
+        self.assertEqual(p13.classify_stop_regime(0.0060), "BALANCED_05_075")
+        self.assertEqual(p13.classify_stop_regime(0.0085), "ROOM_075_10")
+        self.assertEqual(p13.classify_stop_regime(0.0125), "WIDE_10_15")
+        self.assertEqual(p13.classify_stop_regime(0.0250), "VERY_WIDE_GT15")
+
+    def test_shifted_rolling_close_quantiles_no_self_inclusion(self):
+        """Verify rolling close quantiles use shift(1) preventing candle self-inclusion."""
+        closes = pd.Series([10.0] * 60)
+        # Inject extreme spike at index 50
+        closes.iloc[50] = 1000.0
+        
+        q95_unshifted = closes.rolling(10, min_periods=5).quantile(0.95)
+        q95_shifted = closes.rolling(10, min_periods=5).quantile(0.95).shift(1)
+        
+        # At index 50, unshifted includes the spike (self-inclusion bug)
+        self.assertGreater(q95_unshifted.iloc[50], 500.0)
+        # Shifted strictly excludes index 50 (causal)
+        self.assertEqual(q95_shifted.iloc[50], 10.0)
+        # At index 51, shifted incorporates index 50 from prior history
+        self.assertGreater(q95_shifted.iloc[51], 500.0)
+
+    def test_diagnostic_event_extraction_and_htf_exclusion(self):
+        """Synthetic benchmark proving unavailable HTF structural stops are excluded without fallbacks."""
+        # 12 hours = 720 minutes
+        start_ms = p13.TS_JAN_01_2023 + 10 * 3600_000
+        df_1m = _make_1m_df(start_ms, 720, base_price=100.0, step=0.01)
+
+        # Inject momentum displacement at bar 55 (minute 275: 04:35 UTC, closes 04:40 UTC)
+        for m in range(275, 280):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 100.0 + (m - 275) * 1.0
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 100.0 + (m - 275 + 1) * 1.0
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 106.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 99.5
+
+        # Inject momentum displacement at bar 80 (minute 400: 06:40 UTC, closes 06:45 UTC)
+        for m in range(400, 405):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 105.0 + (m - 400) * 1.0
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 105.0 + (m - 400 + 1) * 1.0
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 111.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 104.5
+
+        engine = p13.Phase13DiscoveryEngine()
+        events, outcomes, evals = engine.extract_events_for_symbol("BTC-USDT", df_1m)
+
+        self.assertGreater(len(events), 0)
+        self.assertGreater(len(evals), 0)
+
+        # Bar 55 event: 1h swing must be excluded
+        ts_bar_55 = start_ms + 275 * 60_000
+        ev_55_list = [e for e in events if e.timestamp_ms == ts_bar_55]
+        self.assertTrue(len(ev_55_list) > 0, "Event at bar 55 not extracted")
+        ev_55 = ev_55_list[0]
+        evals_55 = [ev for ev in evals if ev.event_id == ev_55.event_id]
+        models_55 = [ev.stop_model for ev in evals_55]
+
+        # STOP_1H_SWING must NOT be in models_55
+        self.assertNotIn("STOP_1H_SWING", models_55, "STOP_1H_SWING was prematurely generated before 6 completed 1h bars")
+        # 5m and 15m swings must be present
+        self.assertIn("STOP_5M_SWING", models_55)
+        self.assertIn("STOP_15M_SWING", models_55)
+
+        # Bar 80 event: 1h swing must be present
+        ts_bar_80 = start_ms + 400 * 60_000
+        ev_80_list = [e for e in events if e.timestamp_ms == ts_bar_80]
+        self.assertTrue(len(ev_80_list) > 0, "Event at bar 80 not extracted")
+        ev_80 = ev_80_list[0]
+        evals_80 = [ev for ev in evals if ev.event_id == ev_80.event_id]
+        models_80 = [ev.stop_model for ev in evals_80]
+        self.assertIn("STOP_1H_SWING", models_80, "STOP_1H_SWING missing after 6 completed 1h bars")
 
 
 if __name__ == "__main__":

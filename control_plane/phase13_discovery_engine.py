@@ -56,6 +56,9 @@ FRICTION_FEE_SLIP = 0.00091    # 9.1 bps (7.0 bps fee + 2.1 bps empirical slippa
 FRICTION_CONSERVATIVE = 0.00141 # 14.1 bps (10.0 bps taker fee + 4.1 bps slippage)
 
 # Stop Distance Regimes (Buckets)
+# Rationale: Added ("SUB_02", 0.0000, 0.0020) at index 0 so that the empirical regime mapping
+# partitions [0.0, 1.0] exhaustively. Previously, distances < 20 bps were mapped in classify_stop_regime
+# but missing from STOP_REGIMES enumeration, causing silent omission from regime-level aggregations.
 STOP_REGIMES = [
     ("SUB_02", 0.0000, 0.0020),
     ("TIGHT_02_03", 0.0020, 0.0030),
@@ -65,6 +68,46 @@ STOP_REGIMES = [
     ("WIDE_10_15", 0.0100, 0.0150),
     ("VERY_WIDE_GT15", 0.0150, 1.0000),
 ]
+
+# ==============================================================================
+# PHASE 13 TIMESTAMP CONVENTION & SEMANTICS AUDIT
+# ==============================================================================
+# 1. 'timestamp' / 'timestamp_ms':
+#    Represents the bar OPEN timestamp (UTC milliseconds).
+#    A 5m bar with timestamp_ms = 1672531200000 opens at 00:00:00.000 UTC.
+#
+# 2. 'decision_timestamp_ms' / 'ts_close':
+#    Represents the bar CLOSE timestamp (UTC milliseconds), calculated strictly as:
+#        decision_timestamp_ms = timestamp_ms + (5 * 60 * 1000)
+#    This is the exact timestamp at which the 5m interval is complete, the bar's
+#    close is known, features are causal, and the signal decision becomes knowable.
+#
+# 3. 'dt_utc':
+#    ISO 8601 string representation of the decision timestamp (candle close),
+#    e.g. "2023-01-01 00:05:00+00:00".
+#
+# 4. Chronological Split Assignment:
+#    Evaluated on 'decision_timestamp_ms' (NOT candle open). This guarantees that
+#    decisions occurring at the exact embargo boundary are assigned to EMBARGO,
+#    preventing forward leakage into TRAIN.
+#
+# 5. Forward Excursion & Outcome Evaluation:
+#    1m forward bars are sliced starting at exactly 'ts_close' ('decision_timestamp_ms').
+#    Minute 0 of the forward trajectory corresponds to [decision_timestamp_ms, decision_timestamp_ms + 60s).
+#    No future data prior to decision_timestamp_ms is ever accessed.
+#
+# 6. Higher-Timeframe Feature Availability:
+#    HTF bars are available ONLY after their completion timestamp:
+#        available_15m_ts = ts_15m_open + 15m
+#        available_1h_ts = ts_1h_open + 60m
+#        available_4h_ts = ts_4h_open + 240m
+#    Joined via backward merge_asof on: decision_timestamp_ms >= available_ts.
+#
+# 7. Open F-03 CVD Defect Handoff:
+#    In extract_events_for_symbol, when CVD is missing, cvd_zscore is set to 0.0
+#    with cvd_data_status = 'NOT_AVAILABLE'. Replacing missing CVD with neutral zero
+#    is an open F-03 defect deferred to Step 3 (F-03 CVD & order-flow tick aggregation).
+# ==============================================================================
 
 # Forward Evaluation Horizons (minutes)
 FORWARD_HORIZONS = [1, 3, 5, 10, 15, 30, 60, 120]
@@ -523,10 +566,13 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
     """Resample 1m data to complete 5m, 15m, 1h, and 4h OHLCV bars.
 
     Causality & Data Integrity Rules:
-    - Requires DatetimeIndex with zero duplicates.
-    - An interval is valid only if ALL constituent 1m bars are present and valid (notna).
+    - Requires DatetimeIndex with zero duplicates, agreeing with 'timestamp' column.
+    - Rejects non-finite required market data (NaN, Inf), negative prices/volume, and high < low.
+    - Rejects off-grid, sub-minute timestamps from constituent intervals.
+    - An interval is valid only if ALL constituent 1m bars form the exact expected
+      timestamp grid {T_open + k*60_000 for k in 0..M-1}.
       (5 for 5m, 15 for 15m, 60 for 1h, 240 for 4h).
-    - Incomplete intervals are dropped. No interpolation or gap-filling.
+    - Incomplete, shifted, or off-grid intervals are dropped. No interpolation or gap-filling.
     - If order-flow columns (delta_v, aggressive_buy_volume, aggressive_sell_volume)
       are present, they are aggregated only if all constituent 1m rows have valid flow.
       If any constituent minute is NaN, the aggregated flow is set to np.nan.
@@ -537,51 +583,40 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
     if missing:
         raise ValueError(f"Phase 13 requires source columns {missing}; refusing to infer missing market data")
 
-    if not isinstance(df_1m.index, pd.DatetimeIndex):
+    # Reject non-finite market data
+    vals = df_1m[required].to_numpy(dtype=float)
+    if not np.isfinite(vals).all():
+        raise ValueError("Phase 13 source contains non-finite required market data (NaN or Inf)")
+    if (df_1m["open"] <= 0).any() or (df_1m["high"] <= 0).any() or (df_1m["low"] <= 0).any() or (df_1m["close"] <= 0).any():
+        raise ValueError("Phase 13 source prices must be strictly positive")
+    if (df_1m["high"] < df_1m["low"]).any():
+        raise ValueError("Phase 13 source high price cannot be lower than low price")
+    if (df_1m["volume"] < 0).any():
+        raise ValueError("Phase 13 source volume cannot be negative")
+
+    # Timestamp and DatetimeIndex validation
+    if isinstance(df_1m.index, pd.DatetimeIndex):
+        dt_ms = (df_1m.index - pd.Timestamp("1970-01-01")) // pd.Timedelta(milliseconds=1)
+        ts_col = df_1m["timestamp"].to_numpy(dtype=np.int64)
+        if not np.array_equal(dt_ms.to_numpy(), ts_col):
+            raise ValueError("Phase 13 source index dt and timestamp column disagree")
+        if df_1m.index.has_duplicates or df_1m["timestamp"].duplicated().any():
+            raise ValueError("Phase 13 source has duplicate 1m timestamps; de-duplicate and audit upstream")
+        df = df_1m.copy()
+    else:
         if "timestamp" in df_1m.columns:
+            if df_1m["timestamp"].duplicated().any():
+                raise ValueError("Phase 13 source has duplicate 1m timestamps; de-duplicate and audit upstream")
             df = df_1m.copy()
             df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
             df = df.set_index("dt")
         else:
             raise ValueError("Phase 13 resampling requires a DatetimeIndex or timestamp column")
-    else:
-        df = df_1m.copy()
-
-    if df.index.has_duplicates:
-        raise ValueError("Phase 13 source has duplicate 1m timestamps; de-duplicate and audit upstream")
 
     df.index.name = "dt"
     df = df.sort_index()
-    valid_1m = df[required].notna().all(axis=1).astype("int8")
 
-    # 5m aggregation
-    agg_5m = {
-        "timestamp": "first",
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "sum",
-    }
-    flow_columns = ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume")
-    for flow_col in flow_columns:
-        if flow_col in df.columns:
-            agg_5m[flow_col] = "sum"
-
-    df_5m = df.resample("5min", label="left", closed="left").agg(agg_5m)
-    valid_5m_count = valid_1m.resample("5min", label="left", closed="left").sum()
-    df_5m = df_5m.loc[valid_5m_count[valid_5m_count == 5].index].dropna(
-        subset=["timestamp", "open", "high", "low", "close", "volume"]
-    ).copy()
-
-    for flow_col in flow_columns:
-        if flow_col not in df_5m.columns:
-            df_5m[flow_col] = np.nan
-        elif flow_col in df.columns:
-            flow_count = df[flow_col].notna().astype("int8").resample("5min", label="left", closed="left").sum()
-            df_5m.loc[flow_count.reindex(df_5m.index).fillna(0).astype(int) != 5, flow_col] = np.nan
-
-    def _complete_htf(rule: str, expected_minutes: int, include_volume: bool = True) -> pd.DataFrame:
+    def _resample_strict_interval(rule: str, expected_minutes: int, include_volume: bool = True) -> pd.DataFrame:
         agg = {
             "timestamp": "first",
             "open": "first",
@@ -591,14 +626,47 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
         }
         if include_volume:
             agg["volume"] = "sum"
-        resampled = df.resample(rule, label="left", closed="left").agg(agg)
-        valid_count = valid_1m.resample(rule, label="left", closed="left").sum()
-        resampled = resampled.loc[valid_count[valid_count == expected_minutes].index]
-        return resampled.dropna(subset=["open", "high", "low", "close"]).copy()
 
-    df_15m = _complete_htf("15min", 15, include_volume=True)
-    df_1h = _complete_htf("1h", 60, include_volume=True)
-    df_4h = _complete_htf("4h", 240, include_volume=False)
+        bucket_starts = df.index.floor(rule)
+        rem = (df.index - bucket_starts) % pd.Timedelta(minutes=1)
+        offsets = (df.index - bucket_starts) // pd.Timedelta(minutes=1)
+        # Row is on-grid iff exactly at minute boundary and within interval range
+        on_grid = (rem == pd.Timedelta(0)) & (offsets >= 0) & (offsets < expected_minutes)
+
+        s_valid = pd.Series(on_grid.astype(int), index=df.index)
+        s_offset = pd.Series(offsets, index=df.index)
+
+        gtot = s_valid.groupby(bucket_starts).count()
+        gval = s_valid.groupby(bucket_starts).sum()
+        gunq = s_offset.where(s_valid == 1).groupby(bucket_starts).nunique()
+        gmin = s_offset.where(s_valid == 1).groupby(bucket_starts).min()
+        gmax = s_offset.where(s_valid == 1).groupby(bucket_starts).max()
+
+        is_valid_bucket = (
+            (gtot == expected_minutes) &
+            (gval == expected_minutes) &
+            (gunq == expected_minutes) &
+            (gmin == 0) &
+            (gmax == expected_minutes - 1)
+        )
+        valid_indices = is_valid_bucket[is_valid_bucket].index
+
+        resampled = df.resample(rule, label="left", closed="left").agg(agg)
+        resampled = resampled.loc[valid_indices].dropna(subset=["open", "high", "low", "close"]).copy()
+        return resampled
+
+    df_5m = _resample_strict_interval("5min", 5, include_volume=True)
+    df_15m = _resample_strict_interval("15min", 15, include_volume=True)
+    df_1h = _resample_strict_interval("1h", 60, include_volume=True)
+    df_4h = _resample_strict_interval("4h", 240, include_volume=False)
+
+    flow_columns = ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume")
+    for flow_col in flow_columns:
+        if flow_col not in df_5m.columns:
+            df_5m[flow_col] = np.nan
+        elif flow_col in df.columns:
+            flow_count = df[flow_col].notna().astype("int8").resample("5min", label="left", closed="left").sum()
+            df_5m.loc[flow_count.reindex(df_5m.index).fillna(0).astype(int) != 5, flow_col] = np.nan
 
     return df_5m, df_15m, df_1h, df_4h
 

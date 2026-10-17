@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-10-17T16:15:58.246115+00:00",
-  "step": "STEP_2_HTF_CAUSALITY_REPAIR",
+  "timestamp": "2026-10-17T17:31:44.271148+00:00",
+  "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_1",
   "branch": "repair/phase13-f02-htf-causality",
-  "commit_base": "abdc66181c969349f5b1bcf66e90cc386e80149c",
+  "commit_base": "e367da2688e5b1bf577186201dd45bfc73c26b7b",
   "synthetic_benchmark": {
-    "total_5m_bars": 96,
+    "total_5m_bars": 144,
     "old_join": {
-      "premature_15m_exposures": 64,
+      "premature_15m_exposures": 96,
       "premature_15m_exposure_pct": 66.67,
-      "premature_1h_exposures": 88,
+      "premature_1h_exposures": 132,
       "premature_1h_exposure_pct": 91.67,
-      "premature_4h_exposures": 94,
+      "premature_4h_exposures": 141,
       "premature_4h_exposure_pct": 97.92
     },
     "repaired_causal_join": {
@@ -21,11 +21,39 @@
       "premature_4h_exposures": 0,
       "premature_4h_exposure_pct": 0.0
     },
+    "synthetic_event_audit": {
+      "total_events_extracted": 76,
+      "total_stop_evaluations": 277,
+      "early_event_stop_models": [
+        "STOP_15M_SWING",
+        "STOP_5M_SWING",
+        "STOP_ATR_ENVELOPE"
+      ],
+      "late_event_stop_models": [
+        "STOP_15M_SWING",
+        "STOP_1H_SWING",
+        "STOP_5M_SWING",
+        "STOP_ATR_ENVELOPE"
+      ],
+      "missing_1h_stop_excluded_early": true,
+      "available_1h_stop_included_late": true,
+      "missing_htf_properly_excluded": true,
+      "synthetic_fallback_violations": 0,
+      "status": "VERIFIED_EXCLUSION_AND_FALLBACK_FREE"
+    },
     "timing_alignment_contract": "STRICT_COMPLETION_T_PLUS_DELTA_T"
   },
   "historical_benchmark": {
     "status": "COMPLETED",
-    "sample_1m_bars": 5760,
+    "sample_metadata": {
+      "symbol": "BTCUSDT",
+      "sample_1m_bars": 5760,
+      "first_timestamp_ms": 1640995200000,
+      "last_timestamp_ms": 1641340740000,
+      "first_dt_utc": "2022-01-01 00:00:00+00:00",
+      "last_dt_utc": "2022-01-04 23:59:00+00:00",
+      "data_provenance": "data/processed/binance_um_universe_1m_v2.parquet"
+    },
     "total_5m_decision_bars": 1152,
     "old_engine_lookahead_stats": {
       "premature_15m_bars": 768,
@@ -43,11 +71,14 @@
       "premature_4h_bars": 0,
       "premature_4h_pct": 0.0
     },
-    "events_audit": {
+    "historical_events_audit": {
       "total_events_extracted": 0,
+      "total_stop_evaluations": 0,
       "stop_models_distribution": {},
       "synthetic_fallback_violations": 0,
-      "missing_htf_properly_excluded": true
+      "event_validation_status": "INCONCLUSIVE",
+      "event_validation_reason": "NO_HISTORICAL_EVENTS_DETECTED_IN_BOUNDED_SAMPLE_WINDOW",
+      "missing_htf_properly_excluded": "INCONCLUSIVE_ZERO_EVENTS"
     },
     "causality_verdict": "VERIFIED_ZERO_LOOKAHEAD"
   },
@@ -56,6 +87,7 @@
     "decision_timestamp": "ts_bar + 5m",
     "merge_direction": "backward merge_asof on decision_ts >= available_ts",
     "freshness_contract": "Stale after interval_length without completed subsequent bar",
+    "constituent_grid_contract": "Exact contiguous integer minute grid required for 5m, 15m, 1h, 4h",
     "fallbacks_status": "COMPLETELY_ELIMINATED",
     "alpha_disclaimer": "DIAGNOSTIC ONLY. Other known Phase 13 defects (e.g. F-03 CVD) remain. This does not validate strategy profitability."
   },
