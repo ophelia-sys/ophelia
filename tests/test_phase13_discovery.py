@@ -850,6 +850,35 @@ class TestPhase13F02ReviewCorrections(unittest.TestCase):
         models_80 = [ev.stop_model for ev in evals_80]
         self.assertIn("STOP_1H_SWING", models_80, "STOP_1H_SWING missing after 6 completed 1h bars")
 
+    def test_diagnostic_historical_slice_explicit_period_provenance(self):
+        """F-02.2: Proves the diagnostic slice selects explicit UTC Jan 1-4 2023, failing on iloc[:5760]."""
+        from scripts.run_phase13_f02_diagnostic import run_historical_slice_benchmark
+        res = run_historical_slice_benchmark(
+            start_utc="2023-01-01 00:00:00",
+            end_utc="2023-01-04 23:59:00",
+            symbol="BTCUSDT",
+        )
+        self.assertEqual(res["status"], "COMPLETED")
+        meta = res["sample_metadata"]
+        
+        # Must strictly be January 1-4 2023 UTC
+        self.assertEqual(meta["first_timestamp_ms"], 1672531200000)
+        self.assertEqual(meta["first_dt_utc"], "2023-01-01 00:00:00+00:00")
+        self.assertEqual(meta["last_dt_utc"], "2023-01-04 23:59:00+00:00")
+        self.assertEqual(meta["sample_1m_bars"], 5760)
+
+        # Adversarial check: verify it does NOT select the 2022 dataset start (1640995200000)
+        self.assertNotEqual(meta["first_timestamp_ms"], 1640995200000)
+        self.assertNotIn("2022", meta["first_dt_utc"])
+
+        # Causality verdict and events audit
+        self.assertEqual(res["causality_verdict"], "VERIFIED_ZERO_LOOKAHEAD")
+        audit = res["historical_events_audit"]
+        self.assertEqual(audit["event_validation_status"], "VERIFIED")
+        self.assertGreater(audit["total_events_extracted"], 0)
+        self.assertTrue(audit["missing_htf_properly_excluded"])
+        self.assertEqual(audit["synthetic_fallback_violations"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

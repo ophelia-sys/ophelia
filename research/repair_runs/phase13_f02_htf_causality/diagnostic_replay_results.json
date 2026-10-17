@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-10-17T17:31:44.271148+00:00",
-  "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_1",
+  "timestamp": "2026-10-17T17:43:50.712373+00:00",
+  "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_2",
   "branch": "repair/phase13-f02-htf-causality",
-  "commit_base": "e367da2688e5b1bf577186201dd45bfc73c26b7b",
+  "commit_base": "ffd7668aef3b9d33aca9c3bc570f48f97cc85f1c",
   "synthetic_benchmark": {
     "total_5m_bars": 144,
     "old_join": {
@@ -48,10 +48,10 @@
     "sample_metadata": {
       "symbol": "BTCUSDT",
       "sample_1m_bars": 5760,
-      "first_timestamp_ms": 1640995200000,
-      "last_timestamp_ms": 1641340740000,
-      "first_dt_utc": "2022-01-01 00:00:00+00:00",
-      "last_dt_utc": "2022-01-04 23:59:00+00:00",
+      "first_timestamp_ms": 1672531200000,
+      "last_timestamp_ms": 1672876740000,
+      "first_dt_utc": "2023-01-01 00:00:00+00:00",
+      "last_dt_utc": "2023-01-04 23:59:00+00:00",
       "data_provenance": "data/processed/binance_um_universe_1m_v2.parquet"
     },
     "total_5m_decision_bars": 1152,
@@ -72,13 +72,18 @@
       "premature_4h_pct": 0.0
     },
     "historical_events_audit": {
-      "total_events_extracted": 0,
-      "total_stop_evaluations": 0,
-      "stop_models_distribution": {},
+      "total_events_extracted": 1398,
+      "total_stop_evaluations": 5562,
+      "stop_models_distribution": {
+        "STOP_5M_SWING": 1398,
+        "STOP_15M_SWING": 1398,
+        "STOP_ATR_ENVELOPE": 1398,
+        "STOP_1H_SWING": 1368
+      },
       "synthetic_fallback_violations": 0,
-      "event_validation_status": "INCONCLUSIVE",
-      "event_validation_reason": "NO_HISTORICAL_EVENTS_DETECTED_IN_BOUNDED_SAMPLE_WINDOW",
-      "missing_htf_properly_excluded": "INCONCLUSIVE_ZERO_EVENTS"
+      "event_validation_status": "VERIFIED",
+      "event_validation_reason": "HISTORICAL_EVENTS_EVALUATED",
+      "missing_htf_properly_excluded": true
     },
     "causality_verdict": "VERIFIED_ZERO_LOOKAHEAD"
   },
@@ -93,6 +98,8 @@
   },
   "provenance": {
     "source_parquet": "data/processed/binance_um_universe_1m_v2.parquet",
+    "target_period_utc": "2023-01-01 00:00:00 to 2023-01-04 23:59:00 UTC",
+    "symbol": "BTCUSDT",
     "diagnostic_mode": "BOUNDED_READ_ONLY",
     "canonical_data_preserved": true
   }

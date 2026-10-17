@@ -596,7 +596,8 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
 
     # Timestamp and DatetimeIndex validation
     if isinstance(df_1m.index, pd.DatetimeIndex):
-        dt_ms = (df_1m.index - pd.Timestamp("1970-01-01")) // pd.Timedelta(milliseconds=1)
+        epoch = pd.Timestamp("1970-01-01", tz="UTC") if df_1m.index.tz is not None else pd.Timestamp("1970-01-01")
+        dt_ms = (df_1m.index - epoch) // pd.Timedelta(milliseconds=1)
         ts_col = df_1m["timestamp"].to_numpy(dtype=np.int64)
         if not np.array_equal(dt_ms.to_numpy(), ts_col):
             raise ValueError("Phase 13 source index dt and timestamp column disagree")

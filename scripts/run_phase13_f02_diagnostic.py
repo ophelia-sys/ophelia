@@ -1,13 +1,14 @@
-"""Ophelia Phase 13 Step 2 (F-02.1) Diagnostic Replay & Bounded Historical Comparison.
+"""Ophelia Phase 13 Step 2 (F-02.2) Diagnostic Replay & Bounded Historical Comparison.
 
 Script: scripts/run_phase13_f02_diagnostic.py
 Purpose:
 - Deterministic synthetic replay quantifying Old (lookahead left-label) vs Repaired (causal completion) joins.
 - Deterministic synthetic event extraction proving unavailable HTF structural stops are excluded without fallbacks.
-- Bounded historical replay on Binance UM dataset slice (BTCUSDT Jan 2023) measuring premature feature exposure.
+- Bounded historical replay on Binance UM dataset slice (BTCUSDT Jan 1–4, 2023: 1672531200000 to 1672876740000 UTC).
+- Enforces explicit UTC period boundaries [start_utc, end_utc] with exact 1m constituent validation.
 - Correctly iterates stop-evaluation records (evals) for stop_model attributes (not events).
 - Computes reported rates from actual counts; asserts zero premature exposure before declaring causality pass.
-- Distinguishes VERIFIED causality from INCONCLUSIVE event-level coverage when sample produces zero events.
+- Distinguishes VERIFIED causality from INCONCLUSIVE/SKIPPED when sample has data defects.
 - Saves results strictly to research/repair_runs/phase13_f02_htf_causality/diagnostic_replay_results.json
 - DOES NOT overwrite canonical data/phase13_results.json or data/phase13_stop_room.json.
 - Disclaims alpha/profitability: diagnostic and causality verification only.
@@ -238,23 +239,80 @@ def run_synthetic_benchmark() -> Dict[str, Any]:
     }
 
 
-def run_historical_slice_benchmark(max_rows: int = 5760) -> Dict[str, Any]:
-    """Runs diagnostic slice on real historical dataset (BTCUSDT up to 4 days = 5760 1m bars)."""
+def run_historical_slice_benchmark(
+    start_utc: str = "2023-01-01 00:00:00",
+    end_utc: str = "2023-01-04 23:59:00",
+    symbol: str = "BTCUSDT",
+) -> Dict[str, Any]:
+    """Runs diagnostic slice on real historical dataset with explicit UTC period boundaries.
+    
+    Default period: January 1–4, 2023 (4 days = exactly 5,760 1m candles).
+    Strictly filters by timestamp range [start_ts_ms, end_ts_ms].
+    Never falls back to iloc[:5760] or an arbitrary date slice.
+    """
     parquet_path = os.path.join(REPO_ROOT, "data", "processed", "binance_um_universe_1m_v2.parquet")
     if not os.path.exists(parquet_path):
         logger.warning("Historical dataset not found at %s; returning skipped benchmark", parquet_path)
         return {"status": "SKIPPED", "reason": "DATASET_NOT_FOUND"}
 
-    logger.info("Loading bounded historical slice (BTCUSDT, max %d rows) from %s...", max_rows, parquet_path)
+    dt_start = pd.to_datetime(start_utc, utc=True)
+    dt_end = pd.to_datetime(end_utc, utc=True)
+    target_start_ms = int(dt_start.timestamp() * 1000)
+    target_end_ms = int(dt_end.timestamp() * 1000)
+    expected_minutes = int((target_end_ms - target_start_ms) // 60_000) + 1
+
+    logger.info("Loading bounded historical slice (%s, %s to %s, expected %d rows) from %s...",
+                symbol, start_utc, end_utc, expected_minutes, parquet_path)
     df_raw = pd.read_parquet(parquet_path)
     if "symbol" in df_raw.columns:
-        df_btc = df_raw[df_raw["symbol"] == "BTCUSDT"].copy()
+        df_btc = df_raw[df_raw["symbol"] == symbol].copy()
     else:
         df_btc = df_raw.copy()
 
-    df_btc = df_btc.sort_values("timestamp").iloc[:max_rows].copy()
+    # Explicit UTC filtering
+    df_btc = df_btc[(df_btc["timestamp"] >= target_start_ms) & (df_btc["timestamp"] <= target_end_ms)].sort_values("timestamp").copy()
+
+    if len(df_btc) == 0:
+        logger.warning("No rows found for %s between %s and %s; marking SKIPPED", symbol, start_utc, end_utc)
+        return {
+            "status": "SKIPPED",
+            "reason": f"TARGET_PERIOD_UNAVAILABLE_{start_utc}_TO_{end_utc}",
+            "symbol": symbol,
+        }
+
+    # Verify duplicate bars
+    if df_btc["timestamp"].duplicated().any():
+        logger.error("Duplicate timestamps detected in historical slice for %s", symbol)
+        return {
+            "status": "INCONCLUSIVE",
+            "reason": "DUPLICATE_TIMESTAMPS_IN_HISTORICAL_SLICE",
+            "symbol": symbol,
+        }
+
+    # Verify exact one-minute coverage
+    if len(df_btc) != expected_minutes:
+        logger.warning("Incomplete one-minute coverage for %s: found %d of expected %d rows",
+                       symbol, len(df_btc), expected_minutes)
+        return {
+            "status": "INCONCLUSIVE",
+            "reason": f"INCOMPLETE_COVERAGE_{len(df_btc)}_OF_{expected_minutes}",
+            "symbol": symbol,
+            "actual_rows": len(df_btc),
+            "expected_rows": expected_minutes,
+        }
+
+    # Verify contiguous minute step
+    ts_diffs = df_btc["timestamp"].diff().dropna().unique()
+    if len(ts_diffs) != 1 or ts_diffs[0] != 60_000:
+        logger.warning("Historical slice timestamps are not contiguous 60,000ms intervals: %s", ts_diffs)
+        return {
+            "status": "INCONCLUSIVE",
+            "reason": "NON_CONTIGUOUS_OR_GAPPED_TIMESTAMPS",
+            "symbol": symbol,
+        }
+
     if not isinstance(df_btc.index, pd.DatetimeIndex):
-        df_btc["dt"] = pd.to_datetime(df_btc["timestamp"], unit="ms")
+        df_btc["dt"] = pd.to_datetime(df_btc["timestamp"], unit="ms", utc=True)
         df_btc = df_btc.set_index("dt")
 
     sample_first_ts = int(df_btc["timestamp"].iloc[0])
@@ -262,7 +320,7 @@ def run_historical_slice_benchmark(max_rows: int = 5760) -> Dict[str, Any]:
     sample_first_dt = str(pd.to_datetime(sample_first_ts, unit="ms", utc=True))
     sample_last_dt = str(pd.to_datetime(sample_last_ts, unit="ms", utc=True))
 
-    logger.info("Resampling %d 1m historical bars for BTCUSDT (%s to %s)...", len(df_btc), sample_first_dt, sample_last_dt)
+    logger.info("Resampling %d 1m historical bars for %s (%s to %s)...", len(df_btc), symbol, sample_first_dt, sample_last_dt)
     df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_btc)
 
     df_15m["atr_14"] = p13.compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
@@ -383,9 +441,13 @@ def run_historical_slice_benchmark(max_rows: int = 5760) -> Dict[str, Any]:
 
 
 def main():
-    logger.info("Starting Phase 13 Step 2 (F-02.1) Diagnostic Replay...")
+    logger.info("Starting Phase 13 Step 2 (F-02.2) Diagnostic Replay...")
     synthetic_res = run_synthetic_benchmark()
-    historical_res = run_historical_slice_benchmark(max_rows=5760)
+    historical_res = run_historical_slice_benchmark(
+        start_utc="2023-01-01 00:00:00",
+        end_utc="2023-01-04 23:59:00",
+        symbol="BTCUSDT",
+    )
 
     out_dir = os.path.join(REPO_ROOT, "research", "repair_runs", "phase13_f02_htf_causality")
     os.makedirs(out_dir, exist_ok=True)
@@ -393,9 +455,9 @@ def main():
 
     results = {
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_1",
+        "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_2",
         "branch": "repair/phase13-f02-htf-causality",
-        "commit_base": "e367da2688e5b1bf577186201dd45bfc73c26b7b",
+        "commit_base": "ffd7668aef3b9d33aca9c3bc570f48f97cc85f1c",
         "synthetic_benchmark": synthetic_res,
         "historical_benchmark": historical_res,
         "contract": {
@@ -409,6 +471,8 @@ def main():
         },
         "provenance": {
             "source_parquet": "data/processed/binance_um_universe_1m_v2.parquet",
+            "target_period_utc": "2023-01-01 00:00:00 to 2023-01-04 23:59:00 UTC",
+            "symbol": "BTCUSDT",
             "diagnostic_mode": "BOUNDED_READ_ONLY",
             "canonical_data_preserved": True
         }
@@ -418,12 +482,14 @@ def main():
         json.dump(results, f, indent=2)
 
     logger.info("Saved diagnostic artifact to %s", out_file)
-    print(f"\n--- DIAGNOSTIC SUMMARY (F-02.1) ---\n"
-          f"Old 15m Premature Exposure: {synthetic_res['old_join']['premature_15m_exposure_pct']}%\n"
-          f"Repaired 15m Premature Exposure: {synthetic_res['repaired_causal_join']['premature_15m_exposure_pct']}%\n"
+    print(f"\n--- DIAGNOSTIC SUMMARY (F-02.2) ---\n"
+          f"Historical Period: {historical_res.get('sample_metadata', {}).get('first_dt_utc')} to {historical_res.get('sample_metadata', {}).get('last_dt_utc')}\n"
+          f"Historical Bars (1m): {historical_res.get('sample_metadata', {}).get('sample_1m_bars')}\n"
           f"Historical Total 5m Decision Bars: {historical_res.get('total_5m_decision_bars', 0)}\n"
           f"Historical Causality Verdict: {historical_res.get('causality_verdict')}\n"
           f"Historical Event Status: {historical_res.get('historical_events_audit', {}).get('event_validation_status')}\n"
+          f"Historical Events Extracted: {historical_res.get('historical_events_audit', {}).get('total_events_extracted', 0)}\n"
+          f"Historical Stop Models: {historical_res.get('historical_events_audit', {}).get('stop_models_distribution', {})}\n"
           f"Synthetic Event Extraction Status: {synthetic_res.get('synthetic_event_audit', {}).get('status')}\n"
           f"Synthetic Missing HTF Excluded: {synthetic_res.get('synthetic_event_audit', {}).get('missing_htf_properly_excluded')}\n"
           f"Output saved: {out_file}\n")
