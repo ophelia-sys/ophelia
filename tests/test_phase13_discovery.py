@@ -12,6 +12,8 @@ Verifies:
 from __future__ import annotations
 
 import unittest
+import numpy as np
+import pandas as pd
 from control_plane import phase13_discovery_engine as p13
 
 
@@ -388,6 +390,253 @@ class TestPhase13Discovery(unittest.TestCase):
         self.assertEqual(res.mfe, 0.0)
 
 
+def _make_1m_df(start_ms: int, n_minutes: int, base_price: float = 100.0, step: float = 0.1) -> pd.DataFrame:
+    rows = []
+    for i in range(n_minutes):
+        ts = start_ms + i * 60_000
+        p = base_price + i * step
+        rows.append({
+            "timestamp": ts,
+            "open": p,
+            "high": p + 0.5,
+            "low": p - 0.5,
+            "close": p + 0.2,
+            "volume": 10.0,
+            "taker_buy_volume": 6.0,
+            "delta_v": 2.0,
+            "aggressive_buy_volume": 6.0,
+            "aggressive_sell_volume": 4.0,
+        })
+    df = pd.DataFrame(rows)
+    df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
+    return df.set_index("dt")
+
+
+class TestPhase13HigherTimeframeCausality(unittest.TestCase):
+    """F-02 Deterministic Higher-Timeframe Causality & Alignment Tests.
+
+    Verifies:
+    1. 15-minute feature availability strictly at/after completion (T + 15m).
+    2. 1-hour feature availability strictly at/after completion (T + 60m).
+    3. 4-hour trend feature availability strictly at/after completion (T + 240m) & equality boundary.
+    4. Future-corruption invariance: mutating bars after T leaves features at T byte-for-byte identical.
+    5. Incomplete candles & data gaps: dropped 1m bar invalidates parent HTF interval; features remain NaN with zero fallbacks.
+    6. Warm-up points: rolling window calculations use only completed historical candles.
+    7. Decision timestamp & split boundary: split uses decision timestamp (bar close), preventing embargo leak.
+    8. Regression against F-01: first-passage accounting remains green.
+    """
+
+    def test_test1_15m_availability(self):
+        """Test 1: 15-minute features unavailable before completion; eligible strictly at T + 15m."""
+        start_ms = 1672531200000  # 2023-01-01 00:00:00 UTC
+        df_1m = _make_1m_df(start_ms, 45)  # 45 minutes: 00:00 to 00:44
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m)
+
+        # Compute ATR on 15m
+        df_15m["atr_14"] = p13.compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+
+        # 5m bar 0: opens 00:00, decision at 00:05 (< 00:15) -> 15m must be NaN
+        bar_00_00 = merged.loc[merged["timestamp"] == start_ms].iloc[0]
+        self.assertTrue(np.isnan(bar_00_00["close_15m"]))
+        self.assertTrue(np.isnan(bar_00_00["high_15m"]))
+        self.assertTrue(np.isnan(bar_00_00["low_15m"]))
+
+        # 5m bar 1: opens 00:05, decision at 00:10 (< 00:15) -> 15m must be NaN
+        bar_00_05 = merged.loc[merged["timestamp"] == start_ms + 5 * 60_000].iloc[0]
+        self.assertTrue(np.isnan(bar_00_05["close_15m"]))
+
+        # 5m bar 2: opens 00:10, decision at 00:15 (== 00:15 completion of 00:00-00:15 candle) -> 15m becomes available!
+        bar_00_10 = merged.loc[merged["timestamp"] == start_ms + 10 * 60_000].iloc[0]
+        self.assertFalse(np.isnan(bar_00_10["close_15m"]))
+        # Verify value matches the completed 00:00-00:15 candle (close of minute 14)
+        expected_close_15m = df_15m.loc[df_15m["timestamp"] == start_ms, "close"].iloc[0]
+        self.assertEqual(bar_00_10["close_15m"], expected_close_15m)
+
+        # 5m bar 3: opens 00:15, decision at 00:20 (< 00:30) -> still sees first completed 15m candle
+        bar_00_15 = merged.loc[merged["timestamp"] == start_ms + 15 * 60_000].iloc[0]
+        self.assertEqual(bar_00_15["close_15m"], expected_close_15m)
+
+        # 5m bar 5: opens 00:25, decision at 00:30 (== 00:30 completion of 00:15-00:30 candle) -> 2nd 15m candle available
+        bar_00_25 = merged.loc[merged["timestamp"] == start_ms + 25 * 60_000].iloc[0]
+        expected_close_15m_2 = df_15m.loc[df_15m["timestamp"] == start_ms + 15 * 60_000, "close"].iloc[0]
+        self.assertEqual(bar_00_25["close_15m"], expected_close_15m_2)
+
+    def test_test2_1h_availability(self):
+        """Test 2: 1-hour feature built from 00:00 interval is unavailable before 01:00."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 120)  # 2 hours
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m)
+        df_1h["atr_14"] = p13.compute_atr(df_1h["high"], df_1h["low"], df_1h["close"], 14)
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+
+        # All 5m decisions before 01:00 (i.e. bars opening 00:00 through 00:50, decision 00:05 through 00:55) must have NaN 1h features
+        for min_offset in range(0, 55, 5):
+            row = merged.loc[merged["timestamp"] == start_ms + min_offset * 60_000].iloc[0]
+            self.assertTrue(np.isnan(row["close_1h"]), f"1h close leaked at minute {min_offset}")
+            self.assertTrue(np.isnan(row["high_1h"]), f"1h high leaked at minute {min_offset}")
+
+        # 5m bar opening at 00:55 closes at 01:00 (decision_ts == 01:00). First eligible point!
+        row_00_55 = merged.loc[merged["timestamp"] == start_ms + 55 * 60_000].iloc[0]
+        self.assertFalse(np.isnan(row_00_55["close_1h"]))
+        expected_close_1h = df_1h.loc[df_1h["timestamp"] == start_ms, "close"].iloc[0]
+        self.assertEqual(row_00_55["close_1h"], expected_close_1h)
+
+    def test_test3_4h_availability(self):
+        """Test 3: 4-hour trend derived from 00:00-04:00 bar is not exposed before 04:00, with exact equality at 04:00."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 480)  # 8 hours = 2 4h bars
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m)
+        df_4h["ema20"] = df_4h["close"].ewm(span=20, adjust=False).mean()
+        df_4h["ema50"] = df_4h["close"].ewm(span=50, adjust=False).mean()
+        df_4h["trend_4h"] = np.where(df_4h["ema20"] > df_4h["ema50"] * 1.001, "BULL", "BEAR")
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+
+        # 5m bar opening at 03:50 -> decision at 03:55 (< 04:00) -> trend_4h must be NaN
+        row_03_50 = merged.loc[merged["timestamp"] == start_ms + 230 * 60_000].iloc[0]
+        self.assertTrue(pd.isna(row_03_50["trend_4h"]))
+        self.assertTrue(np.isnan(row_03_50["close_4h"]))
+
+        # 5m bar opening at 03:55 -> decision at 04:00 (== 04:00 equality boundary) -> trend_4h exposed!
+        row_03_55 = merged.loc[merged["timestamp"] == start_ms + 235 * 60_000].iloc[0]
+        self.assertFalse(pd.isna(row_03_55["trend_4h"]))
+        self.assertEqual(row_03_55["trend_4h"], df_4h.loc[df_4h["timestamp"] == start_ms, "trend_4h"].iloc[0])
+        self.assertEqual(row_03_55["close_4h"], df_4h.loc[df_4h["timestamp"] == start_ms, "close"].iloc[0])
+
+    def test_test4_future_corruption_invariance(self):
+        """Test 4: Mutating bars strictly after decision time T leaves all features at T byte-for-byte identical."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 300)  # 5 hours
+        decision_offset_min = 120  # Decision at T = 2 hours
+        t_decision_ms = start_ms + decision_offset_min * 60_000
+        bar_open_ms = t_decision_ms - 5 * 60_000
+
+        # Run uncorrupted
+        df_5m_clean, df_15m_clean, df_1h_clean, df_4h_clean = p13.resample_phase13_bars(df_1m)
+        df_15m_clean["atr_14"] = p13.compute_atr(df_15m_clean["high"], df_15m_clean["low"], df_15m_clean["close"], 14)
+        df_1h_clean["atr_14"] = p13.compute_atr(df_1h_clean["high"], df_1h_clean["low"], df_1h_clean["close"], 14)
+        df_4h_clean["trend_4h"] = "BULL"
+        merged_clean = p13.merge_completed_htf_features(df_5m_clean, df_15m_clean, df_1h_clean, df_4h_clean)
+        row_clean = merged_clean.loc[merged_clean["timestamp"] == bar_open_ms].iloc[0]
+
+        # Corrupt all bars with timestamp >= t_decision_ms (future bars)
+        df_1m_corrupt = df_1m.copy()
+        mask_future = df_1m_corrupt["timestamp"] >= t_decision_ms
+        df_1m_corrupt.loc[mask_future, "close"] *= 1000.0
+        df_1m_corrupt.loc[mask_future, "high"] *= 2000.0
+        df_1m_corrupt.loc[mask_future, "low"] = 0.001
+        df_1m_corrupt.loc[mask_future, "volume"] = 9999999.0
+        df_1m_corrupt.loc[mask_future, "delta_v"] = -888888.0
+
+        df_5m_bad, df_15m_bad, df_1h_bad, df_4h_bad = p13.resample_phase13_bars(df_1m_corrupt)
+        df_15m_bad["atr_14"] = p13.compute_atr(df_15m_bad["high"], df_15m_bad["low"], df_15m_bad["close"], 14)
+        df_1h_bad["atr_14"] = p13.compute_atr(df_1h_bad["high"], df_1h_bad["low"], df_1h_bad["close"], 14)
+        df_4h_bad["trend_4h"] = "BULL"
+        merged_bad = p13.merge_completed_htf_features(df_5m_bad, df_15m_bad, df_1h_bad, df_4h_bad)
+        row_bad = merged_bad.loc[merged_bad["timestamp"] == bar_open_ms].iloc[0]
+
+        # Verify all features at decision time T are identical
+        test_features = [
+            "open", "high", "low", "close", "volume",
+            "close_15m", "high_15m", "low_15m", "atr_15m", "swing_low_15m", "swing_high_15m",
+            "close_1h", "high_1h", "low_1h", "atr_1h", "swing_low_1h", "swing_high_1h",
+        ]
+        for feat in test_features:
+            v_clean = row_clean[feat]
+            v_bad = row_bad[feat]
+            if np.isnan(v_clean):
+                self.assertTrue(np.isnan(v_bad), f"Feature {feat} was NaN in clean but {v_bad} in corrupt")
+            else:
+                self.assertEqual(v_clean, v_bad, f"Feature {feat} differed: {v_clean} vs {v_bad}")
+
+    def test_test5_incomplete_candles_and_data_gaps(self):
+        """Test 5: Incomplete HTF candle dropped from pipeline; missing values remain NaN with zero fallbacks."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 60)
+        # Drop minute 7 -> 00:00-00:15 has 14 bars (< 15)
+        df_1m_gap = df_1m.loc[df_1m["timestamp"] != start_ms + 7 * 60_000].copy()
+
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m_gap)
+        # 15m candle for 00:00 must be dropped
+        self.assertTrue(len(df_15m.loc[df_15m["timestamp"] == start_ms]) == 0)
+        # 1h candle for 00:00 must be dropped (59 bars < 60)
+        self.assertTrue(len(df_1h.loc[df_1h["timestamp"] == start_ms]) == 0)
+
+        # Merge
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+        # At decision 00:15 (bar opening 00:10): close_15m, atr_15m, swing_low_15m must all be NaN
+        row_00_10 = merged.loc[merged["timestamp"] == start_ms + 10 * 60_000].iloc[0]
+        self.assertTrue(np.isnan(row_00_10["close_15m"]))
+        self.assertTrue(np.isnan(row_00_10["atr_15m"]))
+        self.assertTrue(np.isnan(row_00_10["swing_low_15m"]))
+
+    def test_test6_first_available_warmup_point(self):
+        """Test 6: Rolling calculations use only completed historical candles; zero early non-null values."""
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 480)  # 8 hours
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m)
+        df_15m["atr_14"] = p13.compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
+        df_1h["atr_14"] = p13.compute_atr(df_1h["high"], df_1h["low"], df_1h["close"], 14)
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+
+        # 15m swing requires 8 completed 15m candles = 120 minutes
+        # Decision at 115m (bar 01:50, decision 01:55) -> 7 completed candles -> swing_high_15m must be NaN
+        row_110 = merged.loc[merged["timestamp"] == start_ms + 110 * 60_000].iloc[0]
+        self.assertTrue(np.isnan(row_110["swing_high_15m"]))
+
+        # Decision at 120m (bar 01:55, decision 02:00) -> 8th candle completes -> swing_high_15m becomes non-null!
+        row_115 = merged.loc[merged["timestamp"] == start_ms + 115 * 60_000].iloc[0]
+        self.assertFalse(np.isnan(row_115["swing_high_15m"]))
+
+        # 1h swing requires 6 completed 1h candles = 360 minutes
+        # Decision at 355m (bar 05:50, decision 05:55) -> 5 completed 1h candles -> swing_high_1h must be NaN
+        row_350 = merged.loc[merged["timestamp"] == start_ms + 350 * 60_000].iloc[0]
+        self.assertTrue(np.isnan(row_350["swing_high_1h"]))
+
+        # Decision at 360m (bar 05:55, decision 06:00) -> 6th 1h candle completes -> swing_high_1h becomes non-null!
+        row_355 = merged.loc[merged["timestamp"] == start_ms + 355 * 60_000].iloc[0]
+        self.assertFalse(np.isnan(row_355["swing_high_1h"]))
+
+    def test_test7_timestamp_and_split_boundary(self):
+        """Test 7: Split assignment uses decision timestamp (candle close) preventing embargo boundary leak."""
+        # Train ends at TS_JUL_31_2023 (2023-07-31 23:59:59 UTC)
+        # Embargo 1 is TS_JUL_31_2023 < ts <= TS_AUG_01_2023_END
+        train_end = p13.TS_JUL_31_2023
+        bar_open_ms = train_end - 4 * 60 * 1000  # 2023-07-31 23:55:59 UTC (within TRAIN)
+        decision_ts_ms = bar_open_ms + 5 * 60 * 1000  # 2023-08-01 00:00:59 UTC (> TS_JUL_31_2023)
+
+        # If evaluated on bar open, it would wrongly report TRAIN
+        self.assertEqual(p13.assign_phase13_split(bar_open_ms), "TRAIN")
+
+        # But evaluated on decision timestamp (bar close), it correctly enters EMBARGO_1
+        self.assertEqual(p13.assign_phase13_split(decision_ts_ms), "EMBARGO_1")
+
+    def test_test8_regression_against_f01(self):
+        """Test 8: Ensure F-02 changes do not regress F-01 first-passage accounting."""
+        entry = 100.0
+        sl = 99.0
+        tp1 = 101.5
+
+        # Path where TP1 hit at min 5, SL hit at min 10 -> Must be CLASS_C (exit at min 5)
+        path = (
+            [{"high": 100.2, "low": 99.8, "close": 100.0}] * 4
+            + [{"high": 101.6, "low": 100.1, "close": 101.5}]  # minute 5: TP1 hit
+            + [{"high": 100.5, "low": 98.8, "close": 98.9}]   # minute 6: SL hit later
+        )
+        res = p13.classify_thesis_resumption("LONG", entry, sl, tp1, path)
+        self.assertEqual(res.resumption_class, "CLASS_C")
+        self.assertEqual(res.exit_reason, "TP1")
+        self.assertEqual(res.time_to_tp1, 5)
+        self.assertIsNone(res.time_to_sl)
+        self.assertFalse(res.sl_hit)
+        self.assertTrue(res.tp1_hit)
+        # Realized MAE must be measured up to minute 5, NOT polluted by minute 6's low of 98.8
+        self.assertAlmostEqual(res.realized_mae, 0.002, places=6)
+        # Full window MAE contains minute 6
+        self.assertAlmostEqual(res.full_window_mae, 0.012, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-10-17T16:15:58.246115+00:00",
+  "step": "STEP_2_HTF_CAUSALITY_REPAIR",
+  "branch": "repair/phase13-f02-htf-causality",
+  "commit_base": "abdc66181c969349f5b1bcf66e90cc386e80149c",
+  "synthetic_benchmark": {
+    "total_5m_bars": 96,
+    "old_join": {
+      "premature_15m_exposures": 64,
+      "premature_15m_exposure_pct": 66.67,
+      "premature_1h_exposures": 88,
+      "premature_1h_exposure_pct": 91.67,
+      "premature_4h_exposures": 94,
+      "premature_4h_exposure_pct": 97.92
+    },
+    "repaired_causal_join": {
+      "premature_15m_exposures": 0,
+      "premature_15m_exposure_pct": 0.0,
+      "premature_1h_exposures": 0,
+      "premature_1h_exposure_pct": 0.0,
+      "premature_4h_exposures": 0,
+      "premature_4h_exposure_pct": 0.0
+    },
+    "timing_alignment_contract": "STRICT_COMPLETION_T_PLUS_DELTA_T"
+  },
+  "historical_benchmark": {
+    "status": "COMPLETED",
+    "sample_1m_bars": 5760,
+    "total_5m_decision_bars": 1152,
+    "old_engine_lookahead_stats": {
+      "premature_15m_bars": 768,
+      "premature_15m_pct": 66.67,
+      "premature_1h_bars": 1056,
+      "premature_1h_pct": 91.67,
+      "premature_4h_bars": 1128,
+      "premature_4h_pct": 97.92
+    },
+    "repaired_engine_causality_stats": {
+      "premature_15m_bars": 0,
+      "premature_15m_pct": 0.0,
+      "premature_1h_bars": 0,
+      "premature_1h_pct": 0.0,
+      "premature_4h_bars": 0,
+      "premature_4h_pct": 0.0
+    },
+    "events_audit": {
+      "total_events_extracted": 0,
+      "stop_models_distribution": {},
+      "synthetic_fallback_violations": 0,
+      "missing_htf_properly_excluded": true
+    },
+    "causality_verdict": "VERIFIED_ZERO_LOOKAHEAD"
+  },
+  "contract": {
+    "convention": "Candle opened at T is eligible strictly at T + interval_length",
+    "decision_timestamp": "ts_bar + 5m",
+    "merge_direction": "backward merge_asof on decision_ts >= available_ts",
+    "freshness_contract": "Stale after interval_length without completed subsequent bar",
+    "fallbacks_status": "COMPLETELY_ELIMINATED",
+    "alpha_disclaimer": "DIAGNOSTIC ONLY. Other known Phase 13 defects (e.g. F-03 CVD) remain. This does not validate strategy profitability."
+  },
+  "provenance": {
+    "source_parquet": "data/processed/binance_um_universe_1m_v2.parquet",
+    "diagnostic_mode": "BOUNDED_READ_ONLY",
+    "canonical_data_preserved": true
+  }
+}
