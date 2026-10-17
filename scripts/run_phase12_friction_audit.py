@@ -277,8 +277,10 @@ def main():
     engine = Phase12TimesFMValidationEngine(parquet_path=parquet_path)
     engine.load_and_resample_universe()
 
-    # Generate or load candidates
-    cands_cache = "data/phase12_evaluated_candidates_cache.json"
+    # Use a new cache key because earlier cache records do not include the corrected
+    # forecast cutoff, actual 60m close, or exact T+15 reforecast exit price.
+    # Preserve the old cache as historical evidence; never silently reuse it.
+    cands_cache = "data/phase12_evaluated_candidates_cache_v2.json"
     evaluated_candidates: List[Phase12Candidate] = []
 
     if os.path.exists(cands_cache):
