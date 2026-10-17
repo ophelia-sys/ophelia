@@ -12,6 +12,7 @@ import numpy as np
 
 from scripts.run_phase12_friction_audit import (
     calculate_trade_friction_record,
+    compute_cohort_friction_metrics,
     BINGX_MAKER_FEE_RATE,
     BINGX_TAKER_FEE_RATE,
     R_USD_UNIT
@@ -160,6 +161,49 @@ class TestPhase12FrictionAudit(unittest.TestCase):
         r_cost_3 = 0.0009 / stop_pct_3
         self.assertAlmostEqual(r_cost_3, 0.045, places=4)
 
+
+    def test_reforecast_exit_uses_actual_t15_price(self):
+        """An EARLY_EXIT cohort must not reuse the original exit or a net-R value as gross."""
+        self.mock_cand.reforecast_policy = "EARLY_EXIT"
+        self.mock_cand.reforecast_exit_price = 2010.0
+
+        trade = calculate_trade_friction_record(
+            cand=self.mock_cand,
+            entry_fee_rate=0.0,
+            exit_fee_rate=0.0,
+            entry_slip_rate=0.0,
+            exit_slip_rate=0.0,
+            apply_funding=False,
+            use_reforecast_exit=True,
+        )
+
+        self.assertEqual(trade["exit_reason"], "REFORECAST_EARLY_EXIT")
+        self.assertAlmostEqual(trade["exit_price"], 2010.0, places=5)
+        self.assertAlmostEqual(trade["gross_pnl"], 50.0, places=5)
+        self.assertAlmostEqual(trade["gross_r"], 0.5, places=5)
+
+    def test_tp1_hit_gross_positive_and_net_positive_rates_are_distinct(self):
+        """Timeouts with a positive gross mark can still be net losers."""
+        template = {
+            "total_gross_pnl": 0.0,
+            "exchange_fee": 0.0,
+            "slippage_cost": 0.0,
+            "funding": 0.0,
+            "fee_r": 0.0,
+            "slippage_r": 0.0,
+            "funding_r": 0.0,
+            "friction_pct_of_notional": 0.1,
+            "friction_r_per_trade": 0.1,
+            "fee_to_gross_pnl_pct": 0.0,
+        }
+        win = dict(template, gross_r=1.5, net_r=1.2, gross_pnl=150.0, net_pnl=120.0, exit_reason="TP1")
+        timeout = dict(template, gross_r=0.1, net_r=-0.2, gross_pnl=10.0, net_pnl=-20.0, exit_reason="TIMEOUT")
+        result = compute_cohort_friction_metrics([win, timeout])
+
+        self.assertEqual(result["win_rate"], 50.0)
+        self.assertEqual(result["tp1_hit_rate"], 50.0)
+        self.assertEqual(result["gross_positive_rate"], 100.0)
+        self.assertEqual(result["net_positive_rate"], 50.0)
 
 if __name__ == "__main__":
     unittest.main()
