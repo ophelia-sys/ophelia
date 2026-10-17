@@ -1,0 +1,124 @@
+{
+  "diagnostic_run_timestamp_utc": "2026-10-17T18:03:34.722984+00:00",
+  "task_step": "F-03: Order Flow, CVD & Session VWAP Correctness",
+  "branch": "repair/phase13-f03-orderflow-vwap",
+  "safety_invariants": {
+    "TRADING_AUTHORITY": false,
+    "EXECUTION_MODE": "SHADOW",
+    "LIVE_ORDERS_FORBIDDEN": true,
+    "ALPHA_CLAIM": "NONE (Data integrity & causal market structure repair only)"
+  },
+  "benchmarks": {
+    "hand_calculated_vwap_benchmark": {
+      "status": "PASS",
+      "sample_points": 3,
+      "calculated_vwap": [
+        100.0,
+        105.0,
+        97.5
+      ],
+      "expected_vwap": [
+        100.0,
+        105.0,
+        97.5
+      ],
+      "calculated_std": [
+        "NaN",
+        5.0,
+        8.2916
+      ],
+      "expected_std": [
+        "NaN",
+        5.0,
+        8.2916
+      ],
+      "single_bar_dispersion_undefined_as_nan": true,
+      "old_unweighted_variance_bar2": 2.5,
+      "correct_volume_weighted_variance_bar2": 25.0,
+      "formula": "variance = cumulative(volume * price^2) / cumulative(volume) - VWAP^2"
+    },
+    "synthetic_flow_adversarial_benchmark": {
+      "status": "PASS",
+      "genuine_zero_delta": {
+        "status_at_bar_10": "INSUFFICIENT_HISTORY",
+        "status_at_bar_40": "ZERO_VARIANCE",
+        "zero_variance_bars_count": 26,
+        "zero_variance_zscore_is_nan": true,
+        "never_substituted_neutral_zero": true
+      },
+      "all_missing_flow": {
+        "missing_flow_bars_count": 49,
+        "all_zscores_are_nan": true,
+        "never_substituted_neutral_zero": true
+      },
+      "single_missing_bar_gap": {
+        "gap_index": 35,
+        "affected_rolling_1h_bars": 12,
+        "expected_affected_bars": 12,
+        "properly_marked_missing_flow": true
+      }
+    },
+    "historical_slice_benchmark": {
+      "status": "COMPLETED",
+      "sample_scope": {
+        "symbol": "BTCUSDT",
+        "period_utc": "2023-01-01 00:00:00 to 2023-01-04 23:59:00",
+        "start_timestamp_ms": 1672531200000,
+        "end_timestamp_ms": 1672876740000,
+        "total_1m_bars": 5760,
+        "expected_1m_bars": 5760,
+        "has_exact_expected_minutes": true,
+        "total_5m_bars": 1152
+      },
+      "order_flow_audit": {
+        "flow_columns_present": {
+          "delta_v": true,
+          "aggressive_buy_volume": true,
+          "aggressive_sell_volume": true,
+          "taker_buy_volume": true
+        },
+        "delta_v_1m_valid_count": 5760,
+        "delta_v_1m_missing_rate": 0.0,
+        "delta_v_1m_genuine_zeros": 0,
+        "delta_v_5m_valid_count": 1152,
+        "delta_v_5m_missing_rate": 0.0,
+        "cvd_5m_status_breakdown": {
+          "AVAILABLE": 1118,
+          "MISSING_FLOW": 0,
+          "INSUFFICIENT_HISTORY": 34,
+          "ZERO_VARIANCE": 0
+        },
+        "neutral_zero_substitutions_on_5m_bars": 0
+      },
+      "vwap_audit": {
+        "total_5m_vwap_calculated": 1152,
+        "vwap_undefined_dispersion_count": 4,
+        "vwap_min": 16522.04,
+        "vwap_max": 16836.49
+      },
+      "event_gating_audit": {
+        "total_events_extracted": 600,
+        "events_by_class": {
+          "MOMENTUM_DISPLACEMENT": 65,
+          "RVOL_EXPANSION": 102,
+          "VWAP_DEVIATION": 147,
+          "RANGE_EXPANSION": 17,
+          "VALUE_AREA_BOUNDARY": 86,
+          "VWAP_RECLAIM": 50,
+          "CVD_ACCELERATION": 103,
+          "ORDER_FLOW_VWAP_CONFLUENCE": 4,
+          "HTF_ALIGNED_DISPLACEMENT": 23,
+          "LIQUIDITY_SWEEP_SFP": 3
+        },
+        "cvd_acceleration_events": 103,
+        "orderflow_vwap_confluence_events": 4,
+        "vwap_deviation_events": 147,
+        "event_cvd_status_breakdown": {
+          "AVAILABLE": 600
+        },
+        "event_neutral_zero_substitutions": 0,
+        "gating_rule_verification": "PASS: all CVD/OrderFlow events require AVAILABLE status and finite metrics"
+      }
+    }
+  }
+}

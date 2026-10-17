@@ -103,10 +103,12 @@ STOP_REGIMES = [
 #        available_4h_ts = ts_4h_open + 240m
 #    Joined via backward merge_asof on: decision_timestamp_ms >= available_ts.
 #
-# 7. Open F-03 CVD Defect Handoff:
-#    In extract_events_for_symbol, when CVD is missing, cvd_zscore is set to 0.0
-#    with cvd_data_status = 'NOT_AVAILABLE'. Replacing missing CVD with neutral zero
-#    is an open F-03 defect deferred to Step 3 (F-03 CVD & order-flow tick aggregation).
+# 7. F-03 Order Flow, CVD & Session VWAP Correctness:
+#    - Strict 5m flow aggregation requiring all constituent 1m bars to have valid finite flow.
+#    - Causal 1h rolling CVD acceleration with explicit statuses ('AVAILABLE', 'MISSING_FLOW',
+#      'INSUFFICIENT_HISTORY', 'ZERO_VARIANCE'). Never substitutes neutral zero for missing CVD.
+#    - Volume-weighted causal session VWAP dispersion: variance = cumsum(V*P^2)/cumsum(V) - VWAP^2.
+#    - CVD & VWAP signal families strictly gated on valid data status and finite dispersion.
 # ==============================================================================
 
 # Forward Evaluation Horizons (minutes)
@@ -489,18 +491,100 @@ def classify_thesis_resumption(
 
 
 def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
-    """Computes daily rolling session VWAP and 1-sigma dispersion causally."""
-    pv = df["close"] * df["volume"]
-    cum_pv = pv.groupby(df.index.date).cumsum()
-    cum_v = df["volume"].groupby(df.index.date).cumsum().replace(0, np.nan)
-    vwap = cum_pv / cum_v
+    """Computes daily rolling session VWAP and volume-weighted standard deviation causally.
 
-    # Rolling standard deviation from VWAP
-    dev = (df["close"] - vwap) ** 2
-    cum_dev = dev.groupby(df.index.date).cumsum()
-    variance = cum_dev / cum_v
-    std_vwap = np.sqrt(variance.fillna(0)).replace(0, 1e-6)
-    return vwap.fillna(df["close"]), std_vwap
+    Formula:
+        VWAP = cumulative(volume * price) / cumulative(volume)
+        variance = cumulative(volume * price^2) / cumulative(volume) - VWAP^2
+        std_vwap = sqrt(max(0.0, variance))
+
+    Guards:
+        - If cumulative volume <= 0, returns NaN for VWAP and std_vwap.
+        - If variance <= 1e-12 or std_vwap <= 1e-6, std_vwap is marked NaN
+          (undefined dispersion; never substituted by arbitrary epsilon).
+    """
+    if "volume" not in df.columns or "close" not in df.columns or len(df) == 0:
+        empty = pd.Series(np.nan, index=df.index, dtype=float)
+        return empty, empty
+
+    price = df["close"].astype(float)
+    vol = df["volume"].astype(float)
+
+    # Missing or non-positive volume cannot contribute to VWAP
+    valid_vol = vol.where(vol > 0, 0.0)
+    pv = price * valid_vol
+    p2v = price * price * valid_vol
+
+    dates = df.index.date
+    cum_v = valid_vol.groupby(dates).cumsum()
+    cum_pv = pv.groupby(dates).cumsum()
+    cum_p2v = p2v.groupby(dates).cumsum()
+
+    valid_cum_v = cum_v > 0
+    vwap = pd.Series(np.nan, index=df.index, dtype=float)
+    vwap[valid_cum_v] = cum_pv[valid_cum_v] / cum_v[valid_cum_v]
+
+    variance = pd.Series(np.nan, index=df.index, dtype=float)
+    valid_var_mask = valid_cum_v & vwap.notna()
+    var_raw = (cum_p2v[valid_var_mask] / cum_v[valid_var_mask]) - (vwap[valid_var_mask] ** 2)
+    var_clean = var_raw.clip(lower=0.0)
+    variance[valid_var_mask] = var_clean
+
+    std_vwap = pd.Series(np.nan, index=df.index, dtype=float)
+    has_dispersion = variance > 1e-12
+    std_vals = np.sqrt(variance[has_dispersion])
+    valid_std = std_vals > 1e-6
+    std_vwap[has_dispersion & valid_std] = std_vals[valid_std]
+
+    return vwap, std_vwap
+
+
+def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+    """Computes causal 1-hour rolling CVD acceleration z-score and explicit data status.
+
+    Causality & Data Integrity Rules:
+    - CVD = sum of delta_v over the preceding 12 5m bars (1 hour).
+    - Requires all 12 bars to have valid finite flow (min_periods=12).
+      If any constituent flow value is missing or non-finite, status is 'MISSING_FLOW'.
+    - Rolling baseline uses 288 5m bars (24 hours).
+      Requires at least 24 valid 1h CVD observations (min_periods=24).
+      If fewer than 24 observations exist in the lookback window, status is 'INSUFFICIENT_HISTORY'.
+    - If baseline standard deviation is non-finite or <= 1e-12, status is 'ZERO_VARIANCE'.
+    - When status is 'AVAILABLE', cvd_zscore = (cvd_1h - mean) / std.
+    - When status != 'AVAILABLE', cvd_zscore is float NaN (never substituted with 0.0).
+    """
+    if "delta_v" not in df_5m.columns or len(df_5m) == 0:
+        return (
+            pd.Series(np.nan, index=df_5m.index, dtype=float),
+            pd.Series("MISSING_FLOW", index=df_5m.index, dtype=object),
+        )
+
+    n = len(df_5m)
+    s_flow = df_5m["delta_v"].astype(float)
+    clean_flow = s_flow.where(np.isfinite(s_flow), np.nan)
+
+    cvd_1h = clean_flow.rolling(12, min_periods=12).sum()
+    valid_count = cvd_1h.rolling(288, min_periods=1).count()
+    cvd_mean = cvd_1h.rolling(288, min_periods=24).mean()
+    cvd_std = cvd_1h.rolling(288, min_periods=24).std()
+
+    status = pd.Series("MISSING_FLOW", index=df_5m.index, dtype=object)
+    if n > 0:
+        status[np.arange(n) < 11] = "INSUFFICIENT_HISTORY"
+
+    valid_1h = cvd_1h.notna()
+    status[valid_1h & (valid_count < 24)] = "INSUFFICIENT_HISTORY"
+
+    has_history = valid_1h & (valid_count >= 24)
+    zero_var = has_history & (cvd_std.isna() | (cvd_std <= 1e-12))
+    status[zero_var] = "ZERO_VARIANCE"
+
+    avail = has_history & (~zero_var) & cvd_mean.notna() & cvd_std.notna()
+    status[avail] = "AVAILABLE"
+
+    cvd_z = pd.Series(np.nan, index=df_5m.index, dtype=float)
+    cvd_z[avail] = (cvd_1h[avail] - cvd_mean[avail]) / cvd_std[avail]
+    return cvd_z, status
 
 
 def compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: int = 14) -> pd.Series:
@@ -654,20 +738,22 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
 
         resampled = df.resample(rule, label="left", closed="left").agg(agg)
         resampled = resampled.loc[valid_indices].dropna(subset=["open", "high", "low", "close"]).copy()
+
+        # Flow aggregation: require all constituent minutes in interval to have valid finite flow
+        if include_volume:
+            for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+                if flow_col in df.columns:
+                    clean_flow = df[flow_col].where(np.isfinite(df[flow_col]), np.nan)
+                    flow_res = clean_flow.resample(rule, label="left", closed="left").sum(min_count=expected_minutes)
+                    resampled[flow_col] = flow_res.reindex(resampled.index)
+                else:
+                    resampled[flow_col] = np.nan
         return resampled
 
     df_5m = _resample_strict_interval("5min", 5, include_volume=True)
     df_15m = _resample_strict_interval("15min", 15, include_volume=True)
     df_1h = _resample_strict_interval("1h", 60, include_volume=True)
     df_4h = _resample_strict_interval("4h", 240, include_volume=False)
-
-    flow_columns = ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume")
-    for flow_col in flow_columns:
-        if flow_col not in df_5m.columns:
-            df_5m[flow_col] = np.nan
-        elif flow_col in df.columns:
-            flow_count = df[flow_col].notna().astype("int8").resample("5min", label="left", closed="left").sum()
-            df_5m.loc[flow_count.reindex(df_5m.index).fillna(0).astype(int) != 5, flow_col] = np.nan
 
     return df_5m, df_15m, df_1h, df_4h
 
@@ -840,14 +926,8 @@ class Phase13DiscoveryEngine:
         df_5m["vwap"], df_5m["std_vwap"] = compute_vwap(df_5m)
         df_5m["vwap_zscore"] = (df_5m["close"] - df_5m["vwap"]) / df_5m["std_vwap"]
 
-        # 5m CVD acceleration
-        if "delta_v" in df_5m.columns and df_5m["delta_v"].notna().any():
-            cvd_1h = df_5m["delta_v"].rolling(12, min_periods=12).sum()
-            cvd_mean = cvd_1h.rolling(288, min_periods=24).mean()
-            cvd_std = cvd_1h.rolling(288, min_periods=24).std().replace(0, 1e-6)
-            df_5m["cvd_zscore"] = ((cvd_1h - cvd_mean) / cvd_std).fillna(0.0)
-        else:
-            df_5m["cvd_zscore"] = float("nan")
+        # 5m CVD acceleration & explicit data status
+        df_5m["cvd_zscore"], df_5m["cvd_status"] = compute_cvd(df_5m)
 
         # 15m & 1H ATR on completed HTF bars
         df_15m["atr_14"] = compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
@@ -905,6 +985,7 @@ class Phase13DiscoveryEngine:
             atr_1h = float(atr_1h_value) if pd.notna(atr_1h_value) and float(atr_1h_value) > 0 else float("nan")
             rvol = float(df_5m["rvol"].iloc[i])
             cvd_z = float(df_5m["cvd_zscore"].iloc[i])
+            cvd_status = str(df_5m["cvd_status"].iloc[i])
             vwap_z = float(df_5m["vwap_zscore"].iloc[i])
             trend_value = df_5m["trend_4h"].iloc[i]
             trend_4h = str(trend_value) if pd.notna(trend_value) else "NOT_AVAILABLE"
@@ -930,26 +1011,29 @@ class Phase13DiscoveryEngine:
                 dir_rvol = "LONG" if close_p > open_p else "SHORT"
                 detected_events.append(("RVOL_EXPANSION", dir_rvol))
 
-            # 3. CVD Acceleration (abs(cvd_z) >= 2.0)
-            if cvd_z >= 2.0:
-                detected_events.append(("CVD_ACCELERATION", "LONG"))
-            elif cvd_z <= -2.0:
-                detected_events.append(("CVD_ACCELERATION", "SHORT"))
+            # 3. CVD Acceleration (|cvd_z| >= 2.0, gated strictly on AVAILABLE status)
+            if cvd_status == "AVAILABLE" and np.isfinite(cvd_z):
+                if cvd_z >= 2.0:
+                    detected_events.append(("CVD_ACCELERATION", "LONG"))
+                elif cvd_z <= -2.0:
+                    detected_events.append(("CVD_ACCELERATION", "SHORT"))
 
-            # 4. VWAP Deviation Mean Reversion (|vwap_z| >= 1.5)
-            if vwap_z <= -1.5:
-                detected_events.append(("VWAP_DEVIATION", "LONG"))
-            elif vwap_z >= 1.5:
-                detected_events.append(("VWAP_DEVIATION", "SHORT"))
+            # 4. VWAP Deviation Mean Reversion (|vwap_z| >= 1.5, gated on finite dispersion)
+            if np.isfinite(vwap_z):
+                if vwap_z <= -1.5:
+                    detected_events.append(("VWAP_DEVIATION", "LONG"))
+                elif vwap_z >= 1.5:
+                    detected_events.append(("VWAP_DEVIATION", "SHORT"))
 
-            # 5. VWAP Reclaim
+            # 5. VWAP Reclaim (gated on finite prior & current VWAP)
             prev_close = float(df_5m["close"].iloc[i - 1])
             prev_vwap = float(df_5m["vwap"].iloc[i - 1])
             cur_vwap = float(df_5m["vwap"].iloc[i])
-            if prev_close < prev_vwap and close_p > cur_vwap:
-                detected_events.append(("VWAP_RECLAIM", "LONG"))
-            elif prev_close > prev_vwap and close_p < cur_vwap:
-                detected_events.append(("VWAP_RECLAIM", "SHORT"))
+            if np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
+                if prev_close < prev_vwap and close_p > cur_vwap:
+                    detected_events.append(("VWAP_RECLAIM", "LONG"))
+                elif prev_close > prev_vwap and close_p < cur_vwap:
+                    detected_events.append(("VWAP_RECLAIM", "SHORT"))
 
             # 6. Liquidity Sweep SFP (15m swing breach + reclaim)
             prior_15m_low = swing_low_15m_arr[i - 1]
@@ -981,11 +1065,12 @@ class Phase13DiscoveryEngine:
                 elif body < 0 and trend_4h == "BEAR":
                     detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "SHORT"))
 
-            # 10. Order Flow x VWAP Confluence Interaction
-            if prev_close < prev_vwap and close_p > cur_vwap and cvd_z >= 1.5:
-                detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "LONG"))
-            elif prev_close > prev_vwap and close_p < cur_vwap and cvd_z <= -1.5:
-                detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "SHORT"))
+            # 10. Order Flow x VWAP Confluence Interaction (gated on AVAILABLE flow & valid VWAP)
+            if cvd_status == "AVAILABLE" and np.isfinite(cvd_z) and np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
+                if prev_close < prev_vwap and close_p > cur_vwap and cvd_z >= 1.5:
+                    detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "LONG"))
+                elif prev_close > prev_vwap and close_p < cur_vwap and cvd_z <= -1.5:
+                    detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "SHORT"))
 
             if not detected_events:
                 continue
@@ -1054,9 +1139,9 @@ class Phase13DiscoveryEngine:
                     atr_1h=atr_1h,
                     volume_5m=float(df_5m["volume"].iloc[i]),
                     rvol_5m=rvol,
-                    cvd_zscore=cvd_z if np.isfinite(cvd_z) else 0.0,
-                    cvd_data_status="AVAILABLE" if np.isfinite(cvd_z) else "NOT_AVAILABLE",
-                    vwap_deviation_sigma=vwap_z,
+                    cvd_zscore=cvd_z if cvd_status == "AVAILABLE" else float("nan"),
+                    cvd_data_status=cvd_status,
+                    vwap_deviation_sigma=vwap_z if np.isfinite(vwap_z) else float("nan"),
                     htf_trend_4h=trend_4h,
                     htf_aligned=htf_aligned,
                     volatility_regime=vol_regime,

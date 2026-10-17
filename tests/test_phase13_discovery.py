@@ -880,6 +880,241 @@ class TestPhase13F02ReviewCorrections(unittest.TestCase):
         self.assertEqual(audit["synthetic_fallback_violations"], 0)
 
 
+class TestPhase13F03OrderFlowAndVWAP(unittest.TestCase):
+    """F-03: CVD, order flow aggregation and volume-weighted session VWAP correctness."""
+
+    def test_f03_1_weighted_vwap_and_dispersion_hand_calculation(self):
+        """1. Weighted VWAP and variance against independent hand-calculated example."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=3, freq="5min")
+        df = pd.DataFrame({
+            "close": [100.0, 110.0, 90.0],
+            "volume": [10.0, 10.0, 20.0]
+        }, index=idx)
+
+        vwap, std = p13.compute_vwap(df)
+
+        # Bar 1: P=100, V=10 -> VWAP=100.0, var=0.0 -> std is NaN (undefined dispersion for single flat price)
+        self.assertAlmostEqual(vwap.iloc[0], 100.0, places=6)
+        self.assertTrue(np.isnan(std.iloc[0]))
+
+        # Bar 2: P=110, V=10 -> cum_pv=2100, cum_v=20 -> VWAP=105.0
+        # cum_p2v = 10*10000 + 10*12100 = 221000. var = 221000/20 - 105^2 = 11050 - 11025 = 25.0 -> std=5.0
+        self.assertAlmostEqual(vwap.iloc[1], 105.0, places=6)
+        self.assertAlmostEqual(std.iloc[1], 5.0, places=6)
+
+        # Bar 3: P=90, V=20 -> cum_pv=3900, cum_v=40 -> VWAP=97.5
+        # cum_p2v = 221000 + 20*8100 = 383000. var = 383000/40 - 97.5^2 = 9575 - 9506.25 = 68.75 -> std=sqrt(68.75)
+        self.assertAlmostEqual(vwap.iloc[2], 97.5, places=6)
+        self.assertAlmostEqual(std.iloc[2], float(np.sqrt(68.75)), places=6)
+
+    def test_f03_2_genuine_zero_delta_vs_missing_flow(self):
+        """2. Valid, genuinely zero-delta sequence versus missing order-flow data."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=50, freq="5min")
+
+        # Genuine zero delta: 10 buy - 10 sell = 0.0 delta_v
+        df_zero = pd.DataFrame({"delta_v": [0.0] * 50}, index=idx)
+        z_zero, st_zero = p13.compute_cvd(df_zero)
+        # Bar 10 (< 12 bars): INSUFFICIENT_HISTORY
+        self.assertEqual(st_zero.iloc[10], "INSUFFICIENT_HISTORY")
+        self.assertTrue(np.isnan(z_zero.iloc[10]))
+        # Bar 35: History >= 24, all zero delta -> variance is 0.0 -> ZERO_VARIANCE (not MISSING_FLOW)
+        self.assertEqual(st_zero.iloc[35], "ZERO_VARIANCE")
+        self.assertTrue(np.isnan(z_zero.iloc[35]))
+
+        # Missing flow: all NaNs
+        df_nan = pd.DataFrame({"delta_v": [np.nan] * 50}, index=idx)
+        z_nan, st_nan = p13.compute_cvd(df_nan)
+        # Must explicitly be MISSING_FLOW, not ZERO_VARIANCE or 0.0
+        self.assertEqual(st_nan.iloc[35], "MISSING_FLOW")
+        self.assertTrue(np.isnan(z_nan.iloc[35]))
+
+        # Genuine fluctuating flow with a single genuine 0.0 delta bar
+        np.random.seed(42)
+        flows = np.random.randn(50) + 1.0
+        flows[35] = 0.0  # genuine zero delta at bar 35
+        df_fluct = pd.DataFrame({"delta_v": flows}, index=idx)
+        z_f, st_f = p13.compute_cvd(df_fluct)
+        self.assertEqual(st_f.iloc[35], "AVAILABLE")
+        self.assertTrue(np.isfinite(z_f.iloc[35]))
+
+    def test_f03_3_all_missing_and_partially_missing_flow_resampling(self):
+        """3. All-missing and partially missing flow groups in strict resampling."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=15, freq="1min")
+        ts = ((idx - pd.Timestamp("1970-01-01")) // pd.Timedelta(milliseconds=1)).to_numpy(dtype=np.int64)
+
+        # 15 minutes = three 5m intervals
+        # Interval 0 (0-4): all valid [1, 2, 3, 4, 5] -> sum 15
+        # Interval 1 (5-9): 1 minute missing [1, 2, NaN, 4, 5] -> sum must be NaN
+        # Interval 2 (10-14): all missing [NaN, NaN, NaN, NaN, NaN] -> sum must be NaN
+        df_1m = pd.DataFrame({
+            "timestamp": ts,
+            "open": [100.0] * 15,
+            "high": [101.0] * 15,
+            "low": [99.0] * 15,
+            "close": [100.0] * 15,
+            "volume": [10.0] * 15,
+            "delta_v": [1.0, 2.0, 3.0, 4.0, 5.0, 1.0, 2.0, np.nan, 4.0, 5.0, np.nan, np.nan, np.nan, np.nan, np.nan]
+        }, index=idx)
+
+        df_5m, _, _, _ = p13.resample_phase13_bars(df_1m)
+        self.assertEqual(len(df_5m), 3)
+        self.assertAlmostEqual(df_5m["delta_v"].iloc[0], 15.0, places=6)
+        self.assertTrue(np.isnan(df_5m["delta_v"].iloc[1]))
+        self.assertTrue(np.isnan(df_5m["delta_v"].iloc[2]))
+
+    def test_f03_4_duplicate_timestamps_and_incomplete_constituents(self):
+        """4. Duplicate timestamps and incomplete one-minute constituents."""
+        start_ms = 1672531200000
+        # Duplicate timestamp rejection: duplicate row with matching index & timestamp
+        df_base = _make_1m_df(start_ms, 10)
+        df_dup = pd.concat([df_base.iloc[:2], df_base.iloc[1:2], df_base.iloc[3:]])
+        with self.assertRaises(ValueError) as ctx:
+            p13.resample_phase13_bars(df_dup)
+        self.assertIn("duplicate", str(ctx.exception).lower())
+
+        # Incomplete constituent minutes: drop interval
+        df_1m = _make_1m_df(start_ms, 10)
+        # Drop minute 3 (leaving 4 minutes in first 5m interval)
+        df_drop = df_1m.loc[df_1m["timestamp"] != start_ms + 3 * 60_000].copy()
+        df_5m, _, _, _ = p13.resample_phase13_bars(df_drop)
+        # First 5m bucket dropped; only second 5m bucket (5-9) survives
+        self.assertEqual(len(df_5m), 1)
+        self.assertEqual(df_5m["timestamp"].iloc[0], start_ms + 5 * 60_000)
+
+    def test_f03_5_undefined_dispersion_warmup_and_non_finite_values(self):
+        """5. Undefined dispersion, insufficient warm-up history and non-finite values."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=10, freq="5min")
+
+        # Flat prices -> zero variance -> NaN std_vwap (never substituted by 1e-6 epsilon)
+        df_flat = pd.DataFrame({"close": [100.0] * 10, "volume": [10.0] * 10}, index=idx)
+        vwap_flat, std_flat = p13.compute_vwap(df_flat)
+        self.assertTrue(std_flat.isna().all())
+
+        # Zero volume -> NaN VWAP and NaN std_vwap
+        df_zero_vol = pd.DataFrame({"close": [100.0] * 10, "volume": [0.0] * 10}, index=idx)
+        vwap_zv, std_zv = p13.compute_vwap(df_zero_vol)
+        self.assertTrue(vwap_zv.isna().all())
+        self.assertTrue(std_zv.isna().all())
+
+        # Non-finite values in flow (Inf) treated as missing
+        df_inf = pd.DataFrame({"delta_v": [10.0] * 50}, index=pd.date_range("2023-01-01", periods=50, freq="5min"))
+        df_inf.iloc[30, 0] = np.inf
+        z_inf, st_inf = p13.compute_cvd(df_inf)
+        self.assertEqual(st_inf.iloc[30], "MISSING_FLOW")
+        self.assertTrue(np.isnan(z_inf.iloc[30]))
+
+    def test_f03_6_no_cvd_or_orderflow_events_when_flow_status_unavailable(self):
+        """6. No CVD/order-flow event generated when flow status is unavailable."""
+        start_ms = p13.TS_JAN_01_2023 + 10 * 3600_000
+        df_1m = _make_1m_df(start_ms, 720, base_price=100.0)
+        # Explicitly remove delta_v or set to NaN
+        df_1m["delta_v"] = np.nan
+
+        engine = p13.Phase13DiscoveryEngine()
+        events, outcomes, evals = engine.extract_events_for_symbol("BTC-USDT", df_1m)
+
+        event_classes = {e.event_class for e in events}
+        self.assertNotIn("CVD_ACCELERATION", event_classes)
+        self.assertNotIn("ORDER_FLOW_VWAP_CONFLUENCE", event_classes)
+        for e in events:
+            self.assertNotEqual(e.cvd_data_status, "AVAILABLE")
+            self.assertTrue(np.isnan(e.cvd_zscore))
+
+    def test_f03_7_future_row_corruption_invariance_cvd_vwap(self):
+        """7. No change to previously calculated VWAP/CVD values when strictly future rows are corrupted."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=100, freq="5min")
+        np.random.seed(123)
+        prices = 100.0 + np.cumsum(np.random.randn(100))
+        volumes = np.random.uniform(10.0, 50.0, 100)
+        deltas = np.random.randn(100) * 5.0
+
+        df_clean = pd.DataFrame({"close": prices, "volume": volumes, "delta_v": deltas}, index=idx)
+        vwap_c, std_c = p13.compute_vwap(df_clean)
+        cvd_z_c, cvd_st_c = p13.compute_cvd(df_clean)
+
+        # Corrupt future rows strictly after index 50
+        df_corrupt = df_clean.copy()
+        df_corrupt.iloc[51:, df_corrupt.columns.get_loc("close")] *= 50.0
+        df_corrupt.iloc[51:, df_corrupt.columns.get_loc("volume")] = 999999.0
+        df_corrupt.iloc[51:, df_corrupt.columns.get_loc("delta_v")] = -888888.0
+
+        vwap_bad, std_bad = p13.compute_vwap(df_corrupt)
+        cvd_z_bad, cvd_st_bad = p13.compute_cvd(df_corrupt)
+
+        # Values at and before index 50 must be identical
+        for i in range(51):
+            if np.isnan(vwap_c.iloc[i]):
+                self.assertTrue(np.isnan(vwap_bad.iloc[i]))
+            else:
+                self.assertAlmostEqual(vwap_c.iloc[i], vwap_bad.iloc[i], places=9)
+
+            if np.isnan(std_c.iloc[i]):
+                self.assertTrue(np.isnan(std_bad.iloc[i]))
+            else:
+                self.assertAlmostEqual(std_c.iloc[i], std_bad.iloc[i], places=9)
+
+            self.assertEqual(cvd_st_c.iloc[i], cvd_st_bad.iloc[i])
+            if np.isnan(cvd_z_c.iloc[i]):
+                self.assertTrue(np.isnan(cvd_z_bad.iloc[i]))
+            else:
+                self.assertAlmostEqual(cvd_z_c.iloc[i], cvd_z_bad.iloc[i], places=9)
+
+    def test_f03_8_regression_f01_first_passage_and_f02_htf_causality(self):
+        """8. Regression protection for F-01 first-passage accounting and F-02 HTF timestamp causality."""
+        # F-01: TP1 reached at min 5, stop loss touched at min 10 -> MUST be CLASS_C
+        future_bars = [
+            {"high": 100.5, "low": 99.5, "close": 100.0} for _ in range(4)
+        ] + [
+            {"high": 103.5, "low": 100.0, "close": 103.0}  # min 5: TP1=103.0 touched
+        ] + [
+            {"high": 101.0, "low": 97.0, "close": 97.5}   # min 6: SL=98.0 touched later
+        ]
+        res = p13.classify_thesis_resumption("LONG", entry=100.0, sl=98.0, tp1=103.0, future_1m_bars=future_bars)
+        self.assertEqual(res.resumption_class, "CLASS_C")
+        self.assertEqual(res.exit_reason, "TP1")
+        self.assertFalse(res.sl_hit)
+        self.assertTrue(res.tp1_hit)
+
+        # F-02: 15m candle opened at 00:00 is available only at 00:15
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 60)
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m)
+        merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
+        row_00_05 = merged.loc[merged["timestamp"] == start_ms + 5 * 60_000].iloc[0]
+        self.assertTrue(np.isnan(row_00_05["close_15m"]))
+        row_00_10 = merged.loc[merged["timestamp"] == start_ms + 10 * 60_000].iloc[0]
+        self.assertFalse(np.isnan(row_00_10["close_15m"]))
+
+    def test_f03_9_serialization_preserves_missing_status_without_neutral_zero(self):
+        """9. Serialization/reporting preserves missing statuses and does not turn them into valid zero signals."""
+        ev = p13.Phase13Event(
+            event_id="TEST_EVENT_001",
+            symbol="BTCUSDT",
+            timestamp_ms=1672531200000,
+            dt_utc="2023-01-01 00:05:00+00:00",
+            split="TRAIN",
+            event_class="MOMENTUM_DISPLACEMENT",
+            direction="LONG",
+            entry_price=100.0,
+            atr_5m=1.0,
+            atr_15m=float("nan"),
+            atr_1h=float("nan"),
+            volume_5m=50.0,
+            rvol_5m=2.0,
+            cvd_zscore=float("nan"),
+            vwap_deviation_sigma=float("nan"),
+            htf_trend_4h="NOT_AVAILABLE",
+            htf_aligned=False,
+            volatility_regime="NORMAL",
+            cvd_data_status="MISSING_FLOW",
+            decision_timestamp_ms=1672531500000,
+        )
+        d = ev.to_dict()
+        self.assertEqual(d["cvd_data_status"], "MISSING_FLOW")
+        self.assertTrue(np.isnan(d["cvd_zscore"]), "cvd_zscore was serialized as numeric zero instead of NaN")
+        self.assertNotEqual(d["cvd_zscore"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 
