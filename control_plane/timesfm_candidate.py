@@ -49,6 +49,7 @@ class CandidateForecastContext:
     canonical_instrument_id: str
     symbol: str
     direction: str  # "LONG" or "SHORT"
+    # Unix ms at which the candidate candle is confirmed closed (decision available time).
     candidate_timestamp_ms: int
     entry_price: float
     sl_price: float
@@ -138,7 +139,8 @@ def generate_candidate_forecast(
     context: CandidateForecastContext,
     historical_candles: List[dict],
     model_override: Optional[Any] = None,
-    timeframe_mode: str = TIMESFM_PRIMARY_5M
+    timeframe_mode: str = TIMESFM_PRIMARY_5M,
+    require_timesfm: bool = False,
 ) -> CandidateForecastResult:
     """Generate and freeze candidate-specific TimesFM future distribution and path.
 
@@ -149,6 +151,9 @@ def generate_candidate_forecast(
     3. Explicit Quantile Provenance: Persists raw quantiles, detects crossings, tracks sorting.
     4. Uncalibrated Dispersion: Exposes raw dispersion, labels bucket DISPERSION_BUCKET_UNCALIBRATED.
     5. Immutable Persistence: Persists snapshot in candidate_forecasts table.
+    6. Research can set require_timesfm=True to fail closed unless real TimesFM point
+       inference and model-provided quantiles complete successfully; no AR substitute
+       is then permitted.
     """
     t_cutoff = context.candidate_timestamp_ms
     is_5m_mode = (timeframe_mode == TIMESFM_PRIMARY_5M)
@@ -238,8 +243,19 @@ def generate_candidate_forecast(
 
     t_inf_start = time.perf_counter()
     provider = model_override if model_override is not None else get_timesfm_provider()
+    is_neural_timesfm = (
+        provider is not None
+        and hasattr(provider, "model")
+        and provider.model is not None
+        and callable(getattr(provider.model, "predict", None))
+    )
+    if require_timesfm and not is_neural_timesfm:
+        raise RuntimeError(
+            "TimesFM research inference required, but the loaded provider is unavailable "
+            "or does not expose a neural model.predict implementation"
+        )
 
-    if provider is not None and hasattr(provider, "model") and provider.model is not None:
+    if is_neural_timesfm:
         try:
             output = provider.model.predict(
                 context=sub_closes.astype(np.float32),
@@ -259,22 +275,40 @@ def generate_candidate_forecast(
                 step_predictions = f_raw.flatten()[:horizon_steps]
             else:
                 step_predictions = np.array(f_raw[:horizon_steps], dtype=np.float64)
+            if len(step_predictions) < horizon_steps or not np.all(np.isfinite(step_predictions)):
+                raise ValueError(
+                    f"TimesFM returned {len(step_predictions)} valid point steps; "
+                    f"{horizon_steps} finite steps are required"
+                )
 
             if output.quantiles is not None and isinstance(output.quantiles, np.ndarray):
                 q_arr = output.quantiles
                 if q_arr.ndim == 3:
                     q_arr = q_arr[0]
-                raw_model_quantiles = q_arr
+                if q_arr.ndim == 2:
+                    raw_model_quantiles = q_arr
+            if require_timesfm and (
+                raw_model_quantiles is None
+                or len(raw_model_quantiles) <= (horizon_steps - 1)
+                or raw_model_quantiles.ndim != 2
+                or raw_model_quantiles.shape[1] < 3
+                or not np.all(np.isfinite(raw_model_quantiles[:horizon_steps]))
+            ):
+                raise ValueError("TimesFM quantile output is missing, malformed, or non-finite")
         except Exception as e:
-            logger.error("TimesFM model predict error (%s), using econometric AR baseline", e)
+            if require_timesfm:
+                raise RuntimeError(f"Required TimesFM inference failed: {e}") from e
+            logger.error("TimesFM model predict error (%s), using explicitly labelled econometric AR baseline", e)
             t_fallback_start = time.perf_counter()
-            step_predictions = _autoregressive_forecast(sub_closes, horizon_steps)
+            step_predictions = autoregressive_baseline_forecast(sub_closes, horizon_steps)
             actual_inf_ms = (time.perf_counter() - t_fallback_start) * 1000.0
             model_name = "Econometric_AR_Baseline"
             provider_class = "EconometricBaselineProvider"
             model_class = "AutoregressiveMomentumMeanReversion"
             checkpoint = "statistical_fallback"
     elif model_override is not None and hasattr(model_override, "forecast"):
+        if require_timesfm:
+            raise RuntimeError("A statistical .forecast override is not TimesFM neural inference")
         try:
             step_predictions = model_override.forecast(sub_closes, horizon=horizon_steps)
             actual_inf_ms = (time.perf_counter() - t_inf_start) * 1000.0
@@ -282,16 +316,18 @@ def generate_candidate_forecast(
             provider_class = model_override.__class__.__name__
             model_class = model_override.__class__.__name__
         except Exception as e:
-            logger.error("Model override error (%s), using econometric AR baseline", e)
+            logger.error("Model override error (%s), using explicitly labelled econometric AR baseline", e)
             t_fallback_start = time.perf_counter()
-            step_predictions = _autoregressive_forecast(sub_closes, horizon_steps)
+            step_predictions = autoregressive_baseline_forecast(sub_closes, horizon_steps)
             actual_inf_ms = (time.perf_counter() - t_fallback_start) * 1000.0
             model_name = "Econometric_AR_Baseline"
             provider_class = "EconometricBaselineProvider"
             model_class = "AutoregressiveMomentumMeanReversion"
             checkpoint = "statistical_fallback"
     else:
-        step_predictions = _autoregressive_forecast(sub_closes, horizon_steps)
+        if require_timesfm:
+            raise RuntimeError("Required TimesFM model is unavailable")
+        step_predictions = autoregressive_baseline_forecast(sub_closes, horizon_steps)
         actual_inf_ms = (time.perf_counter() - t_inf_start) * 1000.0
         model_name = "Econometric_AR_Baseline"
         provider_class = "EconometricBaselineProvider"
@@ -483,8 +519,8 @@ def generate_candidate_forecast(
     return result
 
 
-def _autoregressive_forecast(series: np.ndarray, horizon: int) -> np.ndarray:
-    """Deterministic, causal autoregressive momentum and mean-reversion forecaster."""
+def autoregressive_baseline_forecast(series: np.ndarray, horizon: int) -> np.ndarray:
+    """Deterministic, causal AR-style baseline; never label this output as TimesFM."""
     y = np.copy(series)
     preds = []
     ema = float(np.mean(y[-10:]))
