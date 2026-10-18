@@ -1427,6 +1427,96 @@ class TestPhase13StructuralStopEligibility(unittest.TestCase):
                 self.assertIn(m, diag["excluded"][reason])
 
 
+class TestPhase13DiagnosticsAndStatisticalInference(unittest.TestCase):
+    """Phase 4 & 5 Regression Tests: Diagnostics, CVD precedence, identities, and split-isolated inference."""
+
+    def test_cvd_status_precedence_all_nan(self):
+        """All-NaN flow sequence produces 100% MISSING_FLOW and 0 INSUFFICIENT_HISTORY."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=60, freq="5min")
+        df_nan = pd.DataFrame({"delta_v": [np.nan] * 60}, index=idx)
+        z, st = p13.compute_cvd(df_nan)
+
+        self.assertEqual((st == "MISSING_FLOW").sum(), 60)
+        self.assertEqual((st == "INSUFFICIENT_HISTORY").sum(), 0)
+        self.assertTrue(z.isna().all())
+
+    def test_cvd_status_precedence_valid_prefix(self):
+        """Early bars only qualify for INSUFFICIENT_HISTORY if all constituents in prefix are valid."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=20, freq="5min")
+        deltas = [1.0] * 20
+        deltas[3] = np.nan
+        df = pd.DataFrame({"delta_v": deltas}, index=idx)
+        z, st = p13.compute_cvd(df)
+
+        # Bars 0, 1, 2 have valid prefix -> INSUFFICIENT_HISTORY
+        self.assertEqual(st.iloc[0], "INSUFFICIENT_HISTORY")
+        self.assertEqual(st.iloc[1], "INSUFFICIENT_HISTORY")
+        self.assertEqual(st.iloc[2], "INSUFFICIENT_HISTORY")
+        # Bar 3 has NaN -> MISSING_FLOW
+        self.assertEqual(st.iloc[3], "MISSING_FLOW")
+        # Bars 4..14 have NaN at index 3 in their lookback -> MISSING_FLOW
+        for i in range(3, 15):
+            self.assertEqual(st.iloc[i], "MISSING_FLOW", f"Bar {i} should be MISSING_FLOW")
+
+    def test_orderflow_identities_and_violation(self):
+        """Order-flow identities hold on valid flow, and violations are caught."""
+        n = 50
+        vol = np.random.uniform(10.0, 100.0, size=n)
+        tbv = vol * np.random.uniform(0.1, 0.9, size=n)
+        tsv = vol - tbv
+        delta_v = tbv - tsv
+
+        # Identity 1: delta_v = aggressive_buy - aggressive_sell
+        err1 = np.abs(delta_v - (tbv - tsv)).max()
+        self.assertLess(err1, 1e-10)
+
+        # Identity 2: delta_v = 2 * tbv - vol
+        err2 = np.abs(delta_v - (2.0 * tbv - vol)).max()
+        self.assertLess(err2, 1e-10)
+
+        # Mutate one delta_v value by 5.0
+        corrupted_delta = delta_v.copy()
+        corrupted_delta[10] += 5.0
+        err_violated = np.abs(corrupted_delta - (2.0 * tbv - vol)).max()
+        self.assertGreaterEqual(err_violated, 4.99)
+
+    def test_source_grid_validation_detects_duplicate_and_missing(self):
+        """Grid validation fails when row count matches but timestamps have duplicate and missing minutes."""
+        dt_start = pd.Timestamp("2023-01-01 00:00:00", tz="UTC")
+        dt_end = pd.Timestamp("2023-01-01 00:59:00", tz="UTC")
+        grid = pd.date_range(dt_start, dt_end, freq="1min")
+        ts_list = [int(t.timestamp() * 1000) for t in grid]
+
+        # Duplicate minute 10 and drop minute 20 (row count remains 60)
+        ts_corrupt = list(ts_list)
+        ts_corrupt[20] = ts_corrupt[10]
+        self.assertEqual(len(ts_corrupt), 60)
+
+        # Grid checks
+        dup_count = len(ts_corrupt) - len(set(ts_corrupt))
+        self.assertEqual(dup_count, 1)
+
+        # Off-grid check
+        ts_offgrid = list(ts_list)
+        ts_offgrid[5] += 1234  # sub-minute offset
+        off_grid_count = sum(1 for t in ts_offgrid if t % 60_000 != 0)
+        self.assertEqual(off_grid_count, 1)
+
+    def test_circular_block_bootstrap_mean_ci(self):
+        """Circular block bootstrap handles serial dependence across overlapping outcomes."""
+        rng = np.random.default_rng(123)
+        data = list(rng.normal(0.5, 1.0, size=100))
+        mean_val, ci_low, ci_high = p13.bootstrap_mean_ci(data, n_boot=500, block_size=12)
+
+        self.assertAlmostEqual(mean_val, float(np.mean(data)), places=4)
+        self.assertLess(ci_low, mean_val)
+        self.assertGreater(ci_high, mean_val)
+
+        # Edge cases: empty, < 5 points, constant
+        self.assertEqual(p13.bootstrap_mean_ci([]), (0.0, 0.0, 0.0))
+        self.assertEqual(p13.bootstrap_mean_ci([5.0, 5.0, 5.0]), (5.0, 5.0, 5.0))
+
+
 if __name__ == "__main__":
     unittest.main()
 

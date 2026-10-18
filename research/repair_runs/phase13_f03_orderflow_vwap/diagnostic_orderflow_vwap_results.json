@@ -1,7 +1,7 @@
 {
-  "diagnostic_run_timestamp_utc": "2026-10-17T18:03:34.722984+00:00",
-  "task_step": "F-03: Order Flow, CVD & Session VWAP Correctness",
-  "branch": "repair/phase13-f03-orderflow-vwap",
+  "diagnostic_run_timestamp_utc": "2026-10-18T05:39:21.092775+00:00",
+  "task_step": "F-03-F-06: Forensic Audit Remediation (Order Flow, Invariants, Stop Eligibility, Split-Isolated Inference)",
+  "branch": "repair/phase13-audit-remediation",
   "safety_invariants": {
     "TRADING_AUTHORITY": false,
     "EXECUTION_MODE": "SHADOW",
@@ -43,13 +43,16 @@
         "status_at_bar_10": "INSUFFICIENT_HISTORY",
         "status_at_bar_40": "ZERO_VARIANCE",
         "zero_variance_bars_count": 26,
+        "insufficient_history_bars_count": 34,
         "zero_variance_zscore_is_nan": true,
         "never_substituted_neutral_zero": true
       },
       "all_missing_flow": {
-        "missing_flow_bars_count": 49,
+        "missing_flow_bars_count": 60,
+        "insufficient_history_bars_count": 0,
         "all_zscores_are_nan": true,
-        "never_substituted_neutral_zero": true
+        "never_substituted_neutral_zero": true,
+        "all_60_bars_missing_flow": true
       },
       "single_missing_bar_gap": {
         "gap_index": 35,
@@ -60,6 +63,21 @@
     },
     "historical_slice_benchmark": {
       "status": "COMPLETED",
+      "source_grid_validation": {
+        "status": "PASS",
+        "expected_first_ts": 1672531200000,
+        "actual_first_ts": 1672531200000,
+        "expected_last_ts": 1672876740000,
+        "actual_last_ts": 1672876740000,
+        "expected_rows": 5760,
+        "actual_rows": 5760,
+        "duplicate_timestamps": 0,
+        "is_strictly_monotonic": true,
+        "off_grid_timestamps": 0,
+        "missing_timestamps_count": 0,
+        "extra_timestamps_count": 0,
+        "exact_grid_match": true
+      },
       "sample_scope": {
         "symbol": "BTCUSDT",
         "period_utc": "2023-01-01 00:00:00 to 2023-01-04 23:59:00",
@@ -75,7 +93,20 @@
           "delta_v": true,
           "aggressive_buy_volume": true,
           "aggressive_sell_volume": true,
-          "taker_buy_volume": true
+          "taker_buy_volume": true,
+          "volume": true,
+          "quote_volume": true
+        },
+        "identities": {
+          "identity_1_aggressive_delta_max_abs_err_1m": 0.0,
+          "identity_1_pass_1m": true,
+          "identity_1_aggressive_delta_max_abs_err_5m": 6.821210263296962e-13,
+          "identity_1_pass_5m": true,
+          "identity_2_taker_delta_max_abs_err_1m": 4.547473508864641e-13,
+          "identity_2_pass_1m": true,
+          "identity_2_taker_delta_max_abs_err_5m": 1.5916157281026244e-12,
+          "identity_2_pass_5m": true,
+          "taker_buy_volume_range_violations_1m": 0
         },
         "delta_v_1m_valid_count": 5760,
         "delta_v_1m_missing_rate": 0.0,
@@ -93,31 +124,71 @@
       "vwap_audit": {
         "total_5m_vwap_calculated": 1152,
         "vwap_undefined_dispersion_count": 4,
-        "vwap_min": 16522.04,
-        "vwap_max": 16836.49
+        "vwap_min": 16521.3,
+        "vwap_max": 16839.34
       },
       "event_gating_audit": {
-        "total_events_extracted": 600,
+        "total_events_extracted": 611,
         "events_by_class": {
           "MOMENTUM_DISPLACEMENT": 65,
           "RVOL_EXPANSION": 102,
-          "VWAP_DEVIATION": 147,
+          "VWAP_DEVIATION": 157,
           "RANGE_EXPANSION": 17,
           "VALUE_AREA_BOUNDARY": 86,
-          "VWAP_RECLAIM": 50,
+          "VWAP_RECLAIM": 52,
           "CVD_ACCELERATION": 103,
-          "ORDER_FLOW_VWAP_CONFLUENCE": 4,
+          "ORDER_FLOW_VWAP_CONFLUENCE": 3,
           "HTF_ALIGNED_DISPLACEMENT": 23,
           "LIQUIDITY_SWEEP_SFP": 3
         },
         "cvd_acceleration_events": 103,
-        "orderflow_vwap_confluence_events": 4,
-        "vwap_deviation_events": 147,
+        "orderflow_vwap_confluence_events": 3,
+        "vwap_deviation_events": 157,
+        "vwap_reclaim_events": 52,
         "event_cvd_status_breakdown": {
-          "AVAILABLE": 600
+          "AVAILABLE": 611
         },
         "event_neutral_zero_substitutions": 0,
-        "gating_rule_verification": "PASS: all CVD/OrderFlow events require AVAILABLE status and finite metrics"
+        "gating_rule_verification": "PASS",
+        "gating_violations_count": 0,
+        "gating_violations": []
+      },
+      "stop_model_audit": {
+        "stop_evaluations_total": 2256,
+        "stop_diagnostics": {
+          "included": {
+            "STOP_5M_SWING": 559,
+            "STOP_15M_SWING": 555,
+            "STOP_1H_SWING": 531,
+            "STOP_ATR_ENVELOPE": 611
+          },
+          "excluded": {
+            "MISSING_SWING_DATA": {
+              "STOP_5M_SWING": 0,
+              "STOP_15M_SWING": 0,
+              "STOP_1H_SWING": 12,
+              "STOP_ATR_ENVELOPE": 0
+            },
+            "NON_FINITE_PRICE": {
+              "STOP_5M_SWING": 0,
+              "STOP_15M_SWING": 0,
+              "STOP_1H_SWING": 0,
+              "STOP_ATR_ENVELOPE": 0
+            },
+            "WRONG_SIDE_OF_ENTRY": {
+              "STOP_5M_SWING": 44,
+              "STOP_15M_SWING": 49,
+              "STOP_1H_SWING": 56,
+              "STOP_ATR_ENVELOPE": 0
+            },
+            "INADMISSIBLE_DISTANCE": {
+              "STOP_5M_SWING": 8,
+              "STOP_15M_SWING": 7,
+              "STOP_1H_SWING": 12,
+              "STOP_ATR_ENVELOPE": 0
+            }
+          }
+        }
       }
     }
   }

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-17T17:43:50.712373+00:00",
+  "timestamp": "2026-10-18T05:39:36.379720+00:00",
   "step": "STEP_2_HTF_CAUSALITY_REPAIR_F02_2",
   "branch": "repair/phase13-f02-htf-causality",
   "commit_base": "ffd7668aef3b9d33aca9c3bc570f48f97cc85f1c",
@@ -22,8 +22,8 @@
       "premature_4h_exposure_pct": 0.0
     },
     "synthetic_event_audit": {
-      "total_events_extracted": 76,
-      "total_stop_evaluations": 277,
+      "total_events_extracted": 74,
+      "total_stop_evaluations": 82,
       "early_event_stop_models": [
         "STOP_15M_SWING",
         "STOP_5M_SWING",
@@ -32,7 +32,6 @@
       "late_event_stop_models": [
         "STOP_15M_SWING",
         "STOP_1H_SWING",
-        "STOP_5M_SWING",
         "STOP_ATR_ENVELOPE"
       ],
       "missing_1h_stop_excluded_early": true,
@@ -72,13 +71,13 @@
       "premature_4h_pct": 0.0
     },
     "historical_events_audit": {
-      "total_events_extracted": 1398,
-      "total_stop_evaluations": 5562,
+      "total_events_extracted": 611,
+      "total_stop_evaluations": 2256,
       "stop_models_distribution": {
-        "STOP_5M_SWING": 1398,
-        "STOP_15M_SWING": 1398,
-        "STOP_ATR_ENVELOPE": 1398,
-        "STOP_1H_SWING": 1368
+        "STOP_5M_SWING": 559,
+        "STOP_15M_SWING": 555,
+        "STOP_ATR_ENVELOPE": 611,
+        "STOP_1H_SWING": 531
       },
       "synthetic_fallback_violations": 0,
       "event_validation_status": "VERIFIED",

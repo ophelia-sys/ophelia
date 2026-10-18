@@ -591,18 +591,28 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
 
 
 def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
-    """Computes causal 1-hour rolling CVD acceleration z-score and explicit data status.
+    """Computes causal rolling CVD net imbalance z-score and explicit data status.
 
-    Causality & Data Integrity Rules:
-    - CVD = sum of delta_v over the preceding 12 5m bars (1 hour).
-    - Requires all 12 bars to have valid finite flow (min_periods=12).
-      If any constituent flow value is missing or non-finite, status is 'MISSING_FLOW'.
-    - Rolling baseline uses 288 5m bars (24 hours).
-      Requires at least 24 valid 1h CVD observations (min_periods=24).
-      If fewer than 24 observations exist in the lookback window, status is 'INSUFFICIENT_HISTORY'.
-    - If baseline standard deviation is non-finite or <= 1e-12, status is 'ZERO_VARIANCE'.
-    - When status is 'AVAILABLE', cvd_zscore = (cvd_1h - mean) / std.
-    - When status != 'AVAILABLE', cvd_zscore is float NaN (never substituted with 0.0).
+    Semantic & Methodological Specification:
+    - Statistic: 1-hour rolling net signed order-flow imbalance z-score:
+        CVD_1h = sum(delta_v over trailing 12 5m bars)
+        cvd_zscore = (CVD_1h - mean_24h) / std_24h
+      Note: While retained under the legacy event label 'CVD_ACCELERATION' for serialized
+      schema compatibility, this statistic is mathematically a rolling standardized
+      one-hour net order-flow imbalance (first difference / cumulative volume delta),
+      not a second-order rate of acceleration.
+    - Windows & Warm-up:
+      - 1-hour window: exactly 12 5m bars (min_periods=12).
+      - 24-hour baseline: trailing 288 5m bars, requiring at least 24 valid 1h CVD observations (min_periods=24).
+      - The current 1h observation participates in its own 288-bar trailing baseline.
+    - Explicit Status Precedence:
+      1. MISSING_FLOW: If any constituent 5m bar in the 12-bar window contains NaN/missing/non-finite flow.
+         For early bars (i < 11), status is MISSING_FLOW unless ALL constituent bars from 0 to i have valid flow.
+      2. INSUFFICIENT_HISTORY: Complete valid 12-bar flow is present, but fewer than 24 valid 1h CVD
+         observations exist in the 288-bar baseline lookback.
+      3. ZERO_VARIANCE: Baseline has >= 24 valid observations, but standard deviation is zero (<= 1e-12) or undefined.
+      4. AVAILABLE: Valid 1h flow, valid baseline with >= 24 observations, and positive standard deviation.
+    - When status != 'AVAILABLE', cvd_zscore is float NaN (never substituted with neutral 0.0).
     """
     if "delta_v" not in df_5m.columns or len(df_5m) == 0:
         return (
@@ -613,6 +623,10 @@ def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     n = len(df_5m)
     s_flow = df_5m["delta_v"].astype(float)
     clean_flow = s_flow.where(np.isfinite(s_flow), np.nan)
+    flow_valid = clean_flow.notna()
+
+    # Track valid consecutive prefix for early bars (i < 11)
+    valid_prefix = flow_valid.astype(int).groupby((~flow_valid).cumsum()).cumsum()
 
     cvd_1h = clean_flow.rolling(12, min_periods=12).sum()
     valid_count = cvd_1h.rolling(288, min_periods=1).count()
@@ -620,16 +634,21 @@ def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     cvd_std = cvd_1h.rolling(288, min_periods=24).std()
 
     status = pd.Series("MISSING_FLOW", index=df_5m.index, dtype=object)
-    if n > 0:
-        status[np.arange(n) < 11] = "INSUFFICIENT_HISTORY"
 
+    # 1. Early bars i < 11 only qualify for INSUFFICIENT_HISTORY if all constituents 0..i are valid
+    early_valid = (np.arange(n) < 11) & (valid_prefix == (np.arange(n) + 1))
+    status[early_valid] = "INSUFFICIENT_HISTORY"
+
+    # 2. Complete 12-bar window valid, but fewer than 24 1h baseline observations
     valid_1h = cvd_1h.notna()
     status[valid_1h & (valid_count < 24)] = "INSUFFICIENT_HISTORY"
 
+    # 3. Sufficient history but zero / undefined variance
     has_history = valid_1h & (valid_count >= 24)
     zero_var = has_history & (cvd_std.isna() | (cvd_std <= 1e-12))
     status[zero_var] = "ZERO_VARIANCE"
 
+    # 4. Available with finite z-score
     avail = has_history & (~zero_var) & cvd_mean.notna() & cvd_std.notna()
     status[avail] = "AVAILABLE"
 
@@ -714,17 +733,40 @@ def compute_benjamini_hochberg(p_values: List[float], alpha: float = 0.05) -> Tu
     return rejected, original_q.tolist()
 
 
-def bootstrap_mean_ci(values: List[float], n_boot: int = 2000, alpha: float = 0.05) -> Tuple[float, float, float]:
-    """Bootstrap 95% confidence interval for the mean."""
-    arr = np.array(values)
-    if len(arr) == 0:
+def bootstrap_mean_ci(
+    values: List[float],
+    n_boot: int = 2000,
+    alpha: float = 0.05,
+    block_size: int = 12,
+) -> Tuple[float, float, float]:
+    """Dependence-aware circular block bootstrap confidence interval for overlapping outcomes.
+
+    Methodological Specification:
+    - IID row resampling underestimates standard errors when forward return horizons overlap.
+    - Uses circular block bootstrap with block_size corresponding to the forward horizon
+      (e.g., 12 5m bars for 60m forward outcomes), preserving chronological serial correlation.
+    - If block_size <= 1, defaults to standard IID bootstrap.
+    """
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    n = len(arr)
+    if n == 0:
         return 0.0, 0.0, 0.0
     mean_val = float(np.mean(arr))
-    if len(arr) < 5 or np.all(arr == arr[0]):
+    if n < 5 or np.all(arr == arr[0]):
         return mean_val, mean_val, mean_val
 
+    b = max(1, min(int(block_size), n))
+    k_blocks = int(np.ceil(n / b))
+    ext = np.concatenate([arr, arr[:b]])
     rng = np.random.default_rng(42)
-    boot_means = np.array([np.mean(rng.choice(arr, size=len(arr), replace=True)) for _ in range(n_boot)])
+
+    boot_means = np.empty(n_boot, dtype=float)
+    for i in range(n_boot):
+        starts = rng.integers(0, n, size=k_blocks)
+        sample = np.concatenate([ext[s : s + b] for s in starts])[:n]
+        boot_means[i] = np.mean(sample)
+
     ci_low = float(np.percentile(boot_means, 100 * (alpha / 2)))
     ci_high = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
     return mean_val, ci_low, ci_high
@@ -1561,49 +1603,97 @@ def run_alpha_discovery(
         sub_val = sub[sub["split"] == "VALIDATION"]
         sub_test = sub[sub["split"] == "TEST"]
 
-        dir_rets_all = sub["directional_return_pct"].values
-        dir_rets_test = sub_test["directional_return_pct"].values if len(sub_test) > 0 else np.array([0.0])
+        n_train = len(sub_train)
+        n_val = len(sub_val)
+        n_test = len(sub_test)
 
-        win_rate_all = float(np.mean(dir_rets_all > 0)) * 100
-        win_rate_test = float(np.mean(dir_rets_test > 0)) * 100 if len(sub_test) > 0 else 0.0
+        dir_rets_all = sub["directional_return_pct"].dropna().values
+        win_rate_all = float(np.mean(dir_rets_all > 0)) * 100 if len(dir_rets_all) > 0 else 0.0
+        mean_dir_ret_all = float(np.mean(dir_rets_all)) * 100 if len(dir_rets_all) > 0 else 0.0
 
-        mean_dir_ret = float(np.mean(dir_rets_all)) * 100
-        mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100 if len(sub_test) > 0 else 0.0
+        mean_mfe = float(np.mean(sub["mfe_pct"].dropna().values)) * 100 if len(sub["mfe_pct"].dropna()) > 0 else 0.0
+        mean_mae = float(np.mean(sub["mae_pct"].dropna().values)) * 100 if len(sub["mae_pct"].dropna()) > 0 else 0.0
+        median_t_mfe = float(np.median(sub["time_to_mfe_min"].dropna().values)) if len(sub["time_to_mfe_min"].dropna()) > 0 else 0.0
+        median_t_mae = float(np.median(sub["time_to_mae_min"].dropna().values)) if len(sub["time_to_mae_min"].dropna()) > 0 else 0.0
 
-        # One-sample t-test against 0 directional return
-        t_stat, p_val = stats.ttest_1samp(dir_rets_all, 0.0)
-        p_val_clean = float(p_val) if not np.isnan(p_val) else 1.0
-
-        mean_mfe = float(np.mean(sub["mfe_pct"].values)) * 100
-        mean_mae = float(np.mean(sub["mae_pct"].values)) * 100
-        median_t_mfe = float(np.median(sub["time_to_mfe_min"].values))
-        median_t_mae = float(np.median(sub["time_to_mae_min"].values))
+        # Confirmatory evaluation: strictly on held-out TEST split
+        dir_rets_test = sub_test["directional_return_pct"].dropna().values
+        if n_test >= 10 and len(dir_rets_test) >= 10:
+            win_rate_test = float(np.mean(dir_rets_test > 0)) * 100
+            mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100
+            t_stat_val, p_val = stats.ttest_1samp(dir_rets_test, 0.0)
+            t_stat = round(float(t_stat_val), 3) if not np.isnan(t_stat_val) else 0.0
+            raw_p = float(p_val) if not np.isnan(p_val) else 1.0
+            # Dependence-aware circular block bootstrap on test split (block_size=12 for 60m horizon)
+            _, test_ci_low, test_ci_high = bootstrap_mean_ci(list(dir_rets_test * 100.0), block_size=12)
+            test_status = "EVALUATED"
+        else:
+            win_rate_test = float(np.mean(dir_rets_test > 0)) * 100 if len(dir_rets_test) > 0 else None
+            mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100 if len(dir_rets_test) > 0 else None
+            t_stat = None
+            raw_p = None
+            test_ci_low = None
+            test_ci_high = None
+            test_status = "INCONCLUSIVE_INSUFFICIENT_TEST_SAMPLE"
 
         hypothesis_results.append({
             "event_class": ev_cls,
             "n_total": n_total,
-            "n_train": len(sub_train),
-            "n_val": len(sub_val),
-            "n_test": len(sub_test),
+            "n_train": n_train,
+            "n_val": n_val,
+            "n_test": n_test,
+            "exploratory_pooled": {
+                "scope": "POOLED_ALL_SPLITS_EXPLORATORY_ONLY",
+                "win_rate_pct": round(win_rate_all, 2),
+                "mean_directional_return_pct": round(mean_dir_ret_all, 4),
+                "mean_mfe_pct": round(mean_mfe, 4),
+                "mean_mae_pct": round(mean_mae, 4),
+                "mfe_mae_ratio": round(mean_mfe / max(1e-4, mean_mae), 2),
+                "median_time_to_mfe_min": median_t_mfe,
+                "median_time_to_mae_min": median_t_mae,
+            },
+            "confirmatory_test": {
+                "split": "TEST",
+                "status": test_status,
+                "sample_size": n_test,
+                "win_rate_test_pct": round(win_rate_test, 2) if win_rate_test is not None else None,
+                "mean_directional_return_test_pct": round(mean_dir_ret_test, 4) if mean_dir_ret_test is not None else None,
+                "ci_95_low": round(test_ci_low, 4) if test_ci_low is not None else None,
+                "ci_95_high": round(test_ci_high, 4) if test_ci_high is not None else None,
+                "t_stat": t_stat,
+                "raw_p": raw_p,
+                "bootstrap_method": "CIRCULAR_BLOCK_BOOTSTRAP_BLOCK_12",
+            },
+            # Flat compatibility keys
             "win_rate_all_pct": round(win_rate_all, 2),
-            "win_rate_test_pct": round(win_rate_test, 2),
-            "mean_directional_return_pct": round(mean_dir_ret, 4),
-            "mean_directional_return_test_pct": round(mean_dir_ret_test, 4),
-            "t_stat": round(float(t_stat), 3),
-            "raw_p": p_val_clean,
-            "mean_mfe_pct": round(mean_mfe, 4),
-            "mean_mae_pct": round(mean_mae, 4),
-            "mfe_mae_ratio": round(mean_mfe / max(1e-4, mean_mae), 2),
-            "median_time_to_mfe_min": median_t_mfe,
-            "median_time_to_mae_min": median_t_mae,
+            "win_rate_test_pct": round(win_rate_test, 2) if win_rate_test is not None else 0.0,
+            "mean_directional_return_pct": round(mean_dir_ret_all, 4),
+            "mean_directional_return_test_pct": round(mean_dir_ret_test, 4) if mean_dir_ret_test is not None else 0.0,
+            "t_stat": t_stat if t_stat is not None else 0.0,
+            "raw_p": raw_p if raw_p is not None else 1.0,
+            "test_status": test_status,
         })
 
-    # Apply Benjamini-Hochberg FDR
-    raw_p_list = [h["raw_p"] for h in hypothesis_results]
-    fdr_rejected, adj_q_list = compute_benjamini_hochberg(raw_p_list, alpha=0.05)
-    for i, h in enumerate(hypothesis_results):
-        h["fdr_q"] = round(adj_q_list[i], 5)
-        h["fdr_significant"] = bool(fdr_rejected[i])
+    # Apply Benjamini-Hochberg FDR on confirmatory TEST p-values
+    evaluated_indices = [i for i, h in enumerate(hypothesis_results) if h["confirmatory_test"]["raw_p"] is not None]
+    if len(evaluated_indices) > 0:
+        test_p_list = [hypothesis_results[i]["confirmatory_test"]["raw_p"] for i in evaluated_indices]
+        fdr_rejected, adj_q_list = compute_benjamini_hochberg(test_p_list, alpha=0.05)
+        for idx_ev, orig_idx in enumerate(evaluated_indices):
+            h = hypothesis_results[orig_idx]
+            q_val = round(adj_q_list[idx_ev], 5)
+            sig = bool(fdr_rejected[idx_ev])
+            h["confirmatory_test"]["fdr_q"] = q_val
+            h["confirmatory_test"]["fdr_significant"] = sig
+            h["fdr_q"] = q_val
+            h["fdr_significant"] = sig
+
+    for h in hypothesis_results:
+        if "fdr_q" not in h:
+            h["fdr_q"] = 1.0
+            h["fdr_significant"] = False
+            h["confirmatory_test"]["fdr_q"] = 1.0
+            h["confirmatory_test"]["fdr_significant"] = False
 
     # 2. Stop-Room & Thesis Resumption Analysis
     stop_room_analysis: Dict[str, Any] = {}
@@ -1670,8 +1760,8 @@ def run_alpha_discovery(
         mean_net_r_slip = float(np.mean(sub_r["net_r_fee_slip"].values))
         fric_r_slip = float(np.mean(sub_r["friction_r_fee_slip"].values))
 
-        # Bootstrap CI on Net R
-        _, ci_low, ci_high = bootstrap_mean_ci(sub_r["net_r_fee_slip"].values)
+        # Dependence-aware circular block bootstrap CI on Net R (block_size=12)
+        _, ci_low, ci_high = bootstrap_mean_ci(sub_r["net_r_fee_slip"].values, block_size=12)
 
         regimes_summary.append({
             "stop_regime": regime_name,
