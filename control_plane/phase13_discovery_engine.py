@@ -47,6 +47,8 @@ TS_OCT_14_2023 = int(datetime.datetime(2023, 10, 14, 23, 59, 59, tzinfo=datetime
 TS_OCT_15_2023_END = int(datetime.datetime(2023, 10, 15, 23, 59, 59, tzinfo=datetime.timezone.utc).timestamp() * 1000)
 TS_OCT_16_2023 = int(datetime.datetime(2023, 10, 16, 0, 0, 0, tzinfo=datetime.timezone.utc).timestamp() * 1000)
 TS_DEC_31_2023 = int(datetime.datetime(2023, 12, 31, 23, 59, 59, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+TS_JAN_01_2024 = int(datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+TS_MAR_31_2024 = int(datetime.datetime(2024, 3, 31, 23, 59, 59, tzinfo=datetime.timezone.utc).timestamp() * 1000)
 
 # Verified BingX Friction Regimes (from Phase 12 Forensic Audit)
 # Maker = 0.020% (2.0 bps), Taker = 0.050% (5.0 bps)
@@ -127,6 +129,8 @@ def assign_phase13_split(ts: int) -> str:
         return "EMBARGO_2"
     elif TS_OCT_16_2023 <= ts <= TS_DEC_31_2023:
         return "TEST"
+    elif TS_JAN_01_2024 <= ts <= TS_MAR_31_2024:
+        return "OUT_OF_TIME_Q1_2024"
     return "OUT_OF_BOUNDS"
 
 
@@ -1165,8 +1169,9 @@ def merge_completed_htf_features(
 class Phase13DiscoveryEngine:
     """Core Alpha Discovery Reset & Structural Stop-Room Research Engine."""
 
-    def __init__(self, data_path: str = "data/processed/binance_um_universe_1m_v2.parquet"):
+    def __init__(self, data_path: str = "data/processed/binance_um_universe_1m_v2.parquet", event_family_mode: str = "phase13"):
         self.data_path = data_path
+        self.event_family_mode = event_family_mode
         self.events: List[Phase13Event] = []
         self.forward_outcomes: List[ForwardOutcome] = []
         self.stop_evaluations: List[StopRoomEvaluation] = []
@@ -1326,91 +1331,171 @@ class Phase13DiscoveryEngine:
             # Check Event Families
             detected_events: List[Tuple[str, str]] = []  # (event_class, direction)
 
-            # 1. Momentum Displacement (>= 1.5 ATR)
-            body = close_p - open_p
-            if body >= 1.5 * atr_5m:
-                detected_events.append(("MOMENTUM_DISPLACEMENT", "LONG"))
-            elif body <= -1.5 * atr_5m:
-                detected_events.append(("MOMENTUM_DISPLACEMENT", "SHORT"))
+            if self.event_family_mode == "phase14_composite":
+                body = close_p - open_p
+                is_disp_long = (body >= 1.5 * atr_5m) and (trend_4h == "BULL")
+                is_disp_short = (body <= -1.5 * atr_5m) and (trend_4h == "BEAR")
 
-            # 2. RVOL Expansion (RVOL >= 2.0)
-            if rvol >= 2.0:
-                dir_rvol = "LONG" if close_p > open_p else "SHORT"
-                detected_events.append(("RVOL_EXPANSION", dir_rvol))
+                prior_15m_low = swing_low_15m_arr[i]
+                prior_15m_high = swing_high_15m_arr[i]
+                is_sfp_long = (not np.isnan(prior_15m_low)) and (low_p < prior_15m_low * 0.999) and (close_p > prior_15m_low)
+                is_sfp_short = (not np.isnan(prior_15m_high)) and (high_p > prior_15m_high * 1.001) and (close_p < prior_15m_high)
 
-            # 3. CVD Acceleration (|cvd_z| >= 2.0, gated strictly on AVAILABLE status)
-            if cvd_status == "AVAILABLE" and np.isfinite(cvd_z):
-                if cvd_z >= 2.0:
-                    detected_events.append(("CVD_ACCELERATION", "LONG"))
-                elif cvd_z <= -2.0:
-                    detected_events.append(("CVD_ACCELERATION", "SHORT"))
+                prior_1h_low = swing_low_1h_arr[i]
+                prior_1h_high = swing_high_1h_arr[i]
+                is_sfp_1h_long = (not np.isnan(prior_1h_low)) and (low_p < prior_1h_low * 0.999) and (close_p > prior_1h_low)
+                is_sfp_1h_short = (not np.isnan(prior_1h_high)) and (high_p > prior_1h_high * 1.001) and (close_p < prior_1h_high)
 
-            # 4. VWAP Deviation Mean Reversion (|vwap_z| >= 1.5, gated on finite dispersion)
-            if np.isfinite(vwap_z):
-                if vwap_z <= -1.5:
-                    detected_events.append(("VWAP_DEVIATION", "LONG"))
-                elif vwap_z >= 1.5:
-                    detected_events.append(("VWAP_DEVIATION", "SHORT"))
+                # 1. BENCH_HTF_ALIGNED_DISPLACEMENT
+                if is_disp_long:
+                    detected_events.append(("BENCH_HTF_ALIGNED_DISPLACEMENT", "LONG"))
+                elif is_disp_short:
+                    detected_events.append(("BENCH_HTF_ALIGNED_DISPLACEMENT", "SHORT"))
 
-            # 5. VWAP Reclaim (gated on finite prior & current VWAP, consecutive 5m timestamps, and valid intervals)
-            is_prev_valid = bool(df_5m["is_valid_interval"].iloc[i - 1]) if "is_valid_interval" in df_5m.columns else True
-            is_consec_time = (df_5m.index[i] - df_5m.index[i - 1]) == pd.Timedelta(minutes=5)
-            prev_close = float(df_5m["close"].iloc[i - 1])
-            prev_vwap = float(df_5m["vwap"].iloc[i - 1])
-            cur_vwap = float(df_5m["vwap"].iloc[i])
+                # 2. BENCH_LIQUIDITY_SWEEP_SFP
+                if is_sfp_long:
+                    detected_events.append(("BENCH_LIQUIDITY_SWEEP_SFP", "LONG"))
+                elif is_sfp_short:
+                    detected_events.append(("BENCH_LIQUIDITY_SWEEP_SFP", "SHORT"))
 
-            if i > 0 and is_prev_valid and is_consec_time and np.isfinite(prev_close) and np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
-                if prev_close < prev_vwap and close_p > cur_vwap:
-                    detected_events.append(("VWAP_RECLAIM", "LONG"))
-                elif prev_close > prev_vwap and close_p < cur_vwap:
-                    detected_events.append(("VWAP_RECLAIM", "SHORT"))
+                # 3. COMP_SFP_HTF_TREND (SFP in direction of 4H Trend)
+                if is_sfp_long and trend_4h == "BULL":
+                    detected_events.append(("COMP_SFP_HTF_TREND", "LONG"))
+                elif is_sfp_short and trend_4h == "BEAR":
+                    detected_events.append(("COMP_SFP_HTF_TREND", "SHORT"))
 
-            # 6. Liquidity Sweep SFP (15m swing breach + reclaim)
-            # Row i contains completed 15m swing level aligned to decision_ts (Finding A4)
-            prior_15m_low = swing_low_15m_arr[i]
-            prior_15m_high = swing_high_15m_arr[i]
-            if not np.isnan(prior_15m_low) and low_p < prior_15m_low * 0.999 and close_p > prior_15m_low:
-                detected_events.append(("LIQUIDITY_SWEEP_SFP", "LONG"))
-            elif not np.isnan(prior_15m_high) and high_p > prior_15m_high * 1.001 and close_p < prior_15m_high:
-                detected_events.append(("LIQUIDITY_SWEEP_SFP", "SHORT"))
+                # 4. COMP_SFP_RVOL_CONFIRM (SFP with RVOL >= 1.5)
+                if np.isfinite(rvol) and rvol >= 1.5:
+                    if is_sfp_long:
+                        detected_events.append(("COMP_SFP_RVOL_CONFIRM", "LONG"))
+                    elif is_sfp_short:
+                        detected_events.append(("COMP_SFP_RVOL_CONFIRM", "SHORT"))
 
-            # 7. Value Area Boundary Rejection
-            val = rolling_close_p30[i]
-            vah = rolling_close_p70[i]
-            if not np.isnan(val) and low_p <= val and close_p > val:
-                detected_events.append(("VALUE_AREA_BOUNDARY", "LONG"))
-            elif not np.isnan(vah) and high_p >= vah and close_p < vah:
-                detected_events.append(("VALUE_AREA_BOUNDARY", "SHORT"))
+                # 5. COMP_SFP_VOL_EXPANSION (SFP in NORMAL or EXPANDED volatility regime)
+                if vol_regime in ("NORMAL", "EXPANDED"):
+                    if is_sfp_long:
+                        detected_events.append(("COMP_SFP_VOL_EXPANSION", "LONG"))
+                    elif is_sfp_short:
+                        detected_events.append(("COMP_SFP_VOL_EXPANSION", "SHORT"))
 
-            # 8. Volatility Compression -> Expansion Breakout
-            if vol_regime == "COMPRESSED":
-                if body >= 1.2 * atr_5m:
-                    detected_events.append(("RANGE_EXPANSION", "LONG"))
-                elif body <= -1.2 * atr_5m:
-                    detected_events.append(("RANGE_EXPANSION", "SHORT"))
+                # 6. COMP_DISPLACEMENT_RVOL (HTF Aligned Displacement with RVOL >= 2.0)
+                if np.isfinite(rvol) and rvol >= 2.0:
+                    if is_disp_long:
+                        detected_events.append(("COMP_DISPLACEMENT_RVOL", "LONG"))
+                    elif is_disp_short:
+                        detected_events.append(("COMP_DISPLACEMENT_RVOL", "SHORT"))
 
-            # 9. HTF Aligned Displacement Interaction
-            if abs(body) >= 1.5 * atr_5m:
-                if body > 0 and trend_4h == "BULL":
-                    detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "LONG"))
-                elif body < 0 and trend_4h == "BEAR":
-                    detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "SHORT"))
+                # 7. COMP_DISPLACEMENT_VOL_EXPANSION (HTF Aligned Displacement in EXPANDED volatility regime)
+                if vol_regime == "EXPANDED":
+                    if is_disp_long:
+                        detected_events.append(("COMP_DISPLACEMENT_VOL_EXPANSION", "LONG"))
+                    elif is_disp_short:
+                        detected_events.append(("COMP_DISPLACEMENT_VOL_EXPANSION", "SHORT"))
 
-            # 10. Order Flow x VWAP Confluence Interaction (gated on AVAILABLE flow, valid VWAP, and consecutive bars)
-            if (
-                cvd_status == "AVAILABLE"
-                and np.isfinite(cvd_z)
-                and i > 0
-                and is_prev_valid
-                and is_consec_time
-                and np.isfinite(prev_close)
-                and np.isfinite(prev_vwap)
-                and np.isfinite(cur_vwap)
-            ):
-                if prev_close < prev_vwap and close_p > cur_vwap and cvd_z >= 1.5:
-                    detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "LONG"))
-                elif prev_close > prev_vwap and close_p < cur_vwap and cvd_z <= -1.5:
-                    detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "SHORT"))
+                # 8. COMP_SFP_CVD_ABSORPTION (SFP with opposing order flow absorption, gated on AVAILABLE)
+                if cvd_status == "AVAILABLE" and np.isfinite(cvd_z):
+                    if is_sfp_long and cvd_z <= -1.0:
+                        detected_events.append(("COMP_SFP_CVD_ABSORPTION", "LONG"))
+                    elif is_sfp_short and cvd_z >= 1.0:
+                        detected_events.append(("COMP_SFP_CVD_ABSORPTION", "SHORT"))
+
+                # 9. COMP_DUAL_CONFLUENCE (SFP and HTF Displacement simultaneously on same bar)
+                if is_sfp_long and is_disp_long:
+                    detected_events.append(("COMP_DUAL_CONFLUENCE", "LONG"))
+                elif is_sfp_short and is_disp_short:
+                    detected_events.append(("COMP_DUAL_CONFLUENCE", "SHORT"))
+
+                # 10. COMP_HTF_1H_SWING_SFP (SFP against 1H swing level)
+                if is_sfp_1h_long:
+                    detected_events.append(("COMP_HTF_1H_SWING_SFP", "LONG"))
+                elif is_sfp_1h_short:
+                    detected_events.append(("COMP_HTF_1H_SWING_SFP", "SHORT"))
+            else:
+                # 1. Momentum Displacement (>= 1.5 ATR)
+                body = close_p - open_p
+                if body >= 1.5 * atr_5m:
+                    detected_events.append(("MOMENTUM_DISPLACEMENT", "LONG"))
+                elif body <= -1.5 * atr_5m:
+                    detected_events.append(("MOMENTUM_DISPLACEMENT", "SHORT"))
+
+                # 2. RVOL Expansion (RVOL >= 2.0)
+                if rvol >= 2.0:
+                    dir_rvol = "LONG" if close_p > open_p else "SHORT"
+                    detected_events.append(("RVOL_EXPANSION", dir_rvol))
+
+                # 3. CVD Acceleration (|cvd_z| >= 2.0, gated strictly on AVAILABLE status)
+                if cvd_status == "AVAILABLE" and np.isfinite(cvd_z):
+                    if cvd_z >= 2.0:
+                        detected_events.append(("CVD_ACCELERATION", "LONG"))
+                    elif cvd_z <= -2.0:
+                        detected_events.append(("CVD_ACCELERATION", "SHORT"))
+
+                # 4. VWAP Deviation Mean Reversion (|vwap_z| >= 1.5, gated on finite dispersion)
+                if np.isfinite(vwap_z):
+                    if vwap_z <= -1.5:
+                        detected_events.append(("VWAP_DEVIATION", "LONG"))
+                    elif vwap_z >= 1.5:
+                        detected_events.append(("VWAP_DEVIATION", "SHORT"))
+
+                # 5. VWAP Reclaim (gated on finite prior & current VWAP, consecutive 5m timestamps, and valid intervals)
+                is_prev_valid = bool(df_5m["is_valid_interval"].iloc[i - 1]) if "is_valid_interval" in df_5m.columns else True
+                is_consec_time = (df_5m.index[i] - df_5m.index[i - 1]) == pd.Timedelta(minutes=5)
+                prev_close = float(df_5m["close"].iloc[i - 1])
+                prev_vwap = float(df_5m["vwap"].iloc[i - 1])
+                cur_vwap = float(df_5m["vwap"].iloc[i])
+
+                if i > 0 and is_prev_valid and is_consec_time and np.isfinite(prev_close) and np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
+                    if prev_close < prev_vwap and close_p > cur_vwap:
+                        detected_events.append(("VWAP_RECLAIM", "LONG"))
+                    elif prev_close > prev_vwap and close_p < cur_vwap:
+                        detected_events.append(("VWAP_RECLAIM", "SHORT"))
+
+                # 6. Liquidity Sweep SFP (15m swing breach + reclaim)
+                # Row i contains completed 15m swing level aligned to decision_ts (Finding A4)
+                prior_15m_low = swing_low_15m_arr[i]
+                prior_15m_high = swing_high_15m_arr[i]
+                if not np.isnan(prior_15m_low) and low_p < prior_15m_low * 0.999 and close_p > prior_15m_low:
+                    detected_events.append(("LIQUIDITY_SWEEP_SFP", "LONG"))
+                elif not np.isnan(prior_15m_high) and high_p > prior_15m_high * 1.001 and close_p < prior_15m_high:
+                    detected_events.append(("LIQUIDITY_SWEEP_SFP", "SHORT"))
+
+                # 7. Value Area Boundary Rejection
+                val = rolling_close_p30[i]
+                vah = rolling_close_p70[i]
+                if not np.isnan(val) and low_p <= val and close_p > val:
+                    detected_events.append(("VALUE_AREA_BOUNDARY", "LONG"))
+                elif not np.isnan(vah) and high_p >= vah and close_p < vah:
+                    detected_events.append(("VALUE_AREA_BOUNDARY", "SHORT"))
+
+                # 8. Volatility Compression -> Expansion Breakout
+                if vol_regime == "COMPRESSED":
+                    if body >= 1.2 * atr_5m:
+                        detected_events.append(("RANGE_EXPANSION", "LONG"))
+                    elif body <= -1.2 * atr_5m:
+                        detected_events.append(("RANGE_EXPANSION", "SHORT"))
+
+                # 9. HTF Aligned Displacement Interaction
+                if abs(body) >= 1.5 * atr_5m:
+                    if body > 0 and trend_4h == "BULL":
+                        detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "LONG"))
+                    elif body < 0 and trend_4h == "BEAR":
+                        detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "SHORT"))
+
+                # 10. Order Flow x VWAP Confluence Interaction (gated on AVAILABLE flow, valid VWAP, and consecutive bars)
+                if (
+                    cvd_status == "AVAILABLE"
+                    and np.isfinite(cvd_z)
+                    and i > 0
+                    and is_prev_valid
+                    and is_consec_time
+                    and np.isfinite(prev_close)
+                    and np.isfinite(prev_vwap)
+                    and np.isfinite(cur_vwap)
+                ):
+                    if prev_close < prev_vwap and close_p > cur_vwap and cvd_z >= 1.5:
+                        detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "LONG"))
+                    elif prev_close > prev_vwap and close_p < cur_vwap and cvd_z <= -1.5:
+                        detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "SHORT"))
 
             if not detected_events:
                 continue
