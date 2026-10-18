@@ -588,13 +588,46 @@ def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
 
 
 def compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: int = 14) -> pd.Series:
-    """Causal ATR using Wilder's smoothing."""
+    """Causal ATR using Wilder's smoothing with strict gap-handling.
+
+    Integrity & Gap Rules:
+    - If any input bar in the window is invalid/NaN, true range across the missing interval
+      cannot be measured because prev_close is unknown or current bar is missing.
+    - True range across an invalid interval is marked NaN.
+    - Wilder's smoothing state is invalidated across data gaps: it does not carry forward
+      stale ATR across missing elapsed time.
+    - Contiguous valid segments require a complete warm-up of `period` consecutive bars
+      (min_periods=period) before reporting a valid ATR.
+    """
+    if len(closes) == 0:
+        return pd.Series(dtype=float, index=closes.index)
+
     prev_close = closes.shift(1)
+    # Check consecutive timestamps if DatetimeIndex
+    if isinstance(closes.index, pd.DatetimeIndex) and len(closes) > 1:
+        dt_diff = closes.index.to_series().diff()
+        expected_diff = closes.index.to_series().diff().median()
+        is_consec = (dt_diff == expected_diff) | dt_diff.isna()
+    else:
+        is_consec = pd.Series(True, index=closes.index)
+
     tr1 = highs - lows
     tr2 = (highs - prev_close).abs()
     tr3 = (lows - prev_close).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.ewm(alpha=1.0 / period, adjust=False).mean()
+    # At bar 0, prev_close is NaN by construction; for bar > 0, missing prev_close is a data gap
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1, skipna=False)
+    if len(tr) > 0 and pd.isna(tr.iloc[0]) and pd.notna(tr1.iloc[0]):
+        tr.iloc[0] = tr1.iloc[0]
+    tr = tr.where(is_consec, np.nan)
+
+    # Invalidate smoothing across gaps by grouping by contiguous valid blocks
+    is_gap = tr.isna()
+    gap_group = is_gap.cumsum()
+
+    # Reset Wilder's smoothing state across data gaps per contiguous block
+    atr = tr.groupby(gap_group).transform(
+        lambda g: g.ewm(alpha=1.0 / period, adjust=False).mean()
+    )
     return atr
 
 
@@ -712,6 +745,11 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
         if include_volume:
             agg["volume"] = "sum"
 
+        start_bucket = df.index.min().floor(rule)
+        end_bucket = df.index.max().floor(rule)
+        full_grid = pd.date_range(start_bucket, end_bucket, freq=rule, tz=df.index.tz)
+        full_grid.name = "dt"
+
         bucket_starts = df.index.floor(rule)
         rem = (df.index - bucket_starts) % pd.Timedelta(minutes=1)
         offsets = (df.index - bucket_starts) // pd.Timedelta(minutes=1)
@@ -734,20 +772,47 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
             (gmin == 0) &
             (gmax == expected_minutes - 1)
         )
-        valid_indices = is_valid_bucket[is_valid_bucket].index
 
         resampled = df.resample(rule, label="left", closed="left").agg(agg)
-        resampled = resampled.loc[valid_indices].dropna(subset=["open", "high", "low", "close"]).copy()
+        resampled = resampled.reindex(full_grid)
+        resampled.index.name = "dt"
+        valid_mask = is_valid_bucket.reindex(full_grid, fill_value=False)
+
+        # Ensure exact epoch ms timestamp for all grid points
+        if df.index.tz is not None:
+            epoch = pd.Timestamp("1970-01-01", tz="UTC")
+            resampled["timestamp"] = ((full_grid - epoch) // pd.Timedelta(milliseconds=1)).astype(np.int64)
+        else:
+            epoch = pd.Timestamp("1970-01-01")
+            resampled["timestamp"] = ((full_grid - epoch) // pd.Timedelta(milliseconds=1)).astype(np.int64)
+
+        # Incomplete intervals must remain identifiable as invalid; never fabricated OHLCV
+        invalid_mask = ~valid_mask
+        resampled.loc[invalid_mask, ["open", "high", "low", "close"]] = np.nan
+        if include_volume:
+            resampled.loc[invalid_mask, "volume"] = np.nan
+
+        # Quote volume aggregation if present in source
+        if "quote_volume" in df.columns:
+            clean_qv = df["quote_volume"].where(np.isfinite(df["quote_volume"]), np.nan)
+            qv_res = clean_qv.resample(rule, label="left", closed="left").sum(min_count=expected_minutes)
+            resampled["quote_volume"] = qv_res.reindex(full_grid)
+            resampled.loc[invalid_mask, "quote_volume"] = np.nan
+        elif include_volume:
+            resampled["quote_volume"] = np.nan
 
         # Flow aggregation: require all constituent minutes in interval to have valid finite flow
         if include_volume:
-            for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume"):
+            for flow_col in ("delta_v", "aggressive_buy_volume", "aggressive_sell_volume", "taker_buy_volume"):
                 if flow_col in df.columns:
                     clean_flow = df[flow_col].where(np.isfinite(df[flow_col]), np.nan)
                     flow_res = clean_flow.resample(rule, label="left", closed="left").sum(min_count=expected_minutes)
-                    resampled[flow_col] = flow_res.reindex(resampled.index)
+                    resampled[flow_col] = flow_res.reindex(full_grid)
+                    resampled.loc[invalid_mask, flow_col] = np.nan
                 else:
                     resampled[flow_col] = np.nan
+
+        resampled["is_valid_interval"] = valid_mask
         return resampled
 
     df_5m = _resample_strict_interval("5min", 5, include_volume=True)
@@ -802,7 +867,7 @@ def merge_completed_htf_features(
         for col in ["close_15m", "high_15m", "low_15m", "atr_15m", "swing_low_15m", "swing_high_15m"]:
             right_15m[col] = pd.Series(dtype=float)
     right_15m["available_15m_ts"] = right_15m.index + pd.Timedelta(minutes=15)
-    right_15m = right_15m.reset_index(drop=True).sort_values("available_15m_ts")
+    right_15m = right_15m[right_15m["close_15m"].notna()].reset_index(drop=True).sort_values("available_15m_ts")
 
     # 1h features
     right_1h = pd.DataFrame(index=df_1h.index)
@@ -821,7 +886,7 @@ def merge_completed_htf_features(
         for col in ["close_1h", "high_1h", "low_1h", "atr_1h", "swing_low_1h", "swing_high_1h"]:
             right_1h[col] = pd.Series(dtype=float)
     right_1h["available_1h_ts"] = right_1h.index + pd.Timedelta(hours=1)
-    right_1h = right_1h.reset_index(drop=True).sort_values("available_1h_ts")
+    right_1h = right_1h[right_1h["close_1h"].notna()].reset_index(drop=True).sort_values("available_1h_ts")
 
     # 4h features
     right_4h = pd.DataFrame(index=df_4h.index)
@@ -839,7 +904,7 @@ def merge_completed_htf_features(
             right_4h[col] = pd.Series(dtype=float)
         right_4h["trend_4h"] = pd.Series(dtype=object)
     right_4h["available_4h_ts"] = right_4h.index + pd.Timedelta(hours=4)
-    right_4h = right_4h.reset_index(drop=True).sort_values("available_4h_ts")
+    right_4h = right_4h[right_4h["close_4h"].notna()].reset_index(drop=True).sort_values("available_4h_ts")
 
     # As-of joins
     if len(right_15m) > 0:
@@ -951,10 +1016,9 @@ class Phase13DiscoveryEngine:
         n_5m = len(df_5m)
         logger.info("Iterating across %d 5m bars for %s...", n_5m, symbol)
 
-        # Precompute swing arrays for speed
-        # 5m swing high/low over 12 bars (1 hour)
-        lows_5m_rolling = df_5m["low"].rolling(12).min().values
-        highs_5m_rolling = df_5m["high"].rolling(12).max().values
+        # Precompute swing arrays for speed (min_periods=12 prevents gap compression)
+        lows_5m_rolling = df_5m["low"].rolling(12, min_periods=12).min().values
+        highs_5m_rolling = df_5m["high"].rolling(12, min_periods=12).max().values
         swing_low_15m_arr = df_5m["swing_low_15m"].values
         swing_high_15m_arr = df_5m["swing_high_15m"].values
         swing_low_1h_arr = df_5m["swing_low_1h"].values
@@ -967,6 +1031,9 @@ class Phase13DiscoveryEngine:
 
         # Scan each 5m bar causally
         for i in range(50, n_5m - 25):  # Leave room for lookback and forward 120m
+            if "is_valid_interval" in df_5m.columns and not bool(df_5m["is_valid_interval"].iloc[i]):
+                continue
+
             ts_bar = int(df_5m["timestamp"].iloc[i])
             decision_ts_ms = ts_bar + 5 * 60 * 1000
             split = assign_phase13_split(decision_ts_ms)
@@ -1025,11 +1092,14 @@ class Phase13DiscoveryEngine:
                 elif vwap_z >= 1.5:
                     detected_events.append(("VWAP_DEVIATION", "SHORT"))
 
-            # 5. VWAP Reclaim (gated on finite prior & current VWAP)
+            # 5. VWAP Reclaim (gated on finite prior & current VWAP, consecutive 5m timestamps, and valid intervals)
+            is_prev_valid = bool(df_5m["is_valid_interval"].iloc[i - 1]) if "is_valid_interval" in df_5m.columns else True
+            is_consec_time = (df_5m.index[i] - df_5m.index[i - 1]) == pd.Timedelta(minutes=5)
             prev_close = float(df_5m["close"].iloc[i - 1])
             prev_vwap = float(df_5m["vwap"].iloc[i - 1])
             cur_vwap = float(df_5m["vwap"].iloc[i])
-            if np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
+
+            if i > 0 and is_prev_valid and is_consec_time and np.isfinite(prev_close) and np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
                 if prev_close < prev_vwap and close_p > cur_vwap:
                     detected_events.append(("VWAP_RECLAIM", "LONG"))
                 elif prev_close > prev_vwap and close_p < cur_vwap:
@@ -1065,8 +1135,17 @@ class Phase13DiscoveryEngine:
                 elif body < 0 and trend_4h == "BEAR":
                     detected_events.append(("HTF_ALIGNED_DISPLACEMENT", "SHORT"))
 
-            # 10. Order Flow x VWAP Confluence Interaction (gated on AVAILABLE flow & valid VWAP)
-            if cvd_status == "AVAILABLE" and np.isfinite(cvd_z) and np.isfinite(prev_vwap) and np.isfinite(cur_vwap):
+            # 10. Order Flow x VWAP Confluence Interaction (gated on AVAILABLE flow, valid VWAP, and consecutive bars)
+            if (
+                cvd_status == "AVAILABLE"
+                and np.isfinite(cvd_z)
+                and i > 0
+                and is_prev_valid
+                and is_consec_time
+                and np.isfinite(prev_close)
+                and np.isfinite(prev_vwap)
+                and np.isfinite(cur_vwap)
+            ):
                 if prev_close < prev_vwap and close_p > cur_vwap and cvd_z >= 1.5:
                     detected_events.append(("ORDER_FLOW_VWAP_CONFLUENCE", "LONG"))
                 elif prev_close > prev_vwap and close_p < cur_vwap and cvd_z <= -1.5:

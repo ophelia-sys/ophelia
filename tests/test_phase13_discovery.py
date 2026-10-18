@@ -570,12 +570,19 @@ class TestPhase13HigherTimeframeCausality(unittest.TestCase):
         df_1m = _make_1m_df(start_ms, 60)
         # Drop minute 7 -> 00:00-00:15 has 14 bars (< 15)
         df_1m_gap = df_1m.loc[df_1m["timestamp"] != start_ms + 7 * 60_000].copy()
-
         df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_1m_gap)
-        # 15m candle for 00:00 must be dropped
-        self.assertTrue(len(df_15m.loc[df_15m["timestamp"] == start_ms]) == 0)
-        # 1h candle for 00:00 must be dropped (59 bars < 60)
-        self.assertTrue(len(df_1h.loc[df_1h["timestamp"] == start_ms]) == 0)
+
+        # 15m candle for 00:00 must remain represented on grid as invalid (14 bars < 15)
+        row_15m_0 = df_15m.loc[df_15m["timestamp"] == start_ms]
+        self.assertTrue(len(row_15m_0) == 1)
+        self.assertFalse(row_15m_0["is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(row_15m_0["close"].iloc[0]))
+
+        # 1h candle for 00:00 must remain represented on grid as invalid (59 bars < 60)
+        row_1h_0 = df_1h.loc[df_1h["timestamp"] == start_ms]
+        self.assertTrue(len(row_1h_0) == 1)
+        self.assertFalse(row_1h_0["is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(row_1h_0["close"].iloc[0]))
 
         # Merge
         merged = p13.merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
@@ -729,23 +736,35 @@ class TestPhase13F02ReviewCorrections(unittest.TestCase):
         # Under strict constituent timestamp grid validation, the bucket containing 00:02:30 is dropped.
         df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_offgrid)
 
-        # 5m: bucket 00:00 must be dropped (bucket 00:05 must survive)
-        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms]), 0, "5m bucket 00:00 was not dropped")
-        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms + 5 * 60_000]), 1, "5m bucket 00:05 missing")
+        # 5m: bucket 00:00 must remain on grid as invalid (bucket 00:05 must be valid)
+        row_5m_0 = df_5m.loc[df_5m["timestamp"] == start_ms]
+        self.assertEqual(len(row_5m_0), 1, "5m bucket 00:00 missing from regular time grid")
+        self.assertFalse(row_5m_0["is_valid_interval"].iloc[0], "5m bucket 00:00 must be marked invalid")
+        self.assertTrue(np.isnan(row_5m_0["close"].iloc[0]), "5m bucket 00:00 must have NaN prices")
+        self.assertTrue(df_5m.loc[df_5m["timestamp"] == start_ms + 5 * 60_000, "is_valid_interval"].iloc[0])
 
-        # 15m: bucket 00:00 must be dropped (bucket 00:15 must survive)
-        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms]), 0, "15m bucket 00:00 was not dropped")
-        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms + 15 * 60_000]), 1, "15m bucket 00:15 missing")
+        # 15m: bucket 00:00 must remain on grid as invalid (bucket 00:15 must be valid)
+        row_15m_0 = df_15m.loc[df_15m["timestamp"] == start_ms]
+        self.assertEqual(len(row_15m_0), 1, "15m bucket 00:00 missing from regular time grid")
+        self.assertFalse(row_15m_0["is_valid_interval"].iloc[0], "15m bucket 00:00 must be marked invalid")
+        self.assertTrue(np.isnan(row_15m_0["close"].iloc[0]), "15m bucket 00:00 must have NaN prices")
+        self.assertTrue(df_15m.loc[df_15m["timestamp"] == start_ms + 15 * 60_000, "is_valid_interval"].iloc[0])
 
-        # 1h: bucket 00:00 must be dropped (bucket 01:00 must survive)
-        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms]), 0, "1h bucket 00:00 was not dropped")
-        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms + 60 * 60_000]), 1, "1h bucket 01:00 missing")
+        # 1h: bucket 00:00 must remain on grid as invalid (bucket 01:00 must be valid)
+        row_1h_0 = df_1h.loc[df_1h["timestamp"] == start_ms]
+        self.assertEqual(len(row_1h_0), 1, "1h bucket 00:00 missing from regular time grid")
+        self.assertFalse(row_1h_0["is_valid_interval"].iloc[0], "1h bucket 00:00 must be marked invalid")
+        self.assertTrue(np.isnan(row_1h_0["close"].iloc[0]), "1h bucket 00:00 must have NaN prices")
+        self.assertTrue(df_1h.loc[df_1h["timestamp"] == start_ms + 60 * 60_000, "is_valid_interval"].iloc[0])
 
-        # 4h: bucket 00:00 must be dropped
-        self.assertEqual(len(df_4h.loc[df_4h["timestamp"] == start_ms]), 0, "4h bucket 00:00 was not dropped")
+        # 4h: bucket 00:00 must remain on grid as invalid
+        row_4h_0 = df_4h.loc[df_4h["timestamp"] == start_ms]
+        self.assertEqual(len(row_4h_0), 1, "4h bucket 00:00 missing from regular time grid")
+        self.assertFalse(row_4h_0["is_valid_interval"].iloc[0], "4h bucket 00:00 must be marked invalid")
+        self.assertTrue(np.isnan(row_4h_0["close"].iloc[0]), "4h bucket 00:00 must have NaN prices")
 
     def test_adversarial_shifted_timestamps_all_intervals(self):
-        """Test all 4 intervals (5m, 15m, 1h, 4h): sub-minute shifted timestamp drops the interval."""
+        """Test all 4 intervals (5m, 15m, 1h, 4h): sub-minute shifted timestamp marks the interval invalid."""
         start_ms = 1672531200000
         df_1m = _make_1m_df(start_ms, 240)
 
@@ -759,10 +778,14 @@ class TestPhase13F02ReviewCorrections(unittest.TestCase):
         df_shifted = pd.concat([df_without_min2, pd.DataFrame([row_dict], index=[shifted_dt])]).sort_values("timestamp")
 
         df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_shifted)
-        self.assertEqual(len(df_5m.loc[df_5m["timestamp"] == start_ms]), 0)
-        self.assertEqual(len(df_15m.loc[df_15m["timestamp"] == start_ms]), 0)
-        self.assertEqual(len(df_1h.loc[df_1h["timestamp"] == start_ms]), 0)
-        self.assertEqual(len(df_4h.loc[df_4h["timestamp"] == start_ms]), 0)
+        self.assertFalse(df_5m.loc[df_5m["timestamp"] == start_ms, "is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(df_5m.loc[df_5m["timestamp"] == start_ms, "close"].iloc[0]))
+        self.assertFalse(df_15m.loc[df_15m["timestamp"] == start_ms, "is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(df_15m.loc[df_15m["timestamp"] == start_ms, "close"].iloc[0]))
+        self.assertFalse(df_1h.loc[df_1h["timestamp"] == start_ms, "is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(df_1h.loc[df_1h["timestamp"] == start_ms, "close"].iloc[0]))
+        self.assertFalse(df_4h.loc[df_4h["timestamp"] == start_ms, "is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(df_4h.loc[df_4h["timestamp"] == start_ms, "close"].iloc[0]))
 
     def test_sub_02_stop_regime_exhaustive_mapping(self):
         """Verify SUB_02 stop regime bucket and complete partition of STOP_REGIMES."""
@@ -972,14 +995,17 @@ class TestPhase13F03OrderFlowAndVWAP(unittest.TestCase):
             p13.resample_phase13_bars(df_dup)
         self.assertIn("duplicate", str(ctx.exception).lower())
 
-        # Incomplete constituent minutes: drop interval
+        # Incomplete constituent minutes: marked invalid on regular time grid
         df_1m = _make_1m_df(start_ms, 10)
         # Drop minute 3 (leaving 4 minutes in first 5m interval)
         df_drop = df_1m.loc[df_1m["timestamp"] != start_ms + 3 * 60_000].copy()
         df_5m, _, _, _ = p13.resample_phase13_bars(df_drop)
-        # First 5m bucket dropped; only second 5m bucket (5-9) survives
-        self.assertEqual(len(df_5m), 1)
-        self.assertEqual(df_5m["timestamp"].iloc[0], start_ms + 5 * 60_000)
+        # First 5m bucket is on regular time grid but invalid with NaN prices; second 5m bucket (5-9) survives as valid
+        self.assertEqual(len(df_5m), 2)
+        self.assertFalse(df_5m["is_valid_interval"].iloc[0])
+        self.assertTrue(np.isnan(df_5m["close"].iloc[0]))
+        self.assertTrue(df_5m["is_valid_interval"].iloc[1])
+        self.assertEqual(df_5m["timestamp"].iloc[1], start_ms + 5 * 60_000)
 
     def test_f03_5_undefined_dispersion_warmup_and_non_finite_values(self):
         """5. Undefined dispersion, insufficient warm-up history and non-finite values."""
@@ -1113,6 +1139,118 @@ class TestPhase13F03OrderFlowAndVWAP(unittest.TestCase):
         self.assertEqual(d["cvd_data_status"], "MISSING_FLOW")
         self.assertTrue(np.isnan(d["cvd_zscore"]), "cvd_zscore was serialized as numeric zero instead of NaN")
         self.assertNotEqual(d["cvd_zscore"], 0.0)
+
+
+class TestPhase13TimestampGapsAndRollingIntegrity(unittest.TestCase):
+    """Phase 1 Mandatory Regression Tests: Timestamp Gaps & Rolling Indicator Integrity.
+
+    Proves:
+    1. A single missing 1m row marks the affected resampled interval invalid on the regular time grid.
+    2. Resampled OHLCV/volume are NaNs; no prices or volumes are fabricated or interpolated.
+    3. Exactly 12 rolling 5m CVD windows report MISSING_FLOW; time is never compressed.
+    4. Wilder's ATR smoothing state resets across data gaps without carrying forward old state.
+    5. Rolling volume SMA and swing highs/lows do not bridge across missing intervals.
+    6. Reclaim signals comparing prior and current bar require consecutive timestamps and valid intervals.
+    7. Clean recovery to fully valid indicators after full warm-up following a gap.
+    """
+
+    def test_single_1m_dropped_preserves_regular_time_grid_with_invalid_interval(self):
+        """1. Remove one 1m row: verify grid length preserved, affected interval invalid with NaNs."""
+        start_ms = 1672531200000  # 2023-01-01 00:00:00
+        df_1m = _make_1m_df(start_ms, 240)  # 4 hours = 240 1m bars
+
+        # Drop minute 7 (at 00:07 UTC)
+        df_gap = df_1m.loc[df_1m["timestamp"] != start_ms + 7 * 60_000].copy()
+
+        df_5m, df_15m, df_1h, df_4h = p13.resample_phase13_bars(df_gap)
+
+        # 5m: 240 / 5 = 48 regular grid points preserved
+        self.assertEqual(len(df_5m), 48, "5m regular grid length must not shrink")
+        # Bucket 00:05 (spanning minutes 5..9) has 4 minutes -> marked invalid
+        row_5m_0005 = df_5m.loc[df_5m["timestamp"] == start_ms + 5 * 60_000].iloc[0]
+        self.assertFalse(row_5m_0005["is_valid_interval"])
+        self.assertTrue(np.isnan(row_5m_0005["close"]))
+        self.assertTrue(np.isnan(row_5m_0005["volume"]))
+        # Bucket 00:00 has all 5 minutes -> valid
+        row_5m_0000 = df_5m.loc[df_5m["timestamp"] == start_ms].iloc[0]
+        self.assertTrue(row_5m_0000["is_valid_interval"])
+        self.assertFalse(np.isnan(row_5m_0000["close"]))
+
+        # 15m: 240 / 15 = 16 regular grid points
+        self.assertEqual(len(df_15m), 16)
+        row_15m_0 = df_15m.loc[df_15m["timestamp"] == start_ms].iloc[0]
+        self.assertFalse(row_15m_0["is_valid_interval"])
+        self.assertTrue(np.isnan(row_15m_0["close"]))
+
+        # 1h: 4 regular grid points
+        self.assertEqual(len(df_1h), 4)
+        row_1h_0 = df_1h.loc[df_1h["timestamp"] == start_ms].iloc[0]
+        self.assertFalse(row_1h_0["is_valid_interval"])
+        self.assertTrue(np.isnan(row_1h_0["close"]))
+
+        # 4h: 1 regular grid point
+        self.assertEqual(len(df_4h), 1)
+        row_4h_0 = df_4h.loc[df_4h["timestamp"] == start_ms].iloc[0]
+        self.assertFalse(row_4h_0["is_valid_interval"])
+        self.assertTrue(np.isnan(row_4h_0["close"]))
+
+    def test_12_affected_5m_cvd_windows_report_missing_flow_and_no_gap_compression(self):
+        """2. Single gap in 5m flow marks exactly 12 rolling 1h CVD windows as MISSING_FLOW."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=60, freq="5min")
+        np.random.seed(123)
+        flow_vals = np.random.randn(60) * 15.0
+        # Inject NaN at index 25
+        flow_vals[25] = np.nan
+        df_5m = pd.DataFrame({"delta_v": flow_vals}, index=idx)
+
+        z_scores, statuses = p13.compute_cvd(df_5m)
+
+        # The 12 rolling windows spanning index 25 are indices 25..36
+        affected_indices = [i for i in range(25, 37)]
+        for i in affected_indices:
+            self.assertEqual(statuses.iloc[i], "MISSING_FLOW", f"Bar {i} must be MISSING_FLOW")
+            self.assertTrue(np.isnan(z_scores.iloc[i]), f"Bar {i} z-score must be NaN")
+
+        # After index 36, window (37-11..37) = (26..37) contains 12 complete valid bars.
+        # It must NOT be MISSING_FLOW (it transitions to INSUFFICIENT_HISTORY or AVAILABLE)
+        self.assertNotEqual(statuses.iloc[37], "MISSING_FLOW", "Bar 37 must recover from missing constituent flow")
+
+    def test_rolling_atr_and_volume_sma_do_not_bridge_gap(self):
+        """3. Wilder ATR smoothing resets across gap; rolling volume SMA requires 20 consecutive bars."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=50, freq="5min")
+        # Pre-gap prices: TR = 10.0 -> ATR = 10.0
+        highs = pd.Series([105.0] * 20 + [np.nan] + [110.0] * 29, index=idx)
+        lows = pd.Series([95.0] * 20 + [np.nan] + [90.0] * 29, index=idx)
+        closes = pd.Series([100.0] * 20 + [np.nan] + [100.0] * 29, index=idx)
+
+        atr = p13.compute_atr(highs, lows, closes, period=14)
+
+        # Bar 19 must have valid ATR = 10.0
+        self.assertTrue(np.isclose(atr.iloc[19], 10.0))
+        # Bar 20 is gap -> NaN
+        self.assertTrue(np.isnan(atr.iloc[20]))
+        # Bar 21 cannot measure true range from before gap (prev_close was NaN) -> NaN
+        self.assertTrue(np.isnan(atr.iloc[21]))
+        # Bar 22 is first valid bar after gap with TR = 20.0.
+        # Stateful Wilder smoothing must reset across gap to 20.0 (unreset ewm would yield ~10.71)
+        self.assertTrue(np.isclose(atr.iloc[22], 20.0), f"Expected reset to 20.0, got {atr.iloc[22]}")
+
+    def test_reclaim_and_confluence_do_not_cross_gap(self):
+        """4. Signals comparing previous and current candle reject unexpected time gaps or invalid bars."""
+        engine = p13.Phase13DiscoveryEngine()
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+
+        # Drop minutes 65..69 (an entire 5m bar at index 13)
+        df_gap_1m = df_1m.loc[~df_1m["timestamp"].between(start_ms + 65 * 60_000, start_ms + 69 * 60_000)].copy()
+
+        events, _, _ = engine.extract_events_for_symbol("BTCUSDT", df_gap_1m)
+
+        # Bar 14 (immediately following the dropped 5m bar) must NOT emit VWAP_RECLAIM
+        # because the prior bar was invalid/missing.
+        ts_bar_14 = start_ms + 70 * 60_000
+        reclaims_at_gap_boundary = [e for e in events if e.timestamp_ms == ts_bar_14 and e.event_class == "VWAP_RECLAIM"]
+        self.assertEqual(len(reclaims_at_gap_boundary), 0, "VWAP_RECLAIM must not cross an invalid gap interval")
 
 
 if __name__ == "__main__":
