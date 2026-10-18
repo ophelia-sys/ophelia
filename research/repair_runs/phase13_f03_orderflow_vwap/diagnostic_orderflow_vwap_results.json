@@ -1,5 +1,5 @@
 {
-  "diagnostic_run_timestamp_utc": "2026-10-18T05:39:21.092775+00:00",
+  "diagnostic_run_timestamp_utc": "2026-10-18T12:59:32.183359+00:00",
   "task_step": "F-03-F-06: Forensic Audit Remediation (Order Flow, Invariants, Stop Eligibility, Split-Isolated Inference)",
   "branch": "repair/phase13-audit-remediation",
   "safety_invariants": {
@@ -35,7 +35,7 @@
       "single_bar_dispersion_undefined_as_nan": true,
       "old_unweighted_variance_bar2": 2.5,
       "correct_volume_weighted_variance_bar2": 25.0,
-      "formula": "variance = cumulative(volume * price^2) / cumulative(volume) - VWAP^2"
+      "formula": "Weighted Welford incremental between-bar dispersion on representative transaction price (turnover / volume)"
     },
     "synthetic_flow_adversarial_benchmark": {
       "status": "PASS",
@@ -128,25 +128,24 @@
         "vwap_max": 16839.34
       },
       "event_gating_audit": {
-        "total_events_extracted": 611,
+        "total_events_extracted": 567,
         "events_by_class": {
           "MOMENTUM_DISPLACEMENT": 65,
           "RVOL_EXPANSION": 102,
-          "VWAP_DEVIATION": 157,
+          "VWAP_DEVIATION": 153,
           "RANGE_EXPANSION": 17,
-          "VALUE_AREA_BOUNDARY": 86,
           "VWAP_RECLAIM": 52,
           "CVD_ACCELERATION": 103,
           "ORDER_FLOW_VWAP_CONFLUENCE": 3,
-          "HTF_ALIGNED_DISPLACEMENT": 23,
+          "VALUE_AREA_BOUNDARY": 69,
           "LIQUIDITY_SWEEP_SFP": 3
         },
         "cvd_acceleration_events": 103,
         "orderflow_vwap_confluence_events": 3,
-        "vwap_deviation_events": 157,
+        "vwap_deviation_events": 153,
         "vwap_reclaim_events": 52,
         "event_cvd_status_breakdown": {
-          "AVAILABLE": 611
+          "AVAILABLE": 567
         },
         "event_neutral_zero_substitutions": 0,
         "gating_rule_verification": "PASS",
@@ -154,19 +153,19 @@
         "gating_violations": []
       },
       "stop_model_audit": {
-        "stop_evaluations_total": 2256,
+        "stop_evaluations_total": 2111,
         "stop_diagnostics": {
           "included": {
-            "STOP_5M_SWING": 559,
-            "STOP_15M_SWING": 555,
-            "STOP_1H_SWING": 531,
-            "STOP_ATR_ENVELOPE": 611
+            "STOP_5M_SWING": 521,
+            "STOP_15M_SWING": 527,
+            "STOP_1H_SWING": 496,
+            "STOP_ATR_ENVELOPE": 567
           },
           "excluded": {
             "MISSING_SWING_DATA": {
               "STOP_5M_SWING": 0,
               "STOP_15M_SWING": 0,
-              "STOP_1H_SWING": 12,
+              "STOP_1H_SWING": 10,
               "STOP_ATR_ENVELOPE": 0
             },
             "NON_FINITE_PRICE": {
@@ -176,15 +175,15 @@
               "STOP_ATR_ENVELOPE": 0
             },
             "WRONG_SIDE_OF_ENTRY": {
-              "STOP_5M_SWING": 44,
-              "STOP_15M_SWING": 49,
-              "STOP_1H_SWING": 56,
+              "STOP_5M_SWING": 42,
+              "STOP_15M_SWING": 32,
+              "STOP_1H_SWING": 50,
               "STOP_ATR_ENVELOPE": 0
             },
             "INADMISSIBLE_DISTANCE": {
-              "STOP_5M_SWING": 8,
-              "STOP_15M_SWING": 7,
-              "STOP_1H_SWING": 12,
+              "STOP_5M_SWING": 4,
+              "STOP_15M_SWING": 8,
+              "STOP_1H_SWING": 11,
               "STOP_ATR_ENVELOPE": 0
             }
           }

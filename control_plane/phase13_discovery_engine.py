@@ -534,17 +534,18 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
         vol = group["volume"].astype(float).values
         close = group["close"].astype(float).values
 
-        # Determine quote turnover provenance
-        has_qv = "quote_volume" in group.columns and group["quote_volume"].notna().all()
-        if has_qv:
-            turnover = group["quote_volume"].astype(float).values
+        # Determine quote turnover provenance causally bar-by-bar (B3 & B4)
+        has_qv_col = "quote_volume" in group.columns
+        if has_qv_col:
+            qv_raw = group["quote_volume"].astype(float).values
+            turnover = np.where(np.isfinite(qv_raw) & (qv_raw > 0), qv_raw, np.nan)
         else:
             turnover = close * vol
 
         # Validity mask
         is_valid = (vol > 0) & np.isfinite(vol) & (close > 0) & np.isfinite(close)
-        if has_qv:
-            is_valid = is_valid & (turnover > 0) & np.isfinite(turnover)
+        if has_qv_col:
+            is_valid = is_valid & np.isfinite(turnover) & (turnover > 0)
         if "is_valid_interval" in group.columns:
             is_valid = is_valid & group["is_valid_interval"].astype(bool).values
 
@@ -552,8 +553,8 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
         has_gap = np.logical_not(is_valid)
         has_gap_cum = np.maximum.accumulate(has_gap)
 
-        cum_turnover = np.cumsum(turnover)
-        cum_vol = np.cumsum(vol)
+        cum_turnover = np.cumsum(np.where(is_valid, turnover, 0.0))
+        cum_vol = np.cumsum(np.where(is_valid, vol, 0.0))
 
         v_out = np.full(n, np.nan, dtype=float)
         valid_vwap_mask = (cum_vol > 0) & (~has_gap_cum)
@@ -561,6 +562,7 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
         s_vwap.loc[g_idx] = v_out
 
         # Weighted Welford accumulation for between-bar representative-price dispersion
+        # When quote volume is present, representative price is p_k = turnover[k] / vol[k]
         std_out = np.full(n, np.nan, dtype=float)
         W = 0.0
         mean = 0.0
@@ -569,7 +571,7 @@ def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
             if has_gap_cum[k]:
                 break
             w_k = vol[k]
-            p_k = close[k]
+            p_k = (turnover[k] / vol[k]) if (has_qv_col and vol[k] > 0) else close[k]
             if k == 0:
                 W = w_k
                 mean = p_k
@@ -695,8 +697,9 @@ def compute_atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, period: in
     gap_group = is_gap.cumsum()
 
     # Reset Wilder's smoothing state across data gaps per contiguous block
+    # min_periods=period strictly requires period consecutive valid True Range bars for warm-up
     atr = tr.groupby(gap_group).transform(
-        lambda g: g.ewm(alpha=1.0 / period, adjust=False).mean()
+        lambda g: g.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
     )
     return atr
 
@@ -772,7 +775,120 @@ def bootstrap_mean_ci(
     return mean_val, ci_low, ci_high
 
 
-def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def synchronized_time_block_bootstrap(
+    df_events: pd.DataFrame,
+    value_col: str = "directional_return_pct",
+    timestamp_col: str = "timestamp_ms",
+    block_duration_hours: float = 6.0,
+    n_boot: int = 2000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """Synchronized time-based block bootstrap across all universe symbols.
+
+    Methodological Invariants (Findings F1, F2, F3):
+    1. Synchronized chronological time grid: all contemporaneous events across BTC, ETH, SOL
+       occurring within block t are resampled together, strictly preserving cross-symbol dependence.
+    2. Units of resampling are continuous time blocks, not arbitrary concatenated event-array rows.
+    3. Handles sparse and unequal event counts without artificial adjacency between distant dates.
+    4. Computes empirical mean, 95% CI, cluster-robust standard error, and centered empirical p-value for H0: mean = 0.
+    """
+    if len(df_events) == 0:
+        return {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "se": 0.0,
+            "p_value": 1.0,
+            "n_events": 0,
+            "n_active_blocks": 0,
+            "block_duration_hours": block_duration_hours,
+        }
+
+    sub = df_events[[timestamp_col, value_col]].dropna().copy()
+    sub = sub[np.isfinite(sub[value_col].astype(float))]
+    n_events = len(sub)
+    if n_events == 0:
+        return {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "se": 0.0,
+            "p_value": 1.0,
+            "n_events": 0,
+            "n_active_blocks": 0,
+            "block_duration_hours": block_duration_hours,
+        }
+
+    values = sub[value_col].to_numpy(dtype=float)
+    observed_mean = float(np.mean(values))
+    if n_events < 5 or np.all(values == values[0]):
+        return {
+            "mean": observed_mean,
+            "ci_low": observed_mean,
+            "ci_high": observed_mean,
+            "se": 0.0,
+            "p_value": 1.0 if observed_mean == 0.0 else 0.0,
+            "n_events": n_events,
+            "n_active_blocks": 1,
+            "block_duration_hours": block_duration_hours,
+        }
+
+    block_ms = int(block_duration_hours * 3600 * 1000)
+    ts = sub[timestamp_col].to_numpy(dtype=np.int64)
+    min_ts = int(ts.min())
+    max_ts = int(ts.max())
+
+    block_indices = (ts - min_ts) // block_ms
+    total_time_blocks = int((max_ts - min_ts) // block_ms) + 1
+
+    blocks: List[List[float]] = [[] for _ in range(total_time_blocks)]
+    for b_idx, val in zip(block_indices, values):
+        blocks[int(b_idx)].append(float(val))
+
+    active_blocks_count = sum(1 for b in blocks if len(b) > 0)
+
+    block_lens = np.array([len(b) for b in blocks], dtype=np.int64)
+    block_sums = np.array([sum(b) for b in blocks], dtype=float)
+
+    rng = np.random.default_rng(seed)
+    boot_means = np.empty(n_boot, dtype=float)
+
+    for i in range(n_boot):
+        sampled_indices = rng.integers(0, total_time_blocks, size=total_time_blocks)
+        total_ev = int(block_lens[sampled_indices].sum())
+        if total_ev > 0:
+            total_sum = float(block_sums[sampled_indices].sum())
+            boot_means[i] = total_sum / total_ev
+        else:
+            boot_means[i] = observed_mean
+
+    ci_low = float(np.percentile(boot_means, 100 * (alpha / 2)))
+    ci_high = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
+    boot_se = float(np.std(boot_means, ddof=1)) if n_boot > 1 else 0.0
+
+    # Centered empirical p-value under H0: mean = 0
+    diff = np.abs(boot_means - observed_mean)
+    p_val = float(np.mean(diff >= abs(observed_mean)))
+
+    return {
+        "mean": observed_mean,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "se": boot_se,
+        "p_value": p_val,
+        "n_events": n_events,
+        "n_active_blocks": active_blocks_count,
+        "block_duration_hours": block_duration_hours,
+    }
+
+
+
+def resample_phase13_bars(
+    df_1m: pd.DataFrame,
+    start_dt: Optional[pd.Timestamp] = None,
+    end_dt: Optional[pd.Timestamp] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Resample 1m data to complete 5m, 15m, 1h, and 4h OHLCV bars.
 
     Causality & Data Integrity Rules:
@@ -787,6 +903,8 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
       are present, they are aggregated only if all constituent 1m rows have valid flow.
       If any constituent minute is NaN, the aggregated flow is set to np.nan.
       If absent from df_1m, columns are initialized as np.nan.
+    - When caller provides explicit start_dt and end_dt, resampling builds a consistent,
+      regular grid across expected bounds even if leading or trailing buckets are completely absent.
     """
     required = ["timestamp", "open", "high", "low", "close", "volume"]
     missing = [column for column in required if column not in df_1m.columns]
@@ -838,8 +956,8 @@ def resample_phase13_bars(df_1m: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFra
         if include_volume:
             agg["volume"] = "sum"
 
-        start_bucket = df.index.min().floor(rule)
-        end_bucket = df.index.max().floor(rule)
+        start_bucket = (start_dt.floor(rule) if start_dt is not None else df.index.min().floor(rule))
+        end_bucket = (end_dt.floor(rule) if end_dt is not None else df.index.max().floor(rule))
         full_grid = pd.date_range(start_bucket, end_bucket, freq=rule, tz=df.index.tz)
         full_grid.name = "dt"
 
@@ -1052,7 +1170,12 @@ class Phase13DiscoveryEngine:
         self.events: List[Phase13Event] = []
         self.forward_outcomes: List[ForwardOutcome] = []
         self.stop_evaluations: List[StopRoomEvaluation] = []
-        self.stop_diagnostics: Dict[str, Any] = {
+        self.per_symbol_stop_diagnostics: Dict[str, Dict[str, Any]] = {}
+        self.stop_diagnostics: Dict[str, Any] = self._create_empty_stop_diagnostics()
+
+    @staticmethod
+    def _create_empty_stop_diagnostics() -> Dict[str, Any]:
+        return {
             "included": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
             "excluded": {
                 "MISSING_SWING_DATA": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
@@ -1061,6 +1184,16 @@ class Phase13DiscoveryEngine:
                 "INADMISSIBLE_DISTANCE": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
             }
         }
+
+    def _recompute_aggregate_stop_diagnostics(self) -> None:
+        agg = self._create_empty_stop_diagnostics()
+        for sym_diag in self.per_symbol_stop_diagnostics.values():
+            for m in agg["included"]:
+                agg["included"][m] += sym_diag["included"].get(m, 0)
+            for r in agg["excluded"]:
+                for m in agg["excluded"][r]:
+                    agg["excluded"][r][m] += sym_diag["excluded"].get(r, {}).get(m, 0)
+        self.stop_diagnostics = agg
 
     def extract_events_for_symbol(self, symbol: str, df_1m: pd.DataFrame) -> Tuple[List[Phase13Event], List[ForwardOutcome], List[StopRoomEvaluation]]:
         """Processes a single symbol's 1m data to extract broad microstructure events,
@@ -1071,6 +1204,10 @@ class Phase13DiscoveryEngine:
         events: List[Phase13Event] = []
         outcomes: List[ForwardOutcome] = []
         evals: List[StopRoomEvaluation] = []
+
+        # Reset per-symbol stop diagnostics for clean lifecycle (Finding C2)
+        sym_stop_diag = self._create_empty_stop_diagnostics()
+        self.per_symbol_stop_diagnostics[symbol] = sym_stop_diag
 
         # Ensure datetime index
         if not isinstance(df_1m.index, pd.DatetimeIndex):
@@ -1086,8 +1223,12 @@ class Phase13DiscoveryEngine:
         # Compute indicators
         df_5m["atr_14"] = compute_atr(df_5m["high"], df_5m["low"], df_5m["close"], 14)
         df_5m["atr_50"] = compute_atr(df_5m["high"], df_5m["low"], df_5m["close"], 50)
-        df_5m["vol_sma20"] = df_5m["volume"].rolling(20).mean().replace(0, 1e-6)
-        df_5m["rvol"] = df_5m["volume"] / df_5m["vol_sma20"]
+
+        # Finding A3: 5m volume SMA requires 20 consecutive valid bars within contiguous block
+        vol_valid = df_5m["volume"].where(df_5m.get("is_valid_interval", True) & np.isfinite(df_5m["volume"]), np.nan)
+        gap_group_vol = vol_valid.isna().cumsum()
+        df_5m["vol_sma20"] = vol_valid.groupby(gap_group_vol).transform(lambda g: g.rolling(20, min_periods=20).mean())
+        df_5m["rvol"] = np.where(df_5m["vol_sma20"].notna() & (df_5m["vol_sma20"] > 0), df_5m["volume"] / df_5m["vol_sma20"], np.nan)
 
         # 5m VWAP & deviation
         df_5m["vwap"], df_5m["std_vwap"] = compute_vwap(df_5m)
@@ -1100,11 +1241,21 @@ class Phase13DiscoveryEngine:
         df_15m["atr_14"] = compute_atr(df_15m["high"], df_15m["low"], df_15m["close"], 14)
         df_1h["atr_14"] = compute_atr(df_1h["high"], df_1h["low"], df_1h["close"], 14)
 
-        # 4H EMA Trend on completed 4H bars
-        df_4h["ema20"] = df_4h["close"].ewm(span=20, adjust=False).mean()
-        df_4h["ema50"] = df_4h["close"].ewm(span=50, adjust=False).mean()
-        df_4h["trend_4h"] = np.where(df_4h["ema20"] > df_4h["ema50"] * 1.001, "BULL",
-                            np.where(df_4h["ema20"] < df_4h["ema50"] * 0.999, "BEAR", "NEUTRAL"))
+        # Finding A2: 4H EMA Trend on completed 4H bars with gap grouping and strict warm-up
+        is_gap_4h = df_4h["close"].isna() | (~df_4h.get("is_valid_interval", True))
+        gap_group_4h = is_gap_4h.cumsum()
+        df_4h["ema20"] = df_4h["close"].groupby(gap_group_4h).transform(lambda g: g.ewm(span=20, min_periods=20, adjust=False).mean())
+        df_4h["ema50"] = df_4h["close"].groupby(gap_group_4h).transform(lambda g: g.ewm(span=50, min_periods=50, adjust=False).mean())
+        valid_ema_4h = df_4h["ema20"].notna() & df_4h["ema50"].notna()
+        df_4h["trend_4h"] = np.where(
+            ~valid_ema_4h,
+            "NOT_AVAILABLE",
+            np.where(
+                df_4h["ema20"] > df_4h["ema50"] * 1.001,
+                "BULL",
+                np.where(df_4h["ema20"] < df_4h["ema50"] * 0.999, "BEAR", "NEUTRAL")
+            )
+        )
 
         # Join higher-timeframe values only at their completion timestamps.
         df_5m = merge_completed_htf_features(df_5m, df_15m, df_1h, df_4h)
@@ -1118,18 +1269,25 @@ class Phase13DiscoveryEngine:
         n_5m = len(df_5m)
         logger.info("Iterating across %d 5m bars for %s...", n_5m, symbol)
 
+        close_valid = df_5m["close"].where(df_5m.get("is_valid_interval", True) & np.isfinite(df_5m["close"]), np.nan)
+        low_valid = df_5m["low"].where(df_5m.get("is_valid_interval", True) & np.isfinite(df_5m["low"]), np.nan)
+        high_valid = df_5m["high"].where(df_5m.get("is_valid_interval", True) & np.isfinite(df_5m["high"]), np.nan)
+        gap_group_close = close_valid.isna().cumsum()
+        gap_group_low = low_valid.isna().cumsum()
+        gap_group_high = high_valid.isna().cumsum()
+
         # Precompute swing arrays for speed (min_periods=12 prevents gap compression)
-        lows_5m_rolling = df_5m["low"].rolling(12, min_periods=12).min().values
-        highs_5m_rolling = df_5m["high"].rolling(12, min_periods=12).max().values
+        lows_5m_rolling = low_valid.groupby(gap_group_low).transform(lambda g: g.rolling(12, min_periods=12).min()).values
+        highs_5m_rolling = high_valid.groupby(gap_group_high).transform(lambda g: g.rolling(12, min_periods=12).max()).values
         swing_low_15m_arr = df_5m["swing_low_15m"].values
         swing_high_15m_arr = df_5m["swing_high_15m"].values
         swing_low_1h_arr = df_5m["swing_low_1h"].values
         swing_high_1h_arr = df_5m["swing_high_1h"].values
 
-        # Rolling close-price quantile levels, not true volume-at-price value area.
+        # Rolling close-price quantile levels: require 240 valid bars out of 288 (20 hours of contiguous observations)
         # Shift one completed 5m bar so the tested candle cannot define its own level.
-        rolling_close_p30 = df_5m["close"].rolling(288, min_periods=50).quantile(0.30).shift(1).values
-        rolling_close_p70 = df_5m["close"].rolling(288, min_periods=50).quantile(0.70).shift(1).values
+        rolling_close_p30 = close_valid.groupby(gap_group_close).transform(lambda g: g.rolling(288, min_periods=240).quantile(0.30)).shift(1).values
+        rolling_close_p70 = close_valid.groupby(gap_group_close).transform(lambda g: g.rolling(288, min_periods=240).quantile(0.70)).shift(1).values
 
         # Scan each 5m bar causally
         for i in range(50, n_5m - 25):  # Leave room for lookback and forward 120m
@@ -1208,8 +1366,9 @@ class Phase13DiscoveryEngine:
                     detected_events.append(("VWAP_RECLAIM", "SHORT"))
 
             # 6. Liquidity Sweep SFP (15m swing breach + reclaim)
-            prior_15m_low = swing_low_15m_arr[i - 1]
-            prior_15m_high = swing_high_15m_arr[i - 1]
+            # Row i contains completed 15m swing level aligned to decision_ts (Finding A4)
+            prior_15m_low = swing_low_15m_arr[i]
+            prior_15m_high = swing_high_15m_arr[i]
             if not np.isnan(prior_15m_low) and low_p < prior_15m_low * 0.999 and close_p > prior_15m_low:
                 detected_events.append(("LIQUIDITY_SWEEP_SFP", "LONG"))
             elif not np.isnan(prior_15m_high) and high_p > prior_15m_high * 1.001 and close_p < prior_15m_high:
@@ -1284,16 +1443,17 @@ class Phase13DiscoveryEngine:
             sl_5m_long = float(lows_5m_rolling[i - 1]) if (pd.notna(lows_5m_rolling[i - 1]) and np.isfinite(lows_5m_rolling[i - 1])) else None
             sl_5m_short = float(highs_5m_rolling[i - 1]) if (pd.notna(highs_5m_rolling[i - 1]) and np.isfinite(highs_5m_rolling[i - 1])) else None
 
-            # HTF swing stops are unavailable until enough fully closed HTF bars exist.
-            sl_15m_low = swing_low_15m_arr[i - 1]
-            sl_15m_high = swing_high_15m_arr[i - 1]
-            sl_15m_long = float(sl_15m_low) if pd.notna(sl_15m_low) and np.isfinite(sl_15m_low) else None
-            sl_15m_short = float(sl_15m_high) if pd.notna(sl_15m_high) and np.isfinite(sl_15m_high) else None
+            # HTF swing stops: row i has completed HTF candle at or before decision_ts (Finding A4)
+            # Requires swing level to be finite and valid before exposing stop.
+            sl_15m_low = swing_low_15m_arr[i]
+            sl_15m_high = swing_high_15m_arr[i]
+            sl_15m_long = float(sl_15m_low) if (pd.notna(sl_15m_low) and np.isfinite(sl_15m_low)) else None
+            sl_15m_short = float(sl_15m_high) if (pd.notna(sl_15m_high) and np.isfinite(sl_15m_high)) else None
 
-            sl_1h_low = swing_low_1h_arr[i - 1]
-            sl_1h_high = swing_high_1h_arr[i - 1]
-            sl_1h_long = float(sl_1h_low) if pd.notna(sl_1h_low) and np.isfinite(sl_1h_low) else None
-            sl_1h_short = float(sl_1h_high) if pd.notna(sl_1h_high) and np.isfinite(sl_1h_high) else None
+            sl_1h_low = swing_low_1h_arr[i]
+            sl_1h_high = swing_high_1h_arr[i]
+            sl_1h_long = float(sl_1h_low) if (pd.notna(sl_1h_low) and np.isfinite(sl_1h_low)) else None
+            sl_1h_short = float(sl_1h_high) if (pd.notna(sl_1h_high) and np.isfinite(sl_1h_high)) else None
 
             # ATR envelope (requires valid positive ATR)
             sl_atr_long = close_p - 1.5 * atr_5m if (np.isfinite(atr_5m) and atr_5m > 0) else None
@@ -1406,37 +1566,37 @@ class Phase13DiscoveryEngine:
                 for stop_model_name, sl_price in stop_candidates:
                     # 1. Missing swing or ATR level -> exclude evaluation
                     if sl_price is None or pd.isna(sl_price):
-                        self.stop_diagnostics["excluded"]["MISSING_SWING_DATA"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["MISSING_SWING_DATA"][stop_model_name] += 1
                         continue
 
                     # 2. Non-finite price
                     try:
                         sl_val = float(sl_price)
                     except (ValueError, TypeError):
-                        self.stop_diagnostics["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
                         continue
 
                     if not np.isfinite(sl_val):
-                        self.stop_diagnostics["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
                         continue
 
                     # 3. Wrong side of entry -> strictly reject without manufactured ATR replacement
                     if is_long and sl_val >= close_p:
-                        self.stop_diagnostics["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
                         continue
                     elif not is_long and sl_val <= close_p:
-                        self.stop_diagnostics["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
                         continue
 
                     # 4. Inadmissible distance -> exclude without artificial price clamping
                     sl_dist_price = abs(close_p - sl_val)
                     sl_dist_pct = sl_dist_price / close_p
                     if sl_dist_pct < 1e-4 or not np.isfinite(sl_dist_pct):
-                        self.stop_diagnostics["excluded"]["INADMISSIBLE_DISTANCE"][stop_model_name] += 1
+                        sym_stop_diag["excluded"]["INADMISSIBLE_DISTANCE"][stop_model_name] += 1
                         continue
 
                     # 5. Passed all eligibility rules -> record inclusion
-                    self.stop_diagnostics["included"][stop_model_name] += 1
+                    sym_stop_diag["included"][stop_model_name] += 1
                     sl_price = sl_val
 
                     tp1_price = close_p + 1.5 * sl_dist_price if is_long else close_p - 1.5 * sl_dist_price
@@ -1526,6 +1686,7 @@ class Phase13DiscoveryEngine:
                     )
                     evals.append(eval_obj)
 
+        self._recompute_aggregate_stop_diagnostics()
         logger.info("Symbol %s completed: %d events, %d outcomes, %d stop evaluations.",
                     symbol, len(events), len(outcomes), len(evals))
         return events, outcomes, evals
@@ -1551,7 +1712,10 @@ def run_alpha_discovery(
     for sym in symbols:
         logger.info("Loading 1m data for %s from %s...", sym, parquet_path)
         filters = [("symbol", "=", sym), ("timestamp", ">=", ts_start), ("timestamp", "<=", ts_end)]
-        cols = ["timestamp", "symbol", "open", "high", "low", "close", "volume", "delta_v", "aggressive_buy_volume", "aggressive_sell_volume"]
+        cols = [
+            "timestamp", "symbol", "open", "high", "low", "close", "volume",
+            "quote_volume", "delta_v", "aggressive_buy_volume", "aggressive_sell_volume", "taker_buy_volume"
+        ]
         try:
             import pyarrow.parquet as pq
             table = pq.read_table(parquet_path, columns=cols, filters=filters)
@@ -1592,12 +1756,10 @@ def run_alpha_discovery(
     # Filter to 60m outcomes merged with event metadata
     df_60m = df_outs[df_outs["horizon_min"] == 60].merge(df_evs, on="event_id")
 
-    unique_classes = df_evs["event_class"].unique()
-    for ev_cls in sorted(unique_classes):
+    unique_classes = sorted(df_evs["event_class"].unique()) if len(df_evs) > 0 else []
+    for ev_cls in unique_classes:
         sub = df_60m[df_60m["event_class"] == ev_cls]
         n_total = len(sub)
-        if n_total < 30:
-            continue
 
         sub_train = sub[sub["split"] == "TRAIN"]
         sub_val = sub[sub["split"] == "VALIDATION"]
@@ -1616,25 +1778,56 @@ def run_alpha_discovery(
         median_t_mfe = float(np.median(sub["time_to_mfe_min"].dropna().values)) if len(sub["time_to_mfe_min"].dropna()) > 0 else 0.0
         median_t_mae = float(np.median(sub["time_to_mae_min"].dropna().values)) if len(sub["time_to_mae_min"].dropna()) > 0 else 0.0
 
-        # Confirmatory evaluation: strictly on held-out TEST split
+        # Confirmatory evaluation: strictly on held-out TEST split (Findings F1, F2, F3, F4)
+        # Pre-registered eligibility rule: min 30 test events and min 10 distinct 6h active time clusters
+        min_test_events = 30
+        min_active_clusters = 10
         dir_rets_test = sub_test["directional_return_pct"].dropna().values
-        if n_test >= 10 and len(dir_rets_test) >= 10:
-            win_rate_test = float(np.mean(dir_rets_test > 0)) * 100
-            mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100
-            t_stat_val, p_val = stats.ttest_1samp(dir_rets_test, 0.0)
-            t_stat = round(float(t_stat_val), 3) if not np.isnan(t_stat_val) else 0.0
-            raw_p = float(p_val) if not np.isnan(p_val) else 1.0
-            # Dependence-aware circular block bootstrap on test split (block_size=12 for 60m horizon)
-            _, test_ci_low, test_ci_high = bootstrap_mean_ci(list(dir_rets_test * 100.0), block_size=12)
-            test_status = "EVALUATED"
+
+        if n_test >= min_test_events and len(dir_rets_test) >= min_test_events:
+            # Primary synchronized time-block bootstrap (6h blocks across symbols, Findings F1 & F2)
+            boot_6h = synchronized_time_block_bootstrap(
+                sub_test, value_col="directional_return_pct", timestamp_col="timestamp_ms", block_duration_hours=6.0
+            )
+            # Sensitivity at 2h and 24h block durations (Finding F3)
+            boot_2h = synchronized_time_block_bootstrap(
+                sub_test, value_col="directional_return_pct", timestamp_col="timestamp_ms", block_duration_hours=2.0
+            )
+            boot_24h = synchronized_time_block_bootstrap(
+                sub_test, value_col="directional_return_pct", timestamp_col="timestamp_ms", block_duration_hours=24.0
+            )
+
+            if boot_6h["n_active_blocks"] >= min_active_clusters:
+                win_rate_test = float(np.mean(dir_rets_test > 0)) * 100
+                mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100
+                test_ci_low = boot_6h["ci_low"] * 100.0
+                test_ci_high = boot_6h["ci_high"] * 100.0
+                boot_se = boot_6h["se"] * 100.0
+                raw_p = boot_6h["p_value"]
+                test_status = "EVALUATED"
+                sensitivity = {
+                    "block_2h": {"ci_95_low": round(boot_2h["ci_low"] * 100.0, 4), "ci_95_high": round(boot_2h["ci_high"] * 100.0, 4), "p_val": round(boot_2h["p_value"], 5), "active_clusters": boot_2h["n_active_blocks"]},
+                    "block_6h": {"ci_95_low": round(test_ci_low, 4), "ci_95_high": round(test_ci_high, 4), "p_val": round(raw_p, 5), "active_clusters": boot_6h["n_active_blocks"]},
+                    "block_24h": {"ci_95_low": round(boot_24h["ci_low"] * 100.0, 4), "ci_95_high": round(boot_24h["ci_high"] * 100.0, 4), "p_val": round(boot_24h["p_value"], 5), "active_clusters": boot_24h["n_active_blocks"]},
+                }
+            else:
+                win_rate_test = float(np.mean(dir_rets_test > 0)) * 100
+                mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100
+                test_ci_low = None
+                test_ci_high = None
+                boot_se = None
+                raw_p = None
+                test_status = "INCONCLUSIVE_INSUFFICIENT_TIME_CLUSTERS"
+                sensitivity = None
         else:
             win_rate_test = float(np.mean(dir_rets_test > 0)) * 100 if len(dir_rets_test) > 0 else None
             mean_dir_ret_test = float(np.mean(dir_rets_test)) * 100 if len(dir_rets_test) > 0 else None
-            t_stat = None
-            raw_p = None
             test_ci_low = None
             test_ci_high = None
+            boot_se = None
+            raw_p = None
             test_status = "INCONCLUSIVE_INSUFFICIENT_TEST_SAMPLE"
+            sensitivity = None
 
         hypothesis_results.append({
             "event_class": ev_cls,
@@ -1660,21 +1853,22 @@ def run_alpha_discovery(
                 "mean_directional_return_test_pct": round(mean_dir_ret_test, 4) if mean_dir_ret_test is not None else None,
                 "ci_95_low": round(test_ci_low, 4) if test_ci_low is not None else None,
                 "ci_95_high": round(test_ci_high, 4) if test_ci_high is not None else None,
-                "t_stat": t_stat,
-                "raw_p": raw_p,
-                "bootstrap_method": "CIRCULAR_BLOCK_BOOTSTRAP_BLOCK_12",
+                "cluster_se": round(boot_se, 4) if boot_se is not None else None,
+                "raw_p": round(raw_p, 5) if raw_p is not None else None,
+                "bootstrap_method": "SYNCHRONIZED_TIME_BLOCK_BOOTSTRAP_6H",
+                "sensitivity_block_durations": sensitivity,
             },
             # Flat compatibility keys
             "win_rate_all_pct": round(win_rate_all, 2),
             "win_rate_test_pct": round(win_rate_test, 2) if win_rate_test is not None else 0.0,
             "mean_directional_return_pct": round(mean_dir_ret_all, 4),
             "mean_directional_return_test_pct": round(mean_dir_ret_test, 4) if mean_dir_ret_test is not None else 0.0,
-            "t_stat": t_stat if t_stat is not None else 0.0,
-            "raw_p": raw_p if raw_p is not None else 1.0,
+            "t_stat": None,
+            "raw_p": round(raw_p, 5) if raw_p is not None else 1.0,
             "test_status": test_status,
         })
 
-    # Apply Benjamini-Hochberg FDR on confirmatory TEST p-values
+    # Apply Benjamini-Hochberg FDR strictly on valid dependence-aware p-values from confirmatory TEST hypotheses
     evaluated_indices = [i for i, h in enumerate(hypothesis_results) if h["confirmatory_test"]["raw_p"] is not None]
     if len(evaluated_indices) > 0:
         test_p_list = [hypothesis_results[i]["confirmatory_test"]["raw_p"] for i in evaluated_indices]
@@ -1695,109 +1889,125 @@ def run_alpha_discovery(
             h["confirmatory_test"]["fdr_q"] = 1.0
             h["confirmatory_test"]["fdr_significant"] = False
 
-    # 2. Stop-Room & Thesis Resumption Analysis
-    stop_room_analysis: Dict[str, Any] = {}
+    # 2. Stop-Room & Thesis Resumption Analysis (Strict Split Isolation - Finding F5)
+    def _compute_stop_models_summary(df_subset: pd.DataFrame, scope_label: str) -> List[Dict[str, Any]]:
+        summary: List[Dict[str, Any]] = []
+        for model_name in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]:
+            sub_m = df_subset[df_subset["stop_model"] == model_name]
+            n_m = len(sub_m)
+            if n_m == 0:
+                continue
+            class_counts = sub_m["resumption_class"].value_counts().to_dict()
+            summary.append({
+                "stop_model": model_name,
+                "scope": scope_label,
+                "sample_size": n_m,
+                "median_sl_pct": round(float(np.median(sub_m["sl_distance_pct"].values)) * 100, 3),
+                "mean_sl_pct": round(float(np.mean(sub_m["sl_distance_pct"].values)) * 100, 3),
+                "class_a_pct": round((class_counts.get("CLASS_A", 0) / n_m) * 100, 2),
+                "class_b_resumed_pct": round((class_counts.get("CLASS_B", 0) / n_m) * 100, 2),
+                "class_c_winner_pct": round((class_counts.get("CLASS_C", 0) / n_m) * 100, 2),
+                "class_d_flat_pct": round((class_counts.get("CLASS_D", 0) / n_m) * 100, 2),
+                "class_e_drift_pct": round((class_counts.get("CLASS_E", 0) / n_m) * 100, 2),
+                "mean_gross_r": round(float(np.mean(sub_m["gross_realized_r"].values)), 4),
+                "mean_friction_r_fee": round(float(np.mean(sub_m["friction_r_fee_only"].values)), 4),
+                "mean_friction_r_slip": round(float(np.mean(sub_m["friction_r_fee_slip"].values)), 4),
+                "mean_net_r_zero": round(float(np.mean(sub_m["gross_realized_r"].values)), 4),
+                "mean_net_r_fee_only": round(float(np.mean(sub_m["net_r_fee_only"].values)), 4),
+                "mean_net_r_fee_slip": round(float(np.mean(sub_m["net_r_fee_slip"].values)), 4),
+                "mean_net_r_conservative": round(float(np.mean(sub_m["net_r_conservative"].values)), 4),
+            })
+        return summary
 
-    # Multi-timeframe stop models comparison
-    stop_models_summary: List[Dict[str, Any]] = []
-    for model_name in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]:
-        sub_m = df_evals[df_evals["stop_model"] == model_name]
-        n_m = len(sub_m)
-        if n_m == 0:
-            continue
+    def _compute_regimes_summary(df_subset: pd.DataFrame, scope_label: str) -> List[Dict[str, Any]]:
+        summary: List[Dict[str, Any]] = []
+        for regime_name, low_p, high_p in STOP_REGIMES:
+            sub_r = df_subset[df_subset["stop_regime"] == regime_name]
+            n_r = len(sub_r)
+            if n_r == 0:
+                continue
+            class_counts = sub_r["resumption_class"].value_counts().to_dict()
+            _, ci_low, ci_high = bootstrap_mean_ci(sub_r["net_r_fee_slip"].values, block_size=12)
+            summary.append({
+                "stop_regime": regime_name,
+                "scope": scope_label,
+                "range_pct": f"{low_p*100:.2f}% - {high_p*100:.2f}%",
+                "sample_size": n_r,
+                "class_b_resumed_pct": round((class_counts.get("CLASS_B", 0) / n_r) * 100, 2),
+                "class_c_winner_pct": round((class_counts.get("CLASS_C", 0) / n_r) * 100, 2),
+                "mean_gross_r": round(float(np.mean(sub_r["gross_realized_r"].values)), 4),
+                "mean_friction_r_slip": round(float(np.mean(sub_r["friction_r_fee_slip"].values)), 4),
+                "mean_net_r_fee_slip": round(float(np.mean(sub_r["net_r_fee_slip"].values)), 4),
+                "ci_95_low": round(ci_low, 4),
+                "ci_95_high": round(ci_high, 4),
+            })
+        return summary
 
-        class_counts = sub_m["resumption_class"].value_counts().to_dict()
-        class_a_rate = round((class_counts.get("CLASS_A", 0) / n_m) * 100, 2)
-        class_b_rate = round((class_counts.get("CLASS_B", 0) / n_m) * 100, 2)  # Premature stop-out
-        class_c_rate = round((class_counts.get("CLASS_C", 0) / n_m) * 100, 2)  # Clean winner
-        class_d_rate = round((class_counts.get("CLASS_D", 0) / n_m) * 100, 2)  # Flat
-        class_e_rate = round((class_counts.get("CLASS_E", 0) / n_m) * 100, 2)
+    def _compute_mae_stats(df_subset: pd.DataFrame, scope_label: str) -> Dict[str, Any]:
+        winners = df_subset[df_subset["resumption_class"].isin(["CLASS_C", "CLASS_B"])]
+        clean_winners = df_subset[df_subset["resumption_class"] == "CLASS_C"]
+        resumed_b = df_subset[df_subset["resumption_class"] == "CLASS_B"]
+        losers = df_subset[df_subset["resumption_class"] == "CLASS_A"]
+        return {
+            "scope": scope_label,
+            "sample_size": len(df_subset),
+            "winners_median_mae_pct": round(float(np.median(winners["mae_pct"].values)) * 100, 3) if len(winners) > 0 else 0.0,
+            "winners_mean_mae_pct": round(float(np.mean(winners["mae_pct"].values)) * 100, 3) if len(winners) > 0 else 0.0,
+            "winners_p75_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 75)) * 100, 3) if len(winners) > 0 else 0.0,
+            "winners_p90_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 90)) * 100, 3) if len(winners) > 0 else 0.0,
+            "clean_winners_median_mae_pct": round(float(np.median(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
+            "clean_winners_mean_mae_pct": round(float(np.mean(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
+            "resumed_b_median_full_window_mae_pct": round(float(np.median(resumed_b["full_window_mae_pct"].values)) * 100, 3) if len(resumed_b) > 0 else 0.0,
+            "losers_median_mae_pct": round(float(np.median(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
+            "losers_mean_mae_pct": round(float(np.mean(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
+        }
 
-        median_sl_pct = float(np.median(sub_m["sl_distance_pct"].values)) * 100
-        mean_sl_pct = float(np.mean(sub_m["sl_distance_pct"].values)) * 100
+    df_evals_test = df_evals[df_evals["split"] == "TEST"]
+    df_evals_train = df_evals[df_evals["split"] == "TRAIN"]
+    df_evals_val = df_evals[df_evals["split"] == "VALIDATION"]
 
-        # Economics across 4 scenarios
-        mean_gross_r = float(np.mean(sub_m["gross_realized_r"].values))
-        mean_net_r_fee = float(np.mean(sub_m["net_r_fee_only"].values))
-        mean_net_r_slip = float(np.mean(sub_m["net_r_fee_slip"].values))
-        mean_net_r_cons = float(np.mean(sub_m["net_r_conservative"].values))
+    stop_models_summary_test = _compute_stop_models_summary(df_evals_test, "TEST_CONFIRMATORY_ONLY")
+    stop_models_summary_train = _compute_stop_models_summary(df_evals_train, "TRAIN_EXPLORATORY")
+    stop_models_summary_val = _compute_stop_models_summary(df_evals_val, "VALIDATION_SELECTION")
+    stop_models_summary_pooled = _compute_stop_models_summary(df_evals, "POOLED_DESCRIPTIVE_ONLY")
 
-        fric_r_fee = float(np.mean(sub_m["friction_r_fee_only"].values))
-        fric_r_slip = float(np.mean(sub_m["friction_r_fee_slip"].values))
+    regimes_summary_test = _compute_regimes_summary(df_evals_test, "TEST_CONFIRMATORY_ONLY")
+    regimes_summary_train = _compute_regimes_summary(df_evals_train, "TRAIN_EXPLORATORY")
+    regimes_summary_val = _compute_regimes_summary(df_evals_val, "VALIDATION_SELECTION")
+    regimes_summary_pooled = _compute_regimes_summary(df_evals, "POOLED_DESCRIPTIVE_ONLY")
 
-        stop_models_summary.append({
-            "stop_model": model_name,
-            "sample_size": n_m,
-            "median_sl_pct": round(median_sl_pct, 3),
-            "mean_sl_pct": round(mean_sl_pct, 3),
-            "class_a_pct": class_a_rate,
-            "class_b_resumed_pct": class_b_rate,
-            "class_c_winner_pct": class_c_rate,
-            "class_d_flat_pct": class_d_rate,
-            "class_e_drift_pct": class_e_rate,
-            "mean_gross_r": round(mean_gross_r, 4),
-            "mean_friction_r_fee": round(fric_r_fee, 4),
-            "mean_friction_r_slip": round(fric_r_slip, 4),
-            "mean_net_r_zero": round(mean_gross_r, 4),
-            "mean_net_r_fee_only": round(mean_net_r_fee, 4),
-            "mean_net_r_fee_slip": round(mean_net_r_slip, 4),
-            "mean_net_r_conservative": round(mean_net_r_cons, 4),
-        })
-
-    # Stop-distance regimes comparison (across all models)
-    regimes_summary: List[Dict[str, Any]] = []
-    for regime_name, low_p, high_p in STOP_REGIMES:
-        sub_r = df_evals[df_evals["stop_regime"] == regime_name]
-        n_r = len(sub_r)
-        if n_r == 0:
-            continue
-
-        class_counts = sub_r["resumption_class"].value_counts().to_dict()
-        class_b_rate = round((class_counts.get("CLASS_B", 0) / n_r) * 100, 2)
-        class_c_rate = round((class_counts.get("CLASS_C", 0) / n_r) * 100, 2)
-
-        mean_gross_r = float(np.mean(sub_r["gross_realized_r"].values))
-        mean_net_r_slip = float(np.mean(sub_r["net_r_fee_slip"].values))
-        fric_r_slip = float(np.mean(sub_r["friction_r_fee_slip"].values))
-
-        # Dependence-aware circular block bootstrap CI on Net R (block_size=12)
-        _, ci_low, ci_high = bootstrap_mean_ci(sub_r["net_r_fee_slip"].values, block_size=12)
-
-        regimes_summary.append({
-            "stop_regime": regime_name,
-            "range_pct": f"{low_p*100:.2f}% - {high_p*100:.2f}%",
-            "sample_size": n_r,
-            "class_b_resumed_pct": class_b_rate,
-            "class_c_winner_pct": class_c_rate,
-            "mean_gross_r": round(mean_gross_r, 4),
-            "mean_friction_r_slip": round(fric_r_slip, 4),
-            "mean_net_r_fee_slip": round(mean_net_r_slip, 4),
-            "ci_95_low": round(ci_low, 4),
-            "ci_95_high": round(ci_high, 4),
-        })
-
-    # MAE of Eventual Winners vs Eventual Losers
-    winners = df_evals[df_evals["resumption_class"].isin(["CLASS_C", "CLASS_B"])]
-    clean_winners = df_evals[df_evals["resumption_class"] == "CLASS_C"]
-    resumed_b = df_evals[df_evals["resumption_class"] == "CLASS_B"]
-    losers = df_evals[df_evals["resumption_class"] == "CLASS_A"]
-
-    mae_stats = {
-        "winners_median_mae_pct": round(float(np.median(winners["mae_pct"].values)) * 100, 3) if len(winners) > 0 else 0.0,
-        "winners_mean_mae_pct": round(float(np.mean(winners["mae_pct"].values)) * 100, 3) if len(winners) > 0 else 0.0,
-        "winners_p75_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 75)) * 100, 3) if len(winners) > 0 else 0.0,
-        "winners_p90_mae_pct": round(float(np.percentile(winners["mae_pct"].values, 90)) * 100, 3) if len(winners) > 0 else 0.0,
-        "clean_winners_median_mae_pct": round(float(np.median(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
-        "clean_winners_mean_mae_pct": round(float(np.mean(clean_winners["mae_pct"].values)) * 100, 3) if len(clean_winners) > 0 else 0.0,
-        "resumed_b_median_full_window_mae_pct": round(float(np.median(resumed_b["full_window_mae_pct"].values)) * 100, 3) if len(resumed_b) > 0 else 0.0,
-        "losers_median_mae_pct": round(float(np.median(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
-        "losers_mean_mae_pct": round(float(np.mean(losers["mae_pct"].values)) * 100, 3) if len(losers) > 0 else 0.0,
-    }
+    mae_stats_test = _compute_mae_stats(df_evals_test, "TEST_CONFIRMATORY_ONLY")
+    mae_stats_train = _compute_mae_stats(df_evals_train, "TRAIN_EXPLORATORY")
+    mae_stats_val = _compute_mae_stats(df_evals_val, "VALIDATION_SELECTION")
+    mae_stats_pooled = _compute_mae_stats(df_evals, "POOLED_DESCRIPTIVE_ONLY")
 
     stop_room_analysis = {
-        "stop_models_summary": stop_models_summary,
-        "regimes_summary": regimes_summary,
-        "mae_stats": mae_stats,
+        "confirmatory_test_scope": {
+            "stop_models_summary": stop_models_summary_test,
+            "regimes_summary": regimes_summary_test,
+            "mae_stats": mae_stats_test,
+        },
+        "train_scope": {
+            "stop_models_summary": stop_models_summary_train,
+            "regimes_summary": regimes_summary_train,
+            "mae_stats": mae_stats_train,
+        },
+        "validation_scope": {
+            "stop_models_summary": stop_models_summary_val,
+            "regimes_summary": regimes_summary_val,
+            "mae_stats": mae_stats_val,
+        },
+        "pooled_descriptive_scope": {
+            "stop_models_summary": stop_models_summary_pooled,
+            "regimes_summary": regimes_summary_pooled,
+            "mae_stats": mae_stats_pooled,
+        },
+        # Backward compatibility aliases pointing strictly to confirmatory TEST
+        "stop_models_summary": stop_models_summary_test,
+        "regimes_summary": regimes_summary_test,
+        "mae_stats": mae_stats_test,
+        "stop_diagnostics": engine.stop_diagnostics,
+        "per_symbol_stop_diagnostics": engine.per_symbol_stop_diagnostics,
     }
 
     # Save stop-room JSON
@@ -1824,9 +2034,16 @@ def run_alpha_discovery(
             "test": "2023-10-16 to 2023-12-31 UTC",
         },
         "hypothesis_results": hypothesis_results,
-        "stop_models_summary": stop_models_summary,
-        "regimes_summary": regimes_summary,
-        "mae_stats": mae_stats,
+        "confirmatory_test_scope": {
+            "stop_models_summary": stop_models_summary_test,
+            "regimes_summary": regimes_summary_test,
+            "mae_stats": mae_stats_test,
+        },
+        "stop_models_summary": stop_models_summary_test,
+        "regimes_summary": regimes_summary_test,
+        "mae_stats": mae_stats_test,
+        "stop_diagnostics": engine.stop_diagnostics,
+        "per_symbol_stop_diagnostics": engine.per_symbol_stop_diagnostics,
     }
 
     results_path = os.path.join(output_dir, "phase13_results.json")

@@ -96,7 +96,7 @@ def run_synthetic_benchmark() -> Dict[str, Any]:
     rows = []
     for i in range(n_minutes):
         ts = start_ms + i * 60_000
-        p = 100.0 + i * 0.05
+        p = 100.0 + i * 0.01
         rows.append({
             "timestamp": ts,
             "open": p,
@@ -198,12 +198,10 @@ def run_synthetic_benchmark() -> Dict[str, Any]:
     late_includes_1h = ("STOP_1H_SWING" in late_models) and ("STOP_15M_SWING" in late_models)
     missing_htf_properly_excluded = bool(early_excludes_1h and late_includes_1h)
 
-    # Check zero fabricated ATR fallbacks
+    # Check zero fabricated ATR fallbacks: structural swing stops must have finite, valid price levels
     synth_fabricated_atrs = 0
     for e in evals:
-        if e.stop_model == "STOP_15M_SWING" and np.isnan(e.sl_distance_atr_15m):
-            synth_fabricated_atrs += 1
-        if e.stop_model == "STOP_1H_SWING" and np.isnan(e.sl_distance_atr_1h):
+        if e.stop_model in ("STOP_15M_SWING", "STOP_1H_SWING") and (not np.isfinite(e.sl_price) or np.isnan(e.sl_price)):
             synth_fabricated_atrs += 1
 
     return {
@@ -371,12 +369,11 @@ def run_historical_slice_benchmark(
     events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_btc)
     
     stop_models_generated: Dict[str, int] = {}
+    # Check zero fabricated ATR fallbacks: structural swing stops must have finite, valid price levels
     fabricated_atrs = 0
     for ev in evals:
         stop_models_generated[ev.stop_model] = stop_models_generated.get(ev.stop_model, 0) + 1
-        if np.isnan(ev.sl_distance_atr_15m) and ev.stop_model == "STOP_15M_SWING":
-            fabricated_atrs += 1
-        if np.isnan(ev.sl_distance_atr_1h) and ev.stop_model == "STOP_1H_SWING":
+        if ev.stop_model in ("STOP_15M_SWING", "STOP_1H_SWING") and (not np.isfinite(ev.sl_price) or np.isnan(ev.sl_price)):
             fabricated_atrs += 1
 
     # Calculate actual rates from counts

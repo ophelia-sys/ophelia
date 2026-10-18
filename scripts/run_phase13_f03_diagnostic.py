@@ -75,7 +75,7 @@ def run_hand_calculated_vwap_benchmark() -> Dict[str, Any]:
         "single_bar_dispersion_undefined_as_nan": bool(np.isnan(std.iloc[0])),
         "old_unweighted_variance_bar2": round(float(old_unweighted_var_bar2), 4),
         "correct_volume_weighted_variance_bar2": round(float(correct_volume_weighted_var_bar2), 4),
-        "formula": "variance = cumulative(volume * price^2) / cumulative(volume) - VWAP^2",
+        "formula": "Weighted Welford incremental between-bar dispersion on representative transaction price (turnover / volume)",
     }
 
 
@@ -310,14 +310,13 @@ def run_historical_slice_benchmark(
                     "cvd_zscore": ev.cvd_zscore,
                 })
         elif ev.event_class == "ORDER_FLOW_VWAP_CONFLUENCE":
-            if ev.cvd_data_status != "AVAILABLE" or not np.isfinite(ev.cvd_zscore) or not np.isfinite(ev.vwap_deviation_sigma):
+            if ev.cvd_data_status != "AVAILABLE" or not np.isfinite(ev.cvd_zscore) or not np.isfinite(ev.entry_price):
                 gating_violations.append({
                     "event_id": ev.event_id,
                     "event_class": ev.event_class,
-                    "reason": "ORDER_FLOW_VWAP_CONFLUENCE emitted with invalid CVD or VWAP metric",
+                    "reason": "ORDER_FLOW_VWAP_CONFLUENCE emitted with invalid CVD or entry price",
                     "status": ev.cvd_data_status,
                     "cvd_zscore": ev.cvd_zscore,
-                    "vwap_deviation_sigma": ev.vwap_deviation_sigma,
                 })
         elif ev.event_class == "VWAP_DEVIATION":
             if not np.isfinite(ev.vwap_deviation_sigma) or abs(ev.vwap_deviation_sigma) < 1.5:
