@@ -881,6 +881,8 @@ class TestPhase13F02ReviewCorrections(unittest.TestCase):
             end_utc="2023-01-04 23:59:00",
             symbol="BTCUSDT",
         )
+        if res.get("status") == "SKIPPED":
+            self.skipTest("Historical parquet not found: " + str(res.get("reason")))
         self.assertEqual(res["status"], "COMPLETED")
         meta = res["sample_metadata"]
         
