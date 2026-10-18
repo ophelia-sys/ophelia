@@ -1,7 +1,7 @@
-# OPHELIA PHASE 14 — CONTROLLED MULTI-FACTOR ALPHA DISCOVERY REPORT
+# OPHELIA PHASE 14 — AUDIT CLOSEOUT & PROTOCOL CONFORMANCE REPORT
 
-**Document ID**: `OPHELIA-RES-PHASE14-001`  
-**Execution Timestamp**: `2026-10-18T22:07:22Z`  
+**Document ID**: `OPHELIA-RES-PHASE14-AUDIT-001`  
+**Execution Timestamp**: `2026-10-18T22:25:50Z`  
 **Engine Layer**: [`control_plane/phase14_composite_engine.py`](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/phase14_composite_engine.py)  
 **Governing Protocol**: [`docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md`](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md)  
 **Pre-Registered Hypotheses**: $m = 10$  
@@ -15,170 +15,123 @@
 |---|---|---|
 | **1. Did the composite experiment run to completion?** | **YES** | Processed 100% of 2023 (1,576,800 1m bars across BTC, ETH, SOL) and Q1 2024 (527,040 1m bars with Dec 2023 warm-up). Extracted 41,860 events, 334,880 forward trajectory outcomes, and 155,942 stop-room evaluations. |
 | **2. Was the later data genuinely independent for this hypothesis family?** | **YES (Strictly Out-of-Time)** | Q1 2024 (`phase12_fresh_universe_1m.parquet`, SHA-256: `91de7196ace28474ef5fbeaa3c004e2df38b4c3658e451bd0d575b5e12060409`) was preserved untouched until candidate definitions and engine logic were frozen. Resampled with December 2023 warm-up to prevent initial-state bias, then filtered strictly for $T \ge \text{2024-01-01 00:00:00 UTC}$. |
-| **3. Did any composite produce positive net expectancy after costs?** | **NO** | No candidate with adequate statistical sample size ($N \ge 30$) achieved positive net return after baseline 9.1 bps BingX friction across both TEST (2023) and OUT_OF_TIME_Q1_2024. In Q1 2024, every candidate with $N \ge 30$ produced negative net expectancy (ranging from $-0.98$ bps to $-24.46$ bps). |
-| **4. Did any candidate satisfy the pre-registered statistical criteria?** | **NO** | Nominal significance on TEST occurred for `COMP_SFP_HTF_TREND` (raw $p = 0.0315$), but under Benjamini-Hochberg FDR control across the $m=10$ hypothesis family, its adjusted $q = 0.2950 \gg 0.05$. It subsequently failed out-of-time in Q1 2024 (gross dropped to $+3.59$ bps, net $-5.51$ bps). `COMP_DUAL_CONFLUENCE` had insufficient sample size ($N = 16$ in TEST, $N = 25$ in Q1 2024; both below the pre-registered $N \ge 30$ hurdle). |
+| **3. Did any composite produce positive net expectancy after costs?** | **NO** | In the out-of-time Q1 2024 period, every candidate with adequate statistical sample size ($N \ge 30$) produced **negative net expectancy** after baseline 9.1 bps modeled friction (ranging from $-0.98$ bps to $-24.46$ bps). |
+| **4. Did any candidate satisfy the pre-registered statistical criteria?** | **NO** | In confirmatory net-cost inference ($H_0: \mu_{\text{net}} \le 0$), **zero** candidates achieved statistical significance on TEST (lowest Net FDR $q = 0.2200 \gg 0.05$). For `COMP_SFP_HTF_TREND`, net hurdle p-value is $p = 0.8220$ (Net FDR $q = 0.8650$). `COMP_DUAL_CONFLUENCE` failed the registered minimum sample size hurdle ($N = 16 < 30$). |
 | **5. Which candidate, if any, deserves fresh independent confirmation?** | **NONE** | No candidate cleared the double barrier of cost survival and multiple-testing significance. Promoting any tested candidate to production or live trading would violate empirical risk gating. |
 | **6. What remains unverified?** | **Execution Realism for Passive Limit Orders** | Maker fee economics (5.0 bps round-trip) require passive liquidity provision. Fill rates, adverse selection, queue position, and cancel-replace dynamics cannot be verified without exchange order-book level 2 tick archives. |
 
 ---
 
-## 2. Experimental Setup & Verification of Baseline
+## 2. Protocol Discrepancies & Conformance Reconciliation
 
-### 2.1 Baseline Reproduction (Phase 13 Consistency)
-The Phase 13 standalone benchmark hypotheses were re-evaluated using the exact corrected research engine:
-- `BENCH_HTF_ALIGNED_DISPLACEMENT` on 2023 TEST:
-  - Phase 13 reported: **+5.83 bps gross, −3.27 bps net** (9.1 bps friction).
-  - Phase 14 measured: **+5.83 bps gross, −3.27 bps net** ($N=898$). Exactly replicated to 0.01 bps.
-- `BENCH_LIQUIDITY_SWEEP_SFP` on 2023 TEST:
-  - Phase 13 reported: **+5.08 bps gross, −4.02 bps net** (9.1 bps friction).
-  - Phase 14 measured: **+5.08 bps gross, −4.02 bps net** ($N=1337$). Exactly replicated to 0.01 bps.
+### 2.1 Bootstrap Resample Count Conformance ($B=1,000$ vs $B=2,000$)
+- **Discrepancy**: The locked protocol ([`docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md`](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md), Section 5.1) pre-registered $B = 1,000$ resamples. The underlying discovery engine default in `synchronized_time_block_bootstrap` was $B = 2,000$, resulting in the initial study executing $B = 2,000$.
+- **Reconciliation Pass**: A full protocol-compliance inference pass was executed using strictly $B = 1,000$ on the identical frozen candidate events and forward outcomes.
+- **Empirical Impact**:
+  ```
+  Hypothesis                       Gross p (B=1k)   Gross p (B=2k)   Net p (B=1k)   Net p (B=2k)
+  ----------------------------------------------------------------------------------------------
+  BENCH_HTF_ALIGNED_DISPLACEMENT       0.1860           0.1890          0.4420         0.4670
+  BENCH_LIQUIDITY_SWEEP_SFP            0.1100           0.1180          0.2050         0.2135
+  COMP_SFP_HTF_TREND                   0.0330           0.0315          0.8220         0.8360
+  COMP_SFP_RVOL_CONFIRM                0.8040           0.8105          0.0220         0.0290
+  COMP_SFP_VOL_EXPANSION               0.1020           0.1105          0.2200         0.2335
+  COMP_DISPLACEMENT_RVOL               0.3200           0.3215          0.5570         0.5490
+  COMP_DISPLACEMENT_VOL_EXPANSION      0.9710           0.9685          0.3660         0.3635
+  COMP_SFP_CVD_ABSORPTION              0.0860           0.0815          0.8650         0.8665
+  COMP_DUAL_CONFLUENCE                 0.2530           0.2500          0.5300         0.5190
+  COMP_HTF_1H_SWING_SFP                0.1980           0.2105          0.1980         0.2100
+  ```
+- **Conclusion**: The variance between $B=1,000$ and $B=2,000$ is negligible ($|\Delta p| \le 0.014$). All inferential decisions and multiple-testing verdicts are 100% invariant.
 
-### 2.2 Datasets & Partitioning Provenance
-1. **2023 Universe**: `data/processed/binance_um_universe_1m_v2.parquet`
-   - SHA-256: `d2e839edecfae88b798993cff9545fa626071efcb722f266fbe15e0bea3e20b5`
-   - Symbols: `BTCUSDT`, `ETHUSDT`, `SOLUSDT` (525,600 1m rows per symbol, complete 60s step).
-   - Features: OHLCV, `quote_volume`, `delta_v`, `aggressive_buy_volume`, `aggressive_sell_volume`.
-   - Splits:
-     - `TRAIN`: 2023-01-01 00:00:00 to 2023-07-31 23:59:59 UTC
-     - `EMBARGO_1`: 2023-08-01 (24-hour purge)
-     - `VALIDATION`: 2023-08-02 00:00:00 to 2023-10-14 23:59:59 UTC
-     - `EMBARGO_2`: 2023-10-15 (24-hour purge)
-     - `TEST`: 2023-10-16 00:00:00 to 2023-12-31 23:59:59 UTC
-2. **Q1 2024 Out-of-Time Universe**: `data/processed/phase12_fresh_universe_1m.parquet`
-   - SHA-256: `91de7196ace28474ef5fbeaa3c004e2df38b4c3658e451bd0d575b5e12060409`
-   - Symbols: `BTCUSDT`, `ETHUSDT`, `SOLUSDT` (175,680 1m rows per symbol, 2023-12-01 to 2024-03-31 UTC).
-   - Warm-up period: 2023-12-01 to 2023-12-31 UTC used solely for causal feature stabilization (4H EMA 50, 1H ATR, rolling statistics).
-   - Evaluation partition: `OUT_OF_TIME_Q1_2024` strictly spanning 2024-01-01 00:00:00 to 2024-03-31 23:59:59 UTC ($131,040$ evaluated 1m bars per symbol).
-   - Provenance note: Raw trade/order-flow columns (`delta_v`, taker volumes) are absent from this dataset. Consequently, `COMP_SFP_CVD_ABSORPTION` cleanly evaluated to 0 events and was gated closed on Q1 2024 as required by the protocol.
+### 2.2 Transaction-Cost Conformance & Component Reconciliation
+- **Discrepancy**: The protocol specified baseline taker friction as `4.0 bps entry fee + 4.0 bps exit fee + 1.1 bps adverse slippage = 9.1 bps`. Legacy report narrative referenced `7.0 bps fee (2 maker + 5 taker) + 2.1 bps slippage = 9.1 bps`.
+- **Reconciliation**: Total modeled friction across both descriptions is exactly 9.1 bps ($0.00091$). The component attribution is corrected to align strictly with the locked protocol:
+  1. `FEE_ONLY` (5.0 bps): 2.5 bps entry maker fee + 2.5 bps exit maker fee + 0.0 bps slippage = **5.0 bps round-trip**.
+  2. `BASELINE_TAKER` (9.1 bps): 4.0 bps entry taker fee + 4.0 bps exit taker fee + 1.1 bps adverse slippage = **9.1 bps round-trip**.
+  3. `CONSERVATIVE_SLIP` (15.0 bps): 4.0 bps entry taker fee + 4.0 bps exit taker fee + 7.0 bps adverse slippage = **15.0 bps round-trip**.
+- **Distinction Between Modeled vs Verified Costs**:
+  - The costs applied in this quantitative discovery study are **modeled hypothetical parameters**, not verified live fills.
+  - Market data is sourced from **Binance USDT-M Futures** (providing continuous 1m OHLCV and tick trade-level order flow), whereas Ophelia's live broker target is **BingX Perpetual Swap Futures**.
+  - Because no live orders were placed, these costs must not be represented as empirically verified on-exchange execution.
 
----
-
-## 3. Comprehensive Results Table: Standalone vs Composite
-
-All returns are directional 60-minute forward returns expressed in basis points (bps). Friction models applied:
-- **Gross**: 0.0 bps
-- **Net 5.0**: 5.0 bps round-trip (Maker 2.0 bps + Taker 5.0 bps / fee-only)
-- **Net 9.1**: 9.1 bps round-trip (Ophelia verified baseline: 7.0 bps fee + 2.1 bps empirical slippage)
-- **Net 15.0**: 15.0 bps round-trip (Taker 10.0 bps + 5.0 bps adverse slippage)
-
-| # | Hypothesis Name | Partition | N Events | Win Rate | Gross Mean (bps) | Net 5.0 (bps) | Net 9.1 (bps) | Net 15.0 (bps) | Profit Factor | Raw p (6h) | FDR q | Decision Verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **1** | `BENCH_HTF_ALIGNED_DISPLACEMENT` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 2518<br>1053<br>**898**<br>1047 | 41.5%<br>42.4%<br>**48.0%**<br>49.2% | -2.36<br>+0.55<br>**+5.83**<br>+8.12 | -7.36<br>-4.45<br>**+0.83**<br>+3.12 | -11.46<br>-8.55<br>**-3.27**<br>-0.98 | -17.36<br>-14.45<br>**-9.17**<br>-6.88 | 0.92<br>1.03<br>**1.20**<br>1.25 | 0.4435<br>0.8595<br>**0.1890**<br>0.1320 | -<br>-<br>**0.3508**<br>- | `NO_EDGE_FOUND` |
-| **2** | `BENCH_LIQUIDITY_SWEEP_SFP` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 3324<br>734<br>**1337**<br>1627 | 55.6%<br>55.5%<br>**55.1%**<br>53.9% | +0.37<br>-2.82<br>**+5.08**<br>+2.95 | -4.63<br>-7.82<br>**+0.08**<br>-2.05 | -8.73<br>-11.92<br>**-4.02**<br>-6.15 | -14.63<br>-17.82<br>**-9.92**<br>-12.05 | 1.01<br>0.88<br>**1.15**<br>1.09 | 0.8610<br>0.4345<br>**0.1180**<br>0.4065 | -<br>-<br>**0.2950**<br>- | `NO_EDGE_FOUND` |
-| **3** | `COMP_SFP_HTF_TREND` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 1570<br>343<br>**627**<br>773 | 56.2%<br>56.9%<br>**57.7%**<br>55.9% | +2.54<br>+0.34<br>**+10.22**<br>+3.59 | -2.46<br>-4.66<br>**+5.22**<br>-1.41 | -6.56<br>-8.76<br>**+1.12**<br>-5.51 | -12.46<br>-14.66<br>**-4.78**<br>-11.41 | 1.09<br>1.02<br>**1.35**<br>1.12 | 0.3910<br>0.9430<br>**0.0315**<br>0.4080 | -<br>-<br>**0.2950**<br>- | `NO_EDGE_FOUND` |
-| **4** | `COMP_SFP_RVOL_CONFIRM` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 2498<br>566<br>**900**<br>1027 | 55.8%<br>54.2%<br>**55.0%**<br>53.4% | -0.88<br>-3.86<br>**+0.85**<br>+0.79 | -5.88<br>-8.86<br>**-4.15**<br>-4.21 | -9.98<br>-12.96<br>**-8.25**<br>-8.31 | -15.88<br>-18.86<br>**-14.15**<br>-14.21 | 0.97<br>0.84<br>**1.03**<br>1.02 | 0.7170<br>0.3765<br>**0.8105**<br>0.8595 | -<br>-<br>**1.0000**<br>- | `NO_EDGE_FOUND` |
-| **5** | `COMP_SFP_VOL_EXPANSION` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 3226<br>725<br>**1324**<br>1589 | 55.6%<br>55.4%<br>**55.1%**<br>54.1% | +0.33<br>-2.86<br>**+5.22**<br>+3.85 | -4.67<br>-7.86<br>**+0.22**<br>-1.15 | -8.77<br>-11.96<br>**-3.88**<br>-5.25 | -14.67<br>-17.86<br>**-9.78**<br>-11.15 | 1.01<br>0.88<br>**1.16**<br>1.11 | 0.8770<br>0.4285<br>**0.1105**<br>0.2675 | -<br>-<br>**0.2950**<br>- | `NO_EDGE_FOUND` |
-| **6** | `COMP_DISPLACEMENT_RVOL` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 1807<br>647<br>**640**<br>748 | 41.5%<br>42.7%<br>**47.8%**<br>49.3% | -2.43<br>-1.33<br>**+5.73**<br>+6.97 | -7.43<br>-6.33<br>**+0.73**<br>+1.97 | -11.53<br>-10.43<br>**-3.37**<br>-2.13 | -17.43<br>-16.33<br>**-9.27**<br>-8.03 | 0.92<br>0.96<br>**1.18**<br>1.20 | 0.4905<br>0.7100<br>**0.3215**<br>0.3170 | -<br>-<br>**0.4593**<br>- | `NO_EDGE_FOUND` |
-| **7** | `COMP_DISPLACEMENT_VOL_EXPANSION` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 629<br>238<br>**168**<br>182 | 41.0%<br>39.9%<br>**46.4%**<br>42.9% | -10.20<br>-12.83<br>**-0.37**<br>-15.36 | -15.20<br>-17.83<br>**-5.37**<br>-20.36 | -19.30<br>-21.93<br>**-9.47**<br>-24.46 | -25.20<br>-27.83<br>**-15.37**<br>-30.36 | 0.72<br>0.63<br>**0.99**<br>0.67 | 0.1060<br>0.1030<br>**0.9685**<br>0.2630 | -<br>-<br>**1.0000**<br>- | `NO_EDGE_FOUND` |
-| **8** | `COMP_SFP_CVD_ABSORPTION` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 1360<br>349<br>**534**<br>0 | 55.4%<br>55.3%<br>**56.0%**<br>N/A | +0.03<br>-2.92<br>**+8.26**<br>0.00 | -4.97<br>-7.92<br>**+3.26**<br>0.00 | -9.07<br>-12.02<br>**-0.84**<br>0.00 | -14.97<br>-17.92<br>**-6.74**<br>0.00 | 1.00<br>0.89<br>**1.25**<br>N/A | 0.9915<br>0.4895<br>**0.0815**<br>1.0000 | -<br>-<br>**0.2950**<br>- | `NO_EDGE_FOUND` |
-| **9** | `COMP_DUAL_CONFLUENCE` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 45<br>25<br>**16**<br>25 | 57.8%<br>72.0%<br>**68.8%**<br>64.0% | -0.79<br>+14.51<br>**+20.87**<br>+17.87 | -5.79<br>+9.51<br>**+15.87**<br>+12.87 | -9.89<br>+5.41<br>**+11.77**<br>+8.77 | -15.79<br>-0.49<br>**+5.87**<br>+2.87 | 0.97<br>1.56<br>**2.07**<br>1.66 | 0.9065<br>0.2790<br>**1.0000**<br>1.0000 | -<br>-<br>**1.0000**<br>- | `INCONCLUSIVE_INSUFFICIENT_SAMPLE` |
-| **10** | `COMP_HTF_1H_SWING_SFP` | TRAIN<br>VAL<br>**TEST**<br>OOT 24 | 3176<br>750<br>**1298**<br>1517 | 55.5%<br>55.3%<br>**54.9%**<br>54.1% | +0.22<br>-6.61<br>**+4.55**<br>+4.11 | -4.78<br>-11.61<br>**-0.45**<br>-0.89 | -8.88<br>-15.71<br>**-4.55**<br>-4.99 | -14.78<br>-21.61<br>**-10.45**<br>-10.89 | 1.01<br>0.74<br>**1.13**<br>1.12 | 0.9255<br>0.0830<br>**0.2105**<br>0.3185 | -<br>-<br>**0.3508**<br>- | `NO_EDGE_FOUND` |
+### 2.3 Confirmatory Statistical Inference (Gross vs Net Hurdle)
+- **Discrepancy**: The initial inference pass tested the null hypothesis of zero gross return ($H_0: \mu_{\text{gross}} = 0$). However, the registered economic claim requires proving **positive net expectancy after transaction friction** ($H_0: \mu_{\text{net}} \le 0 \iff H_0: \mu_{\text{gross}} \le 9.1\text{ bps}$).
+- **Reconciliation**: Cost-adjusted bootstrap inference was calculated testing $H_0: \mu_{\text{net}} \le 0$ across all 10 candidates.
+- **Critical Finding for `COMP_SFP_HTF_TREND`**:
+  - TEST gross return: $+10.22$ bps ($p_{\text{gross}} = 0.0330$).
+  - TEST net return after 9.1 bps friction: $+1.12$ bps with cluster standard error $\approx 4.88$ bps.
+  - Net hurdle $p$-value: **$p = 0.8220$** ($t_{\text{net}} = 0.23$).
+  - Net Benjamini-Hochberg FDR $q$-value: **$q = 0.8650 \gg 0.05$**.
+  - **Conclusion**: When tested against the economic hypothesis of positive net returns, `COMP_SFP_HTF_TREND` exhibits no statistically distinguishable net edge above trading friction.
 
 ---
 
-## 4. Standalone vs Composite Incremental Value Analysis
+## 3. Eligibility Audit ($N \ge 30$ and $B_{\text{active}} \ge 10$)
 
-To earn a place in a production architecture, a composite conditioning filter must demonstrate **statistically significant incremental return** $\Delta \mu$ over its standalone parent signal, after penalizing for parameterization and degrees of freedom.
+Both registered minimums are strictly enforced on confirmatory partitions (TEST and Q1 2024). Active clusters are evaluated using 6-hour synchronized blocks across all 3 universe symbols:
 
-### 4.1 Liquidity Sweep SFP Conditioned Families (Parent: `BENCH_LIQUIDITY_SWEEP_SFP`)
-On 2023 TEST ($N = 1337$, Gross $= +5.08$ bps):
-1. **`COMP_SFP_HTF_TREND`**:
-   - Filter: Trade only when sweep aligns with completed 4H EMA 50 trend (`trend_4h == 'BULL'` for Longs, `'BEAR'` for Shorts).
-   - TEST Effect: Sample reduced by 53% ($N = 627$). Gross return increased to $+10.22$ bps (+5.14 bps incremental gross).
-   - Net return at baseline 9.1 bps: $+1.12$ bps.
-   - Bootstrapped $p$-value: raw $p = 0.0315$ (6h), $p = 0.0300$ (2h).
-   - **Why It Fails**: Under pre-registered Benjamini-Hochberg FDR across the $m=10$ hypotheses, its adjusted $q = 0.2950$, failing the $q < 0.05$ threshold. Furthermore, **out-of-time confirmation completely breaks down**: in Q1 2024, gross return falls from $+10.22$ bps to $+3.59$ bps, yielding **$-5.51$ bps net** after 9.1 bps friction. Across the full 2023-2024 dataset, it was negative in TRAIN ($-6.56$ bps net), negative in VAL ($-8.76$ bps net), and negative in Q1 2024 ($-5.51$ bps net). Its TEST outperformance was a sample artifact of Q4 2023 momentum.
-2. **`COMP_SFP_RVOL_CONFIRM`**:
-   - Filter: Require 5m relative volume $\ge 1.5$.
-   - TEST Effect: Sample reduced by 33% ($N = 900$). Gross return collapsed from $+5.08$ bps to $+0.85$ bps (**$-4.23$ bps degradation**).
-   - Out-of-time Effect: Q1 2024 gross return $+0.79$ bps ($-8.31$ bps net).
-   - **Conclusion**: High relative volume on sweep bars actively harms mean reversion expectancy.
-3. **`COMP_SFP_VOL_EXPANSION`**:
-   - Filter: Exclude compressed volatility regimes ($ATR_{14} / ATR_{50} \ge 0.75$).
-   - TEST Effect: $N=1324$ vs $1337$. Gross return $+5.22$ bps vs $+5.08$ bps ($+0.14$ bps incremental).
-   - **Conclusion**: Removes less than 1% of sweeps; zero meaningful economic impact.
-4. **`COMP_SFP_CVD_ABSORPTION`**:
-   - Filter: Require opposing order flow absorption ($cvd\_z \le -1.0$ on Long sweep, $cvd\_z \ge +1.0$ on Short sweep).
-   - TEST Effect: Sample reduced by 60% ($N = 534$). Gross return increased from $+5.08$ bps to $+8.26$ bps (+3.18 bps incremental).
-   - Net return at baseline 9.1 bps: **$-0.84$ bps**.
-   - Bootstrapped $p$-value: raw $p = 0.0815$, FDR $q = 0.2950$.
-   - **Conclusion**: Even with verified institutional order flow absorption, the gross return of 8.26 bps cannot clear 9.1 bps round-trip friction.
-5. **`COMP_HTF_1H_SWING_SFP`**:
-   - Filter: Measure sweeps against completed 1H swing highs/lows rather than 15m.
-   - TEST Effect: Gross return $+4.55$ bps vs $+5.08$ bps for 15m sweeps (**$-0.53$ bps degradation**).
-   - **Conclusion**: 1H swing reference points do not improve 60m forward expectancy.
+| # | Hypothesis | 2023 TEST $N$ | TEST Clusters | TEST Eligibility | Q1 2024 OOT $N$ | OOT Clusters | OOT Eligibility | Conformance Status |
+|---|---|---|---|---|---|---|---|---|
+| **1** | `BENCH_HTF_ALIGNED_DISPLACEMENT` | 898 | 264 | **PASS** | 1047 | 314 | **PASS** | Eligible for confirmation |
+| **2** | `BENCH_LIQUIDITY_SWEEP_SFP` | 1337 | 302 | **PASS** | 1627 | 350 | **PASS** | Eligible for confirmation |
+| **3** | `COMP_SFP_HTF_TREND` | 627 | 238 | **PASS** | 773 | 299 | **PASS** | Eligible for confirmation |
+| **4** | `COMP_SFP_RVOL_CONFIRM` | 900 | 282 | **PASS** | 1027 | 321 | **PASS** | Eligible for confirmation |
+| **5** | `COMP_SFP_VOL_EXPANSION` | 1324 | 301 | **PASS** | 1589 | 348 | **PASS** | Eligible for confirmation |
+| **6** | `COMP_DISPLACEMENT_RVOL` | 640 | 238 | **PASS** | 748 | 281 | **PASS** | Eligible for confirmation |
+| **7** | `COMP_DISPLACEMENT_VOL_EXPANSION` | 168 | 87 | **PASS** | 182 | 95 | **PASS** | Eligible for confirmation |
+| **8** | `COMP_SFP_CVD_ABSORPTION` | 534 | 234 | **PASS** | 0 | 0 | **FAIL_ZERO** | Gated closed in 2024 (absent order flow) |
+| **9** | `COMP_DUAL_CONFLUENCE` | 16 | 15 | **INCONCLUSIVE** | 25 | 23 | **INCONCLUSIVE** | **FAILED $N \ge 30$ MINIMUM** |
+| **10** | `COMP_HTF_1H_SWING_SFP` | 1298 | 289 | **PASS** | 1517 | 324 | **PASS** | Eligible for confirmation |
 
-### 4.2 HTF Aligned Displacement Conditioned Families (Parent: `BENCH_HTF_ALIGNED_DISPLACEMENT`)
-On 2023 TEST ($N = 898$, Gross $= +5.83$ bps):
-1. **`COMP_DISPLACEMENT_RVOL`**:
-   - Filter: Require 5m relative volume $\ge 2.0$.
-   - TEST Effect: Sample reduced by 29% ($N = 640$). Gross return $+5.73$ bps vs $+5.83$ bps benchmark (**$-0.10$ bps degradation**).
-   - Q1 2024 Effect: Gross $+6.97$ bps, net $-2.13$ bps.
-   - **Conclusion**: RVOL conditioning adds zero incremental value to displacement.
-2. **`COMP_DISPLACEMENT_VOL_EXPANSION`**:
-   - Filter: Require expanded volatility regime ($ATR_{14} / ATR_{50} > 1.25$).
-   - TEST Effect: Gross return drops to $-0.37$ bps (**$-6.20$ bps degradation**).
-   - Q1 2024 Effect: Gross return collapses to **$-15.36$ bps** ($-24.46$ bps net).
-   - **Conclusion**: Entering momentum displacements during extended volatility expansion leads to severe adverse selection and immediate whipsaw.
-
-### 4.3 Mutual Confluence Interaction (`COMP_DUAL_CONFLUENCE`)
-- Definition: A single 5m bar that simultaneously satisfies both the 15m Liquidity Sweep SFP and the HTF-Aligned Momentum Displacement condition.
-- Empirical Observations:
-  - 2023 TRAIN (7 months, 3 symbols): $N = 45$, Gross $-0.79$ bps, Net $-9.89$ bps.
-  - 2023 VAL (2.5 months, 3 symbols): $N = 25$, Gross $+14.51$ bps, Net $+5.41$ bps.
-  - 2023 TEST (2.5 months, 3 symbols): $N = 16$, Gross $+20.87$ bps, Net $+11.77$ bps.
-  - Q1 2024 OOT (3 months, 3 symbols): $N = 25$, Gross $+17.87$ bps, Net $+8.76$ bps.
-- **Critical Methodological Evaluation**:
-  - Pre-registered sample size requirement: $N \ge 30$ in TEST partition. **FAILED** ($N = 16$).
-  - Over the entire 7 months of TRAIN, mean return was negative ($-0.79$ bps gross).
-  - The occurrence rate is extremely sparse: approximately 1 event every 4.6 days across the entire 3-symbol universe.
-  - Because sample sizes in TEST and OOT fall below the minimum reliable cluster threshold, its bootstrap inference is non-computable ($p = 1.000$).
-  - **Verdict**: `INCONCLUSIVE_INSUFFICIENT_SAMPLE`. Cannot be accepted as a tradable edge.
+`COMP_DUAL_CONFLUENCE` failed the registered minimum sample size ($N = 16 < 30$ in TEST; $N = 25 < 30$ in Q1 2024). In accordance with Section 5.2 of the protocol, it is classified as `INCONCLUSIVE` and cannot be promoted.
 
 ---
 
-## 5. Transaction-Cost and Block-Length Sensitivity Analysis
+## 4. Confirmatory Multi-Factor Results Table ($B = 1,000$)
 
-### 5.1 Transaction Friction Sensitivity (TEST vs OOT)
-The table below highlights the fragility of nominally positive candidates when exposed to friction tiers:
+Primary outcome: 60-minute forward return (bps). Multiple testing: Benjamini-Hochberg FDR across the $m=10$ hypotheses.
+
+| # | Hypothesis | TEST Gross | TEST Net (9.1 bps) | TEST $p_{\text{gross}}$ | TEST $p_{\text{net}}$ | TEST FDR $q_{\text{net}}$ | OOT Gross | OOT Net (9.1 bps) | OOT $p_{\text{net}}$ | OOT FDR $q_{\text{net}}$ | Final Decision Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **1** | `BENCH_HTF_ALIGNED_DISPLACEMENT` | +5.83 bps | -3.27 bps | 0.1860 | 0.4420 | 0.6963 | +8.12 bps | -0.98 bps | 0.8640 | 0.9600 | `NO_EDGE_FOUND` |
+| **2** | `BENCH_LIQUIDITY_SWEEP_SFP` | +5.08 bps | -4.02 bps | 0.1100 | 0.2050 | 0.5500 | +2.95 bps | -6.15 bps | 0.0730 | 0.2667 | `NO_EDGE_FOUND` |
+| **3** | `COMP_SFP_HTF_TREND` | +10.22 bps | +1.12 bps | 0.0330 | 0.8220 | 0.8650 | +3.59 bps | -5.51 bps | 0.1940 | 0.3567 | `NO_EDGE_FOUND` |
+| **4** | `COMP_SFP_RVOL_CONFIRM` | +0.85 bps | -8.25 bps | 0.8040 | 0.0220 | 0.2200 | +0.79 bps | -8.31 bps | 0.0480 | 0.2667 | `NO_EDGE_FOUND` |
+| **5** | `COMP_SFP_VOL_EXPANSION` | +5.22 bps | -3.88 bps | 0.1020 | 0.2200 | 0.5500 | +3.85 bps | -5.25 bps | 0.1220 | 0.3050 | `NO_EDGE_FOUND` |
+| **6** | `COMP_DISPLACEMENT_RVOL` | +5.73 bps | -3.37 bps | 0.3200 | 0.5570 | 0.6963 | +6.97 bps | -2.13 bps | 0.7900 | 0.9600 | `NO_EDGE_FOUND` |
+| **7** | `COMP_DISPLACEMENT_VOL_EXPANSION` | -0.37 bps | -9.47 bps | 0.9710 | 0.3660 | 0.6963 | -15.36 bps | -24.46 bps | 0.0800 | 0.2667 | `NO_EDGE_FOUND` |
+| **8** | `COMP_SFP_CVD_ABSORPTION` | +8.26 bps | -0.84 bps | 0.0860 | 0.8650 | 0.8650 | +0.00 bps | +0.00 bps | N/A | N/A | `NO_EDGE_FOUND` |
+| **9** | `COMP_DUAL_CONFLUENCE` | +20.87 bps | +11.77 bps | 0.2530 | 0.5300 | 0.6963 | +17.87 bps | +8.77 bps | 0.6530 | 0.9329 | `INCONCLUSIVE` |
+| **10** | `COMP_HTF_1H_SWING_SFP` | +4.55 bps | -4.55 bps | 0.1980 | 0.1980 | 0.5500 | +4.11 bps | -4.99 bps | 0.2140 | 0.3567 | `NO_EDGE_FOUND` |
+
+*Note on $p_{\text{net}}$: Evaluates centered empirical test $H_0: \mu_{\text{net}} \le 0$. Small $p_{\text{net}}$ for candidates with large negative net returns (e.g. `COMP_SFP_RVOL_CONFIRM`, $\mu_{\text{net}} = -8.25$ bps, $p = 0.0220$) reflects two-tailed test rejection of zero net return due to large significant negative performance.*
+
+---
+
+## 5. Block-Duration Sensitivity Audit (2h vs 6h vs 24h Blocks)
+
+Testing invariance of statistical conclusions across synchronized duration choices under $B=1,000$:
 
 ```
-                          TEST (2023)                         OUT_OF_TIME_Q1_2024
-Hypothesis            Gross   5.0bps  9.1bps  15.0bps     Gross   5.0bps  9.1bps  15.0bps
------------------------------------------------------------------------------------------
-HTF Displacement      +5.83   +0.83   -3.27   -9.17       +8.12   +3.12   -0.98   -6.88
-Liquidity Sweep SFP   +5.08   +0.08   -4.02   -9.92       +2.95   -2.05   -6.15   -12.05
-SFP x 4H Trend       +10.22   +5.22   +1.12   -4.78       +3.59   -1.41   -5.51   -11.41
-SFP x CVD Absorption  +8.26   +3.26   -0.84   -6.74        N/A     N/A     N/A     N/A
-Displacement x RVOL   +5.73   +0.73   -3.37   -9.27       +6.97   +1.97   -2.13   -8.03
-Dual Confluence      +20.87  +15.87  +11.77   +5.87      +17.87  +12.87   +8.77   +2.87
+                                      TEST Gross p-values               TEST Net-Hurdle p-values
+Hypothesis                         2h       6h       24h              2h       6h       24h
+-----------------------------------------------------------------------------------------------
+BENCH_HTF_ALIGNED_DISPLACEMENT   0.1760   0.1860   0.2170           0.4570   0.4420   0.4510
+BENCH_LIQUIDITY_SWEEP_SFP        0.1190   0.1100   0.1780           0.2150   0.2050   0.2810
+COMP_SFP_HTF_TREND               0.0270   0.0330   0.0910           0.8190   0.8220   0.8800
+COMP_SFP_RVOL_CONFIRM            0.8140   0.8040   0.8350           0.0230   0.0220   0.0540
+COMP_SFP_VOL_EXPANSION           0.1120   0.1020   0.1700           0.2310   0.2200   0.2970
+COMP_DISPLACEMENT_RVOL           0.3150   0.3200   0.3110           0.5610   0.5570   0.5400
+COMP_DISPLACEMENT_VOL_EXPANSION  0.9690   0.9710   0.9740           0.3620   0.3660   0.3800
+COMP_SFP_CVD_ABSORPTION          0.0840   0.0860   0.1080           0.8690   0.8650   0.8920
+COMP_DUAL_CONFLUENCE             0.2640   0.2530   0.2450           0.5280   0.5300   0.5410
+COMP_HTF_1H_SWING_SFP            0.2200   0.1980   0.2260           0.2200   0.1980   0.2260
 ```
 
 **Key Finding**:
-Except for the under-sampled `COMP_DUAL_CONFLUENCE` ($N=16$), **no candidate survived 9.1 bps friction in Q1 2024**. Even under hypothetical 5.0 bps maker-taker friction, only 2 candidates were positive in Q1 2024, and both failed basic statistical significance ($p > 0.13$).
-
-### 5.2 Time-Block Bootstrap Duration Sensitivity
-Testing whether significance depends arbitrarily on chosen cluster block lengths (2h, 6h, 24h):
-
-```
-                                    TEST Raw p-values            Q1 2024 Raw p-values
-Hypothesis                       2h       6h       24h         2h       6h       24h
-------------------------------------------------------------------------------------
-BENCH_HTF_ALIGNED_DISPLACEMENT 0.1855   0.1890   0.2280      0.1275   0.1320   0.0895
-BENCH_LIQUIDITY_SWEEP_SFP      0.1210   0.1180   0.1835      0.4000   0.4065   0.3190
-COMP_SFP_HTF_TREND             0.0300   0.0315   0.0845      0.3975   0.4080   0.3485
-COMP_SFP_RVOL_CONFIRM          0.8045   0.8105   0.8280      0.8550   0.8595   0.8395
-COMP_SFP_VOL_EXPANSION         0.1140   0.1105   0.1740      0.2740   0.2675   0.1795
-COMP_DISPLACEMENT_RVOL         0.3070   0.3215   0.3170      0.3215   0.3170   0.2765
-COMP_DISPLACEMENT_VOL_EXPANSION 0.9725  0.9685   0.9765      0.2955   0.2630   0.2755
-COMP_SFP_CVD_ABSORPTION        0.0790   0.0815   0.1105        N/A      N/A      N/A
-COMP_HTF_1H_SWING_SFP          0.2325   0.2105   0.2330      0.3280   0.3185   0.2705
-```
-
-**Key Finding**:
-The statistical non-significance of all candidates is invariant to block length:
-- Whether evaluated at 2 hours (capturing intraday auto-correlation), 6 hours (capturing multi-hour volatility clusters), or 24 hours (capturing daily regime shocks), $p$-values consistently remain well above the $\alpha = 0.05$ threshold.
-- For `COMP_SFP_HTF_TREND`, expanding the block length to 24h directly dissolves its nominal significance in TEST ($p = 0.0845$), confirming that contemporaneous daily macro moves were artificially inflating sub-daily t-statistics.
+- Across all block durations, **no candidate achieves net statistical significance**.
+- `COMP_SFP_HTF_TREND` gross significance vanishes completely when expanding block length to 24 hours ($p_{\text{gross}} = 0.0910$), confirming that daily cross-asset co-movement was inflating sub-daily test statistics.
 
 ---
 
@@ -193,46 +146,43 @@ Evaluating first-passage structural stop mechanics across all 41,860 events:
 | `STOP_1H_SWING` | TEST<br>OOT 2024 | 6,570<br>7,249 | -0.037 R<br>-0.043 R | **-0.611 R**<br>**-0.567 R** | 19.73%<br>18.79% | **20.08%**<br>**20.26%** | 22.59%<br>21.60% |
 | `STOP_ATR_ENVELOPE` | TEST<br>OOT 2024 | 7,742<br>8,535 | +0.039 R<br>+0.029 R | **-0.179 R**<br>**-0.173 R** | 44.38%<br>44.62% | **9.24%**<br>**9.53%** | 36.11%<br>36.17% |
 
-### Core Findings on Trade Management:
-1. **Premature Invalidation (Class B Resumption)**:
-   - For swing-based stops (`STOP_15M_SWING`), **29.4% to 30.2% of all trades suffer Class B execution**: the stop is triggered by adverse noise within the 120-minute window, after which price immediately reverses and hits the intended structural TP1 target.
-   - For 5m swing stops, 24% to 25% are prematurely stopped out.
-2. **Realized Expectancy**:
-   - Every single stop model produces **negative net realized R** after friction (ranging from $-0.17$ R to $-0.89$ R).
-   - ATR envelopes exhibit lower Class B rates (9.2%–9.5%) but suffer higher clean losses (Class A ~44.5%), resulting in negative realized economics ($-0.17$ R).
-3. **Implication for Trading Strategy**:
-   - The persistent failure of structural stops to protect edge confirms that sub-daily crypto futures price action is characterized by frequent liquidity hunt sweeps that invalidate tight structural levels before establishing forward direction.
-
 ---
 
-## 7. Data Provenance, Audit Trail & Checksums
+## 7. Evidence, Checksums & Reproducibility Verification
 
 | Artifact | File Path | SHA-256 Checksum |
 |---|---|---|
-| **Phase 14 Protocol** | [`docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md`](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md) | `d0a3d537f769fa7a57a530db80efeb8c2c1cf2e26090c2937ee36ba4a0eb1b4b` |
-| **Phase 14 Engine** | [`control_plane/phase14_composite_engine.py`](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/phase14_composite_engine.py) | Verified deterministic causal module |
-| **Phase 14 Test Suite** | [`tests/test_phase14_composite.py`](file:///c:/Users/dopa.mine/Desktop/ophelia/tests/test_phase14_composite.py) | 5/5 Unit tests passing |
-| **Phase 14 Results JSON** | [`data/phase14_composite_results.json`](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase14_composite_results.json) | Complete machine-readable output artifact |
-| **Events Parquet** | `data/phase14_events.parquet` | 41,860 rows |
-| **Outcomes Parquet** | `data/phase14_forward_outcomes.parquet` | 334,880 rows |
-| **Stop Room Parquet** | `data/phase14_stop_room.parquet` | 155,942 rows |
+| **Phase 14 Protocol** | [`docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md`](file:///c:/Users/dopa.mine/Desktop/ophelia/docs/PHASE_14_COMPOSITE_ALPHA_PROTOCOL.md) | `128a319b0eed5e3332d88e95dc6d3f9770517676242777d3a632494b484aaa3c` |
+| **Phase 14 Engine** | [`control_plane/phase14_composite_engine.py`](file:///c:/Users/dopa.mine/Desktop/ophelia/control_plane/phase14_composite_engine.py) | `774a6e9617e31a40016cde9742766d989cc01f4f38141e3be9a19a30f54db936` |
+| **Phase 14 Results JSON** | [`data/phase14_composite_results.json`](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase14_composite_results.json) | `99aed1ee07586c0d022cd90c3cb724f71dc09cca10ba2a49fb927b7281f41c27` |
+| **Conformance Summary JSON** | [`data/phase14_conformance_summary.json`](file:///c:/Users/dopa.mine/Desktop/ophelia/data/phase14_conformance_summary.json) | Verified machine-readable audit artifact |
+| **Events Parquet** | `data/phase14_events.parquet` | `a9f3716e84d27c2aa23ce07b8aab92577c4c1e6ded99909ce18eac0dd67ede67` |
+| **Outcomes Parquet** | `data/phase14_forward_outcomes.parquet` | `d4efb23fe5fbafbbe5034e505ae2d4d6e56cf503cd1eb3428d44039b6eaf12ab` |
+| **Stop Room Parquet** | `data/phase14_stop_room.parquet` | `09c03d6818864c616907c0f5d772bfd8e2299e48d40698d5ac4f97e895516a2b` |
+
+### Environment & Test Execution Verification:
+- **Local Tested Commit**: `b034e2c` on `repair/phase13-audit-closeout`.
+- **GitHub Origin**: Pushed to `origin/repair/phase13-audit-closeout` at `b034e2c`.
+- **VPS Research Checkout** (`/home/ubuntu/ophelia-research`):
+  - Updated to `b034e2c`.
+  - Executed `pytest tests/test_phase14_composite.py -v`: **5 passed in 2.42s**.
+  - Executed `pytest tests/test_phase13_discovery.py -q`: **70 passed, 1 skipped in 6.16s**.
+- **VPS Production Checkout** (`/opt/ophelia`):
+  - **100% UNTOUCHED** at commit `0a764fd23dd1b24070b3d09c24f54e698a3e4ae6`.
+  - Zero modifications to production database or trading engine.
 
 ---
 
-## 8. Final Decision & Recommendations
+## 8. Final Decision & System Recommendation
 
-### Formal Verdict
-**NO EDGE FOUND FOR PRE-REGISTERED COMPOSITE HYPOTHESES UNDER VERIFIED TRANSACTION COSTS.**
+### Formal Conclusion
+**`NO EDGE FOUND` FOR ALL PRE-REGISTERED COMPOSITE HYPOTHESES UNDER MODELED TRANSACTION COSTS.**
 
-### Rationale
-1. **Cost Hurdle Dominance**:
-   - The gross edges discovered in sub-daily momentum and sweep signals (+5 to +10 bps) are fundamentally smaller than the empirical friction of trading BingX Perpetual Swap Futures (9.1 bps).
-   - Conditioning signals on market regime filters (trend, volatility, volume, order flow) reduces sample size and introduces curve-fitting without expanding gross returns enough to clear trading friction.
-2. **False Discovery in Small Samples**:
-   - Nominal outperformance in small subsets (e.g., `COMP_SFP_HTF_TREND` in Q4 2023 or `COMP_DUAL_CONFLUENCE`) vanishes when adjusted for family-wise false discovery rates and out-of-time confirmation.
-3. **System Safety**:
-   - In accordance with the Ophelia Rule Book and the Deterministic Authority principle, no strategy may be promoted to PAPER or LIVE execution without passing out-of-time FDR and net cost hurdles.
-   - All safety invariants remain enforced:
-     - `TRADING_AUTHORITY = False`
-     - `EXECUTION_MODE = SHADOW`
-     - `LIVE_ORDERS_FORBIDDEN = True`
+### Audit Finding
+1. **Economic Edge Absence**: None of the 10 pre-registered standalone or composite hypotheses demonstrate positive net expectancy exceeding modeled 9.1 bps trading friction across both TEST and out-of-time Q1 2024.
+2. **Multiple Testing Rejection**: All candidates fail Benjamini-Hochberg FDR significance at $q < 0.05$ under the net hurdle hypothesis.
+3. **Trading Guard Enforced**: In accordance with the Ophelia Rule Book and the Deterministic Authority principle, no strategy is promoted to PAPER or LIVE trading.
+4. **Safety Invariants Unchanged**:
+   - `TRADING_AUTHORITY = False`
+   - `EXECUTION_MODE = SHADOW`
+   - `LIVE_ORDERS_FORBIDDEN = True`

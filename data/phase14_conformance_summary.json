@@ -1,0 +1,2232 @@
+{
+  "timestamp_utc": "2026-10-18T22:25:46.919781+00:00",
+  "discrepancies_identified": {
+    "bootstrap_resample_count": {
+      "protocol_locked": 1000,
+      "engine_default": 2000,
+      "status": "RECONCILED",
+      "impact": "Minimal numerical variation; inference conclusions identical."
+    },
+    "transaction_cost_components": {
+      "protocol_specification": {
+        "FEE_ONLY": "2.5 bps entry + 2.5 bps exit = 5.0 bps",
+        "BASELINE_TAKER": "4.0 bps entry + 4.0 bps exit + 1.1 bps slippage = 9.1 bps",
+        "CONSERVATIVE_SLIP": "4.0 bps entry + 4.0 bps exit + 7.0 bps slippage = 15.0 bps"
+      },
+      "legacy_report_text": "7.0 bps fee (2 maker + 5 taker) + 2.1 bps slippage = 9.1 bps",
+      "status": "RECONCILED",
+      "impact": "Total friction in both models is identical (9.1 bps). Component breakdown updated to match locked protocol."
+    },
+    "null_hypothesis_formulation": {
+      "reported_in_original_pass": "H0: gross return == 0 (zero alpha without friction)",
+      "protocol_economic_claim": "H0: net return <= 0 (gross return <= 9.1 bps hurdle)",
+      "status": "RECONCILED",
+      "impact": "Net-cost-adjusted inference calculated herein confirms complete absence of net statistical significance."
+    }
+  },
+  "hypotheses_conformance": [
+    {
+      "hypothesis": "BENCH_HTF_ALIGNED_DISPLACEMENT",
+      "splits": {
+        "TEST": {
+          "sample_size": 898,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 264,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 5.83,
+          "net_mean_bps_9_1": -3.27,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.18,
+                  "ci_95_low_bps": -2.64,
+                  "ci_95_high_bps": 13.87,
+                  "cluster_se_bps": 4.34,
+                  "active_clusters": 456
+                },
+                "block_6h": {
+                  "p_value": 0.186,
+                  "ci_95_low_bps": -2.52,
+                  "ci_95_high_bps": 14.75,
+                  "cluster_se_bps": 4.35,
+                  "active_clusters": 264
+                },
+                "block_24h": {
+                  "p_value": 0.23,
+                  "ci_95_low_bps": -3.46,
+                  "ci_95_high_bps": 15.01,
+                  "cluster_se_bps": 4.69,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.461,
+                  "ci_95_low_bps": -11.74,
+                  "ci_95_high_bps": 4.77,
+                  "cluster_se_bps": 4.34,
+                  "active_clusters": 456
+                },
+                "block_6h": {
+                  "p_value": 0.442,
+                  "ci_95_low_bps": -11.62,
+                  "ci_95_high_bps": 5.65,
+                  "cluster_se_bps": 4.35,
+                  "active_clusters": 264
+                },
+                "block_24h": {
+                  "p_value": 0.49,
+                  "ci_95_low_bps": -12.56,
+                  "ci_95_high_bps": 5.91,
+                  "cluster_se_bps": 4.69,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.1855,
+                  "ci_95_low_bps": -2.57,
+                  "ci_95_high_bps": 13.89,
+                  "cluster_se_bps": 4.35,
+                  "active_clusters": 456
+                },
+                "block_6h": {
+                  "p_value": 0.189,
+                  "ci_95_low_bps": -2.7,
+                  "ci_95_high_bps": 14.34,
+                  "cluster_se_bps": 4.37,
+                  "active_clusters": 264
+                },
+                "block_24h": {
+                  "p_value": 0.228,
+                  "ci_95_low_bps": -3.42,
+                  "ci_95_high_bps": 15.23,
+                  "cluster_se_bps": 4.73,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.467,
+                  "ci_95_low_bps": -11.67,
+                  "ci_95_high_bps": 4.79,
+                  "cluster_se_bps": 4.35,
+                  "active_clusters": 456
+                },
+                "block_6h": {
+                  "p_value": 0.467,
+                  "ci_95_low_bps": -11.8,
+                  "ci_95_high_bps": 5.24,
+                  "cluster_se_bps": 4.37,
+                  "active_clusters": 264
+                },
+                "block_24h": {
+                  "p_value": 0.488,
+                  "ci_95_low_bps": -12.52,
+                  "ci_95_high_bps": 6.13,
+                  "cluster_se_bps": 4.73,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.33,
+          "fdr_q_net_hurdle_6h": 0.69625
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 1047,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 314,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 8.12,
+          "net_mean_bps_9_1": -0.98,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.142,
+                  "ci_95_low_bps": -2.71,
+                  "ci_95_high_bps": 18.63,
+                  "cluster_se_bps": 5.42,
+                  "active_clusters": 519
+                },
+                "block_6h": {
+                  "p_value": 0.139,
+                  "ci_95_low_bps": -2.57,
+                  "ci_95_high_bps": 19.28,
+                  "cluster_se_bps": 5.53,
+                  "active_clusters": 314
+                },
+                "block_24h": {
+                  "p_value": 0.09,
+                  "ci_95_low_bps": -0.71,
+                  "ci_95_high_bps": 17.11,
+                  "cluster_se_bps": 4.69,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.867,
+                  "ci_95_low_bps": -11.81,
+                  "ci_95_high_bps": 9.53,
+                  "cluster_se_bps": 5.42,
+                  "active_clusters": 519
+                },
+                "block_6h": {
+                  "p_value": 0.864,
+                  "ci_95_low_bps": -11.67,
+                  "ci_95_high_bps": 10.18,
+                  "cluster_se_bps": 5.53,
+                  "active_clusters": 314
+                },
+                "block_24h": {
+                  "p_value": 0.821,
+                  "ci_95_low_bps": -9.81,
+                  "ci_95_high_bps": 8.01,
+                  "cluster_se_bps": 4.69,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.1275,
+                  "ci_95_low_bps": -1.98,
+                  "ci_95_high_bps": 18.72,
+                  "cluster_se_bps": 5.31,
+                  "active_clusters": 519
+                },
+                "block_6h": {
+                  "p_value": 0.132,
+                  "ci_95_low_bps": -2.57,
+                  "ci_95_high_bps": 18.88,
+                  "cluster_se_bps": 5.38,
+                  "active_clusters": 314
+                },
+                "block_24h": {
+                  "p_value": 0.0895,
+                  "ci_95_low_bps": -0.85,
+                  "ci_95_high_bps": 17.35,
+                  "cluster_se_bps": 4.76,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.872,
+                  "ci_95_low_bps": -11.08,
+                  "ci_95_high_bps": 9.62,
+                  "cluster_se_bps": 5.31,
+                  "active_clusters": 519
+                },
+                "block_6h": {
+                  "p_value": 0.855,
+                  "ci_95_low_bps": -11.67,
+                  "ci_95_high_bps": 9.78,
+                  "cluster_se_bps": 5.38,
+                  "active_clusters": 314
+                },
+                "block_24h": {
+                  "p_value": 0.832,
+                  "ci_95_low_bps": -9.95,
+                  "ci_95_high_bps": 8.25,
+                  "cluster_se_bps": 4.76,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.96
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-3.27 bps, OOT net=-0.98 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "BENCH_LIQUIDITY_SWEEP_SFP",
+      "splits": {
+        "TEST": {
+          "sample_size": 1337,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 302,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 5.08,
+          "net_mean_bps_9_1": -4.02,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.114,
+                  "ci_95_low_bps": -0.92,
+                  "ci_95_high_bps": 11.38,
+                  "cluster_se_bps": 3.16,
+                  "active_clusters": 650
+                },
+                "block_6h": {
+                  "p_value": 0.11,
+                  "ci_95_low_bps": -0.81,
+                  "ci_95_high_bps": 11.38,
+                  "cluster_se_bps": 3.18,
+                  "active_clusters": 302
+                },
+                "block_24h": {
+                  "p_value": 0.185,
+                  "ci_95_low_bps": -2.37,
+                  "ci_95_high_bps": 12.63,
+                  "cluster_se_bps": 3.82,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.207,
+                  "ci_95_low_bps": -10.02,
+                  "ci_95_high_bps": 2.28,
+                  "cluster_se_bps": 3.16,
+                  "active_clusters": 650
+                },
+                "block_6h": {
+                  "p_value": 0.205,
+                  "ci_95_low_bps": -9.91,
+                  "ci_95_high_bps": 2.28,
+                  "cluster_se_bps": 3.18,
+                  "active_clusters": 302
+                },
+                "block_24h": {
+                  "p_value": 0.286,
+                  "ci_95_low_bps": -11.47,
+                  "ci_95_high_bps": 3.53,
+                  "cluster_se_bps": 3.82,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.121,
+                  "ci_95_low_bps": -1.06,
+                  "ci_95_high_bps": 11.46,
+                  "cluster_se_bps": 3.26,
+                  "active_clusters": 650
+                },
+                "block_6h": {
+                  "p_value": 0.118,
+                  "ci_95_low_bps": -1.15,
+                  "ci_95_high_bps": 11.49,
+                  "cluster_se_bps": 3.26,
+                  "active_clusters": 302
+                },
+                "block_24h": {
+                  "p_value": 0.1835,
+                  "ci_95_low_bps": -2.62,
+                  "ci_95_high_bps": 12.65,
+                  "cluster_se_bps": 3.85,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.216,
+                  "ci_95_low_bps": -10.16,
+                  "ci_95_high_bps": 2.36,
+                  "cluster_se_bps": 3.26,
+                  "active_clusters": 650
+                },
+                "block_6h": {
+                  "p_value": 0.2135,
+                  "ci_95_low_bps": -10.25,
+                  "ci_95_high_bps": 2.39,
+                  "cluster_se_bps": 3.26,
+                  "active_clusters": 302
+                },
+                "block_24h": {
+                  "p_value": 0.2855,
+                  "ci_95_low_bps": -11.72,
+                  "ci_95_high_bps": 3.55,
+                  "cluster_se_bps": 3.85,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.275,
+          "fdr_q_net_hurdle_6h": 0.55
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 1627,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 350,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 2.95,
+          "net_mean_bps_9_1": -6.15,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.386,
+                  "ci_95_low_bps": -3.67,
+                  "ci_95_high_bps": 9.75,
+                  "cluster_se_bps": 3.43,
+                  "active_clusters": 740
+                },
+                "block_6h": {
+                  "p_value": 0.395,
+                  "ci_95_low_bps": -3.11,
+                  "ci_95_high_bps": 10.11,
+                  "cluster_se_bps": 3.4,
+                  "active_clusters": 350
+                },
+                "block_24h": {
+                  "p_value": 0.326,
+                  "ci_95_low_bps": -2.46,
+                  "ci_95_high_bps": 8.61,
+                  "cluster_se_bps": 2.89,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.076,
+                  "ci_95_low_bps": -12.77,
+                  "ci_95_high_bps": 0.65,
+                  "cluster_se_bps": 3.43,
+                  "active_clusters": 740
+                },
+                "block_6h": {
+                  "p_value": 0.073,
+                  "ci_95_low_bps": -12.21,
+                  "ci_95_high_bps": 1.01,
+                  "cluster_se_bps": 3.4,
+                  "active_clusters": 350
+                },
+                "block_24h": {
+                  "p_value": 0.033,
+                  "ci_95_low_bps": -11.56,
+                  "ci_95_high_bps": -0.49,
+                  "cluster_se_bps": 2.89,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.4,
+                  "ci_95_low_bps": -3.69,
+                  "ci_95_high_bps": 9.83,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 740
+                },
+                "block_6h": {
+                  "p_value": 0.4065,
+                  "ci_95_low_bps": -3.43,
+                  "ci_95_high_bps": 10.08,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 350
+                },
+                "block_24h": {
+                  "p_value": 0.319,
+                  "ci_95_low_bps": -2.39,
+                  "ci_95_high_bps": 8.79,
+                  "cluster_se_bps": 2.9,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.0765,
+                  "ci_95_low_bps": -12.79,
+                  "ci_95_high_bps": 0.73,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 740
+                },
+                "block_6h": {
+                  "p_value": 0.07,
+                  "ci_95_low_bps": -12.53,
+                  "ci_95_high_bps": 0.98,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 350
+                },
+                "block_24h": {
+                  "p_value": 0.033,
+                  "ci_95_low_bps": -11.49,
+                  "ci_95_high_bps": -0.31,
+                  "cluster_se_bps": 2.9,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.26667
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-4.02 bps, OOT net=-6.15 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_SFP_HTF_TREND",
+      "splits": {
+        "TEST": {
+          "sample_size": 627,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 238,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 10.22,
+          "net_mean_bps_9_1": 1.12,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.031,
+                  "ci_95_low_bps": 1.3,
+                  "ci_95_high_bps": 19.78,
+                  "cluster_se_bps": 4.74,
+                  "active_clusters": 369
+                },
+                "block_6h": {
+                  "p_value": 0.033,
+                  "ci_95_low_bps": 1.24,
+                  "ci_95_high_bps": 19.42,
+                  "cluster_se_bps": 4.8,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.091,
+                  "ci_95_low_bps": -2.08,
+                  "ci_95_high_bps": 22.08,
+                  "cluster_se_bps": 6.21,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.826,
+                  "ci_95_low_bps": -7.8,
+                  "ci_95_high_bps": 10.68,
+                  "cluster_se_bps": 4.74,
+                  "active_clusters": 369
+                },
+                "block_6h": {
+                  "p_value": 0.822,
+                  "ci_95_low_bps": -7.86,
+                  "ci_95_high_bps": 10.32,
+                  "cluster_se_bps": 4.8,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.869,
+                  "ci_95_low_bps": -11.18,
+                  "ci_95_high_bps": 12.98,
+                  "cluster_se_bps": 6.21,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.03,
+                  "ci_95_low_bps": 1.13,
+                  "ci_95_high_bps": 19.74,
+                  "cluster_se_bps": 4.8,
+                  "active_clusters": 369
+                },
+                "block_6h": {
+                  "p_value": 0.0315,
+                  "ci_95_low_bps": 0.98,
+                  "ci_95_high_bps": 19.7,
+                  "cluster_se_bps": 4.88,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.0845,
+                  "ci_95_low_bps": -1.69,
+                  "ci_95_high_bps": 21.83,
+                  "cluster_se_bps": 6.07,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.8205,
+                  "ci_95_low_bps": -7.97,
+                  "ci_95_high_bps": 10.64,
+                  "cluster_se_bps": 4.8,
+                  "active_clusters": 369
+                },
+                "block_6h": {
+                  "p_value": 0.836,
+                  "ci_95_low_bps": -8.12,
+                  "ci_95_high_bps": 10.6,
+                  "cluster_se_bps": 4.88,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.857,
+                  "ci_95_low_bps": -10.79,
+                  "ci_95_high_bps": 12.73,
+                  "cluster_se_bps": 6.07,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.275,
+          "fdr_q_net_hurdle_6h": 0.865
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 773,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 299,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 3.59,
+          "net_mean_bps_9_1": -5.51,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.395,
+                  "ci_95_low_bps": -4.53,
+                  "ci_95_high_bps": 12.03,
+                  "cluster_se_bps": 4.18,
+                  "active_clusters": 453
+                },
+                "block_6h": {
+                  "p_value": 0.415,
+                  "ci_95_low_bps": -4.88,
+                  "ci_95_high_bps": 12.24,
+                  "cluster_se_bps": 4.3,
+                  "active_clusters": 299
+                },
+                "block_24h": {
+                  "p_value": 0.349,
+                  "ci_95_low_bps": -3.87,
+                  "ci_95_high_bps": 11.05,
+                  "cluster_se_bps": 3.87,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.189,
+                  "ci_95_low_bps": -13.63,
+                  "ci_95_high_bps": 2.93,
+                  "cluster_se_bps": 4.18,
+                  "active_clusters": 453
+                },
+                "block_6h": {
+                  "p_value": 0.194,
+                  "ci_95_low_bps": -13.98,
+                  "ci_95_high_bps": 3.14,
+                  "cluster_se_bps": 4.3,
+                  "active_clusters": 299
+                },
+                "block_24h": {
+                  "p_value": 0.15,
+                  "ci_95_low_bps": -12.97,
+                  "ci_95_high_bps": 1.95,
+                  "cluster_se_bps": 3.87,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.3975,
+                  "ci_95_low_bps": -4.53,
+                  "ci_95_high_bps": 12.24,
+                  "cluster_se_bps": 4.22,
+                  "active_clusters": 453
+                },
+                "block_6h": {
+                  "p_value": 0.408,
+                  "ci_95_low_bps": -4.84,
+                  "ci_95_high_bps": 12.16,
+                  "cluster_se_bps": 4.32,
+                  "active_clusters": 299
+                },
+                "block_24h": {
+                  "p_value": 0.3485,
+                  "ci_95_low_bps": -4.1,
+                  "ci_95_high_bps": 11.05,
+                  "cluster_se_bps": 3.9,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.1895,
+                  "ci_95_low_bps": -13.63,
+                  "ci_95_high_bps": 3.14,
+                  "cluster_se_bps": 4.22,
+                  "active_clusters": 453
+                },
+                "block_6h": {
+                  "p_value": 0.201,
+                  "ci_95_low_bps": -13.94,
+                  "ci_95_high_bps": 3.06,
+                  "cluster_se_bps": 4.32,
+                  "active_clusters": 299
+                },
+                "block_24h": {
+                  "p_value": 0.1535,
+                  "ci_95_low_bps": -13.2,
+                  "ci_95_high_bps": 1.95,
+                  "cluster_se_bps": 3.9,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.35667
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=+1.12 bps, OOT net=-5.51 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_SFP_RVOL_CONFIRM",
+      "splits": {
+        "TEST": {
+          "sample_size": 900,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 282,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 0.85,
+          "net_mean_bps_9_1": -8.25,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.806,
+                  "ci_95_low_bps": -6.29,
+                  "ci_95_high_bps": 8.3,
+                  "cluster_se_bps": 3.7,
+                  "active_clusters": 514
+                },
+                "block_6h": {
+                  "p_value": 0.804,
+                  "ci_95_low_bps": -6.04,
+                  "ci_95_high_bps": 8.18,
+                  "cluster_se_bps": 3.61,
+                  "active_clusters": 282
+                },
+                "block_24h": {
+                  "p_value": 0.827,
+                  "ci_95_low_bps": -6.8,
+                  "ci_95_high_bps": 8.48,
+                  "cluster_se_bps": 4.0,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.025,
+                  "ci_95_low_bps": -15.39,
+                  "ci_95_high_bps": -0.8,
+                  "cluster_se_bps": 3.7,
+                  "active_clusters": 514
+                },
+                "block_6h": {
+                  "p_value": 0.022,
+                  "ci_95_low_bps": -15.14,
+                  "ci_95_high_bps": -0.92,
+                  "cluster_se_bps": 3.61,
+                  "active_clusters": 282
+                },
+                "block_24h": {
+                  "p_value": 0.035,
+                  "ci_95_low_bps": -15.9,
+                  "ci_95_high_bps": -0.62,
+                  "cluster_se_bps": 4.0,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.8045,
+                  "ci_95_low_bps": -6.29,
+                  "ci_95_high_bps": 8.2,
+                  "cluster_se_bps": 3.72,
+                  "active_clusters": 514
+                },
+                "block_6h": {
+                  "p_value": 0.8105,
+                  "ci_95_low_bps": -6.37,
+                  "ci_95_high_bps": 8.4,
+                  "cluster_se_bps": 3.76,
+                  "active_clusters": 282
+                },
+                "block_24h": {
+                  "p_value": 0.828,
+                  "ci_95_low_bps": -7.17,
+                  "ci_95_high_bps": 8.51,
+                  "cluster_se_bps": 4.02,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.025,
+                  "ci_95_low_bps": -15.39,
+                  "ci_95_high_bps": -0.9,
+                  "cluster_se_bps": 3.72,
+                  "active_clusters": 514
+                },
+                "block_6h": {
+                  "p_value": 0.029,
+                  "ci_95_low_bps": -15.47,
+                  "ci_95_high_bps": -0.7,
+                  "cluster_se_bps": 3.76,
+                  "active_clusters": 282
+                },
+                "block_24h": {
+                  "p_value": 0.04,
+                  "ci_95_low_bps": -16.27,
+                  "ci_95_high_bps": -0.59,
+                  "cluster_se_bps": 4.02,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.89333,
+          "fdr_q_net_hurdle_6h": 0.22
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 1027,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 321,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 0.79,
+          "net_mean_bps_9_1": -8.31,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.865,
+                  "ci_95_low_bps": -7.38,
+                  "ci_95_high_bps": 8.99,
+                  "cluster_se_bps": 4.24,
+                  "active_clusters": 570
+                },
+                "block_6h": {
+                  "p_value": 0.855,
+                  "ci_95_low_bps": -6.75,
+                  "ci_95_high_bps": 9.4,
+                  "cluster_se_bps": 4.17,
+                  "active_clusters": 321
+                },
+                "block_24h": {
+                  "p_value": 0.829,
+                  "ci_95_low_bps": -5.96,
+                  "ci_95_high_bps": 7.79,
+                  "cluster_se_bps": 3.57,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.047,
+                  "ci_95_low_bps": -16.48,
+                  "ci_95_high_bps": -0.11,
+                  "cluster_se_bps": 4.24,
+                  "active_clusters": 570
+                },
+                "block_6h": {
+                  "p_value": 0.048,
+                  "ci_95_low_bps": -15.85,
+                  "ci_95_high_bps": 0.3,
+                  "cluster_se_bps": 4.17,
+                  "active_clusters": 321
+                },
+                "block_24h": {
+                  "p_value": 0.022,
+                  "ci_95_low_bps": -15.06,
+                  "ci_95_high_bps": -1.31,
+                  "cluster_se_bps": 3.57,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.855,
+                  "ci_95_low_bps": -7.27,
+                  "ci_95_high_bps": 9.17,
+                  "cluster_se_bps": 4.21,
+                  "active_clusters": 570
+                },
+                "block_6h": {
+                  "p_value": 0.8595,
+                  "ci_95_low_bps": -7.35,
+                  "ci_95_high_bps": 9.24,
+                  "cluster_se_bps": 4.2,
+                  "active_clusters": 321
+                },
+                "block_24h": {
+                  "p_value": 0.8395,
+                  "ci_95_low_bps": -6.02,
+                  "ci_95_high_bps": 7.79,
+                  "cluster_se_bps": 3.61,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.048,
+                  "ci_95_low_bps": -16.37,
+                  "ci_95_high_bps": 0.07,
+                  "cluster_se_bps": 4.21,
+                  "active_clusters": 570
+                },
+                "block_6h": {
+                  "p_value": 0.0475,
+                  "ci_95_low_bps": -16.45,
+                  "ci_95_high_bps": 0.14,
+                  "cluster_se_bps": 4.2,
+                  "active_clusters": 321
+                },
+                "block_24h": {
+                  "p_value": 0.0225,
+                  "ci_95_low_bps": -15.12,
+                  "ci_95_high_bps": -1.31,
+                  "cluster_se_bps": 3.61,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.95,
+          "fdr_q_net_hurdle_6h": 0.26667
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-8.25 bps, OOT net=-8.31 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_SFP_VOL_EXPANSION",
+      "splits": {
+        "TEST": {
+          "sample_size": 1324,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 301,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 5.22,
+          "net_mean_bps_9_1": -3.88,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.108,
+                  "ci_95_low_bps": -0.85,
+                  "ci_95_high_bps": 11.56,
+                  "cluster_se_bps": 3.19,
+                  "active_clusters": 645
+                },
+                "block_6h": {
+                  "p_value": 0.102,
+                  "ci_95_low_bps": -0.78,
+                  "ci_95_high_bps": 11.64,
+                  "cluster_se_bps": 3.21,
+                  "active_clusters": 301
+                },
+                "block_24h": {
+                  "p_value": 0.171,
+                  "ci_95_low_bps": -2.38,
+                  "ci_95_high_bps": 12.79,
+                  "cluster_se_bps": 3.86,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.226,
+                  "ci_95_low_bps": -9.95,
+                  "ci_95_high_bps": 2.46,
+                  "cluster_se_bps": 3.19,
+                  "active_clusters": 645
+                },
+                "block_6h": {
+                  "p_value": 0.22,
+                  "ci_95_low_bps": -9.88,
+                  "ci_95_high_bps": 2.54,
+                  "cluster_se_bps": 3.21,
+                  "active_clusters": 301
+                },
+                "block_24h": {
+                  "p_value": 0.318,
+                  "ci_95_low_bps": -11.48,
+                  "ci_95_high_bps": 3.69,
+                  "cluster_se_bps": 3.86,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.114,
+                  "ci_95_low_bps": -0.99,
+                  "ci_95_high_bps": 11.65,
+                  "cluster_se_bps": 3.29,
+                  "active_clusters": 645
+                },
+                "block_6h": {
+                  "p_value": 0.1105,
+                  "ci_95_low_bps": -1.09,
+                  "ci_95_high_bps": 11.73,
+                  "cluster_se_bps": 3.3,
+                  "active_clusters": 301
+                },
+                "block_24h": {
+                  "p_value": 0.174,
+                  "ci_95_low_bps": -2.6,
+                  "ci_95_high_bps": 12.8,
+                  "cluster_se_bps": 3.89,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.237,
+                  "ci_95_low_bps": -10.09,
+                  "ci_95_high_bps": 2.55,
+                  "cluster_se_bps": 3.29,
+                  "active_clusters": 645
+                },
+                "block_6h": {
+                  "p_value": 0.2335,
+                  "ci_95_low_bps": -10.19,
+                  "ci_95_high_bps": 2.63,
+                  "cluster_se_bps": 3.3,
+                  "active_clusters": 301
+                },
+                "block_24h": {
+                  "p_value": 0.312,
+                  "ci_95_low_bps": -11.7,
+                  "ci_95_high_bps": 3.7,
+                  "cluster_se_bps": 3.89,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.275,
+          "fdr_q_net_hurdle_6h": 0.55
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 1589,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 348,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 3.85,
+          "net_mean_bps_9_1": -5.25,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.257,
+                  "ci_95_low_bps": -2.66,
+                  "ci_95_high_bps": 10.57,
+                  "cluster_se_bps": 3.41,
+                  "active_clusters": 731
+                },
+                "block_6h": {
+                  "p_value": 0.259,
+                  "ci_95_low_bps": -2.36,
+                  "ci_95_high_bps": 11.11,
+                  "cluster_se_bps": 3.39,
+                  "active_clusters": 348
+                },
+                "block_24h": {
+                  "p_value": 0.179,
+                  "ci_95_low_bps": -1.64,
+                  "ci_95_high_bps": 9.55,
+                  "cluster_se_bps": 2.87,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.119,
+                  "ci_95_low_bps": -11.76,
+                  "ci_95_high_bps": 1.47,
+                  "cluster_se_bps": 3.41,
+                  "active_clusters": 731
+                },
+                "block_6h": {
+                  "p_value": 0.122,
+                  "ci_95_low_bps": -11.46,
+                  "ci_95_high_bps": 2.01,
+                  "cluster_se_bps": 3.39,
+                  "active_clusters": 348
+                },
+                "block_24h": {
+                  "p_value": 0.062,
+                  "ci_95_low_bps": -10.74,
+                  "ci_95_high_bps": 0.45,
+                  "cluster_se_bps": 2.87,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.274,
+                  "ci_95_low_bps": -2.63,
+                  "ci_95_high_bps": 10.78,
+                  "cluster_se_bps": 3.45,
+                  "active_clusters": 731
+                },
+                "block_6h": {
+                  "p_value": 0.2675,
+                  "ci_95_low_bps": -2.55,
+                  "ci_95_high_bps": 11.1,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 348
+                },
+                "block_24h": {
+                  "p_value": 0.1795,
+                  "ci_95_low_bps": -1.56,
+                  "ci_95_high_bps": 9.76,
+                  "cluster_se_bps": 2.88,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.133,
+                  "ci_95_low_bps": -11.73,
+                  "ci_95_high_bps": 1.68,
+                  "cluster_se_bps": 3.45,
+                  "active_clusters": 731
+                },
+                "block_6h": {
+                  "p_value": 0.1235,
+                  "ci_95_low_bps": -11.65,
+                  "ci_95_high_bps": 2.0,
+                  "cluster_se_bps": 3.47,
+                  "active_clusters": 348
+                },
+                "block_24h": {
+                  "p_value": 0.067,
+                  "ci_95_low_bps": -10.66,
+                  "ci_95_high_bps": 0.66,
+                  "cluster_se_bps": 2.88,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.305
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-3.88 bps, OOT net=-5.25 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_DISPLACEMENT_RVOL",
+      "splits": {
+        "TEST": {
+          "sample_size": 640,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 238,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 5.73,
+          "net_mean_bps_9_1": -3.37,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.317,
+                  "ci_95_low_bps": -5.02,
+                  "ci_95_high_bps": 16.02,
+                  "cluster_se_bps": 5.5,
+                  "active_clusters": 357
+                },
+                "block_6h": {
+                  "p_value": 0.32,
+                  "ci_95_low_bps": -5.6,
+                  "ci_95_high_bps": 16.91,
+                  "cluster_se_bps": 5.7,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.314,
+                  "ci_95_low_bps": -5.62,
+                  "ci_95_high_bps": 16.65,
+                  "cluster_se_bps": 5.75,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.554,
+                  "ci_95_low_bps": -14.12,
+                  "ci_95_high_bps": 6.92,
+                  "cluster_se_bps": 5.5,
+                  "active_clusters": 357
+                },
+                "block_6h": {
+                  "p_value": 0.557,
+                  "ci_95_low_bps": -14.7,
+                  "ci_95_high_bps": 7.81,
+                  "cluster_se_bps": 5.7,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.573,
+                  "ci_95_low_bps": -14.72,
+                  "ci_95_high_bps": 7.55,
+                  "cluster_se_bps": 5.75,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.307,
+                  "ci_95_low_bps": -5.24,
+                  "ci_95_high_bps": 16.5,
+                  "cluster_se_bps": 5.54,
+                  "active_clusters": 357
+                },
+                "block_6h": {
+                  "p_value": 0.3215,
+                  "ci_95_low_bps": -5.6,
+                  "ci_95_high_bps": 17.1,
+                  "cluster_se_bps": 5.74,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.317,
+                  "ci_95_low_bps": -5.75,
+                  "ci_95_high_bps": 17.05,
+                  "cluster_se_bps": 5.78,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.5375,
+                  "ci_95_low_bps": -14.34,
+                  "ci_95_high_bps": 7.4,
+                  "cluster_se_bps": 5.54,
+                  "active_clusters": 357
+                },
+                "block_6h": {
+                  "p_value": 0.549,
+                  "ci_95_low_bps": -14.7,
+                  "ci_95_high_bps": 8.0,
+                  "cluster_se_bps": 5.74,
+                  "active_clusters": 238
+                },
+                "block_24h": {
+                  "p_value": 0.576,
+                  "ci_95_low_bps": -14.85,
+                  "ci_95_high_bps": 7.95,
+                  "cluster_se_bps": 5.78,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.4,
+          "fdr_q_net_hurdle_6h": 0.69625
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 748,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 281,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 6.97,
+          "net_mean_bps_9_1": -2.13,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.334,
+                  "ci_95_low_bps": -7.09,
+                  "ci_95_high_bps": 20.36,
+                  "cluster_se_bps": 7.0,
+                  "active_clusters": 401
+                },
+                "block_6h": {
+                  "p_value": 0.336,
+                  "ci_95_low_bps": -7.18,
+                  "ci_95_high_bps": 21.04,
+                  "cluster_se_bps": 7.32,
+                  "active_clusters": 281
+                },
+                "block_24h": {
+                  "p_value": 0.269,
+                  "ci_95_low_bps": -4.68,
+                  "ci_95_high_bps": 19.0,
+                  "cluster_se_bps": 6.2,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.772,
+                  "ci_95_low_bps": -16.19,
+                  "ci_95_high_bps": 11.26,
+                  "cluster_se_bps": 7.0,
+                  "active_clusters": 401
+                },
+                "block_6h": {
+                  "p_value": 0.79,
+                  "ci_95_low_bps": -16.28,
+                  "ci_95_high_bps": 11.94,
+                  "cluster_se_bps": 7.32,
+                  "active_clusters": 281
+                },
+                "block_24h": {
+                  "p_value": 0.745,
+                  "ci_95_low_bps": -13.78,
+                  "ci_95_high_bps": 9.9,
+                  "cluster_se_bps": 6.2,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.3215,
+                  "ci_95_low_bps": -6.72,
+                  "ci_95_high_bps": 20.66,
+                  "cluster_se_bps": 6.95,
+                  "active_clusters": 401
+                },
+                "block_6h": {
+                  "p_value": 0.317,
+                  "ci_95_low_bps": -7.15,
+                  "ci_95_high_bps": 21.04,
+                  "cluster_se_bps": 7.12,
+                  "active_clusters": 281
+                },
+                "block_24h": {
+                  "p_value": 0.2765,
+                  "ci_95_low_bps": -4.72,
+                  "ci_95_high_bps": 19.34,
+                  "cluster_se_bps": 6.25,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.771,
+                  "ci_95_low_bps": -15.82,
+                  "ci_95_high_bps": 11.56,
+                  "cluster_se_bps": 6.95,
+                  "active_clusters": 401
+                },
+                "block_6h": {
+                  "p_value": 0.7645,
+                  "ci_95_low_bps": -16.25,
+                  "ci_95_high_bps": 11.94,
+                  "cluster_se_bps": 7.12,
+                  "active_clusters": 281
+                },
+                "block_24h": {
+                  "p_value": 0.738,
+                  "ci_95_low_bps": -13.82,
+                  "ci_95_high_bps": 10.24,
+                  "cluster_se_bps": 6.25,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.96
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-3.37 bps, OOT net=-2.13 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_DISPLACEMENT_VOL_EXPANSION",
+      "splits": {
+        "TEST": {
+          "sample_size": 168,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 87,
+            "status": "PASS"
+          },
+          "gross_mean_bps": -0.37,
+          "net_mean_bps_9_1": -9.47,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.972,
+                  "ci_95_low_bps": -22.83,
+                  "ci_95_high_bps": 20.46,
+                  "cluster_se_bps": 11.12,
+                  "active_clusters": 100
+                },
+                "block_6h": {
+                  "p_value": 0.971,
+                  "ci_95_low_bps": -22.14,
+                  "ci_95_high_bps": 20.0,
+                  "cluster_se_bps": 10.42,
+                  "active_clusters": 87
+                },
+                "block_24h": {
+                  "p_value": 0.976,
+                  "ci_95_low_bps": -20.22,
+                  "ci_95_high_bps": 21.14,
+                  "cluster_se_bps": 10.66,
+                  "active_clusters": 59
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.404,
+                  "ci_95_low_bps": -31.93,
+                  "ci_95_high_bps": 11.36,
+                  "cluster_se_bps": 11.12,
+                  "active_clusters": 100
+                },
+                "block_6h": {
+                  "p_value": 0.366,
+                  "ci_95_low_bps": -31.24,
+                  "ci_95_high_bps": 10.9,
+                  "cluster_se_bps": 10.42,
+                  "active_clusters": 87
+                },
+                "block_24h": {
+                  "p_value": 0.365,
+                  "ci_95_low_bps": -29.32,
+                  "ci_95_high_bps": 12.04,
+                  "cluster_se_bps": 10.66,
+                  "active_clusters": 59
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.9725,
+                  "ci_95_low_bps": -22.17,
+                  "ci_95_high_bps": 20.69,
+                  "cluster_se_bps": 11.08,
+                  "active_clusters": 100
+                },
+                "block_6h": {
+                  "p_value": 0.9685,
+                  "ci_95_low_bps": -21.18,
+                  "ci_95_high_bps": 19.08,
+                  "cluster_se_bps": 10.31,
+                  "active_clusters": 87
+                },
+                "block_24h": {
+                  "p_value": 0.9765,
+                  "ci_95_low_bps": -21.42,
+                  "ci_95_high_bps": 21.1,
+                  "cluster_se_bps": 10.75,
+                  "active_clusters": 59
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.3975,
+                  "ci_95_low_bps": -31.27,
+                  "ci_95_high_bps": 11.59,
+                  "cluster_se_bps": 11.08,
+                  "active_clusters": 100
+                },
+                "block_6h": {
+                  "p_value": 0.3635,
+                  "ci_95_low_bps": -30.28,
+                  "ci_95_high_bps": 9.98,
+                  "cluster_se_bps": 10.31,
+                  "active_clusters": 87
+                },
+                "block_24h": {
+                  "p_value": 0.373,
+                  "ci_95_low_bps": -30.52,
+                  "ci_95_high_bps": 12.0,
+                  "cluster_se_bps": 10.75,
+                  "active_clusters": 59
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.971,
+          "fdr_q_net_hurdle_6h": 0.69625
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 182,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 95,
+            "status": "PASS"
+          },
+          "gross_mean_bps": -15.36,
+          "net_mean_bps_9_1": -24.46,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.291,
+                  "ci_95_low_bps": -44.79,
+                  "ci_95_high_bps": 10.3,
+                  "cluster_se_bps": 14.42,
+                  "active_clusters": 109
+                },
+                "block_6h": {
+                  "p_value": 0.262,
+                  "ci_95_low_bps": -43.31,
+                  "ci_95_high_bps": 12.42,
+                  "cluster_se_bps": 14.05,
+                  "active_clusters": 95
+                },
+                "block_24h": {
+                  "p_value": 0.276,
+                  "ci_95_low_bps": -45.67,
+                  "ci_95_high_bps": 9.44,
+                  "cluster_se_bps": 14.3,
+                  "active_clusters": 63
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.097,
+                  "ci_95_low_bps": -53.89,
+                  "ci_95_high_bps": 1.2,
+                  "cluster_se_bps": 14.42,
+                  "active_clusters": 109
+                },
+                "block_6h": {
+                  "p_value": 0.08,
+                  "ci_95_low_bps": -52.41,
+                  "ci_95_high_bps": 3.32,
+                  "cluster_se_bps": 14.05,
+                  "active_clusters": 95
+                },
+                "block_24h": {
+                  "p_value": 0.074,
+                  "ci_95_low_bps": -54.77,
+                  "ci_95_high_bps": 0.34,
+                  "cluster_se_bps": 14.3,
+                  "active_clusters": 63
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.2955,
+                  "ci_95_low_bps": -43.66,
+                  "ci_95_high_bps": 11.62,
+                  "cluster_se_bps": 14.45,
+                  "active_clusters": 109
+                },
+                "block_6h": {
+                  "p_value": 0.263,
+                  "ci_95_low_bps": -43.6,
+                  "ci_95_high_bps": 12.02,
+                  "cluster_se_bps": 14.12,
+                  "active_clusters": 95
+                },
+                "block_24h": {
+                  "p_value": 0.2755,
+                  "ci_95_low_bps": -45.66,
+                  "ci_95_high_bps": 10.51,
+                  "cluster_se_bps": 14.29,
+                  "active_clusters": 63
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.0955,
+                  "ci_95_low_bps": -52.76,
+                  "ci_95_high_bps": 2.52,
+                  "cluster_se_bps": 14.45,
+                  "active_clusters": 109
+                },
+                "block_6h": {
+                  "p_value": 0.083,
+                  "ci_95_low_bps": -52.7,
+                  "ci_95_high_bps": 2.92,
+                  "cluster_se_bps": 14.12,
+                  "active_clusters": 95
+                },
+                "block_24h": {
+                  "p_value": 0.078,
+                  "ci_95_low_bps": -54.76,
+                  "ci_95_high_bps": 1.41,
+                  "cluster_se_bps": 14.29,
+                  "active_clusters": 63
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.26667
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-9.47 bps, OOT net=-24.46 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_SFP_CVD_ABSORPTION",
+      "splits": {
+        "TEST": {
+          "sample_size": 534,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 234,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 8.26,
+          "net_mean_bps_9_1": -0.84,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.079,
+                  "ci_95_low_bps": -0.9,
+                  "ci_95_high_bps": 17.94,
+                  "cluster_se_bps": 4.78,
+                  "active_clusters": 342
+                },
+                "block_6h": {
+                  "p_value": 0.086,
+                  "ci_95_low_bps": -0.42,
+                  "ci_95_high_bps": 17.59,
+                  "cluster_se_bps": 4.73,
+                  "active_clusters": 234
+                },
+                "block_24h": {
+                  "p_value": 0.103,
+                  "ci_95_low_bps": -1.25,
+                  "ci_95_high_bps": 18.41,
+                  "cluster_se_bps": 5.01,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.876,
+                  "ci_95_low_bps": -10.0,
+                  "ci_95_high_bps": 8.84,
+                  "cluster_se_bps": 4.78,
+                  "active_clusters": 342
+                },
+                "block_6h": {
+                  "p_value": 0.865,
+                  "ci_95_low_bps": -9.52,
+                  "ci_95_high_bps": 8.49,
+                  "cluster_se_bps": 4.73,
+                  "active_clusters": 234
+                },
+                "block_24h": {
+                  "p_value": 0.895,
+                  "ci_95_low_bps": -10.35,
+                  "ci_95_high_bps": 9.31,
+                  "cluster_se_bps": 5.01,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.079,
+                  "ci_95_low_bps": -0.9,
+                  "ci_95_high_bps": 17.7,
+                  "cluster_se_bps": 4.75,
+                  "active_clusters": 342
+                },
+                "block_6h": {
+                  "p_value": 0.0815,
+                  "ci_95_low_bps": -0.57,
+                  "ci_95_high_bps": 17.51,
+                  "cluster_se_bps": 4.7,
+                  "active_clusters": 234
+                },
+                "block_24h": {
+                  "p_value": 0.1105,
+                  "ci_95_low_bps": -1.83,
+                  "ci_95_high_bps": 18.77,
+                  "cluster_se_bps": 5.19,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.869,
+                  "ci_95_low_bps": -10.0,
+                  "ci_95_high_bps": 8.6,
+                  "cluster_se_bps": 4.75,
+                  "active_clusters": 342
+                },
+                "block_6h": {
+                  "p_value": 0.8665,
+                  "ci_95_low_bps": -9.67,
+                  "ci_95_high_bps": 8.41,
+                  "cluster_se_bps": 4.7,
+                  "active_clusters": 234
+                },
+                "block_24h": {
+                  "p_value": 0.8745,
+                  "ci_95_low_bps": -10.93,
+                  "ci_95_high_bps": 9.67,
+                  "cluster_se_bps": 5.19,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.275,
+          "fdr_q_net_hurdle_6h": 0.865
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 0,
+          "eligibility": {
+            "n_ge_30": false,
+            "clusters_ge_10": false,
+            "status": "FAIL_ZERO_EVENTS"
+          },
+          "gross_stats": {
+            "mean_bps": 0.0
+          },
+          "net_stats_9_1": {
+            "mean_bps": 0.0
+          },
+          "fdr_q_gross_6h": 1.0,
+          "fdr_q_net_hurdle_6h": 1.0
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-0.84 bps, OOT net=-999.00 bps) or FDR q >= 0.05."
+    },
+    {
+      "hypothesis": "COMP_DUAL_CONFLUENCE",
+      "splits": {
+        "TEST": {
+          "sample_size": 16,
+          "eligibility": {
+            "n_ge_30": false,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 15,
+            "status": "INCONCLUSIVE"
+          },
+          "gross_mean_bps": 20.87,
+          "net_mean_bps_9_1": 11.77,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.248,
+                  "ci_95_low_bps": -11.45,
+                  "ci_95_high_bps": 59.79,
+                  "cluster_se_bps": 18.19,
+                  "active_clusters": 15
+                },
+                "block_6h": {
+                  "p_value": 0.253,
+                  "ci_95_low_bps": -11.14,
+                  "ci_95_high_bps": 58.87,
+                  "cluster_se_bps": 18.63,
+                  "active_clusters": 15
+                },
+                "block_24h": {
+                  "p_value": 0.218,
+                  "ci_95_low_bps": -9.97,
+                  "ci_95_high_bps": 55.13,
+                  "cluster_se_bps": 17.2,
+                  "active_clusters": 14
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.496,
+                  "ci_95_low_bps": -20.55,
+                  "ci_95_high_bps": 50.69,
+                  "cluster_se_bps": 18.19,
+                  "active_clusters": 15
+                },
+                "block_6h": {
+                  "p_value": 0.53,
+                  "ci_95_low_bps": -20.24,
+                  "ci_95_high_bps": 49.77,
+                  "cluster_se_bps": 18.63,
+                  "active_clusters": 15
+                },
+                "block_24h": {
+                  "p_value": 0.488,
+                  "ci_95_low_bps": -19.07,
+                  "ci_95_high_bps": 46.03,
+                  "cluster_se_bps": 17.2,
+                  "active_clusters": 14
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.2445,
+                  "ci_95_low_bps": -11.04,
+                  "ci_95_high_bps": 60.63,
+                  "cluster_se_bps": 18.18,
+                  "active_clusters": 15
+                },
+                "block_6h": {
+                  "p_value": 0.25,
+                  "ci_95_low_bps": -10.48,
+                  "ci_95_high_bps": 61.3,
+                  "cluster_se_bps": 18.51,
+                  "active_clusters": 15
+                },
+                "block_24h": {
+                  "p_value": 0.2045,
+                  "ci_95_low_bps": -10.36,
+                  "ci_95_high_bps": 55.29,
+                  "cluster_se_bps": 16.93,
+                  "active_clusters": 14
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.501,
+                  "ci_95_low_bps": -20.14,
+                  "ci_95_high_bps": 51.53,
+                  "cluster_se_bps": 18.18,
+                  "active_clusters": 15
+                },
+                "block_6h": {
+                  "p_value": 0.519,
+                  "ci_95_low_bps": -19.58,
+                  "ci_95_high_bps": 52.2,
+                  "cluster_se_bps": 18.51,
+                  "active_clusters": 15
+                },
+                "block_24h": {
+                  "p_value": 0.4855,
+                  "ci_95_low_bps": -19.46,
+                  "ci_95_high_bps": 46.19,
+                  "cluster_se_bps": 16.93,
+                  "active_clusters": 14
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.36143,
+          "fdr_q_net_hurdle_6h": 0.69625
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 25,
+          "eligibility": {
+            "n_ge_30": false,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 23,
+            "status": "INCONCLUSIVE"
+          },
+          "gross_mean_bps": 17.87,
+          "net_mean_bps_9_1": 8.77,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.361,
+                  "ci_95_low_bps": -17.38,
+                  "ci_95_high_bps": 59.75,
+                  "cluster_se_bps": 20.08,
+                  "active_clusters": 23
+                },
+                "block_6h": {
+                  "p_value": 0.354,
+                  "ci_95_low_bps": -16.39,
+                  "ci_95_high_bps": 60.49,
+                  "cluster_se_bps": 20.36,
+                  "active_clusters": 23
+                },
+                "block_24h": {
+                  "p_value": 0.348,
+                  "ci_95_low_bps": -18.68,
+                  "ci_95_high_bps": 59.59,
+                  "cluster_se_bps": 19.61,
+                  "active_clusters": 22
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.662,
+                  "ci_95_low_bps": -26.48,
+                  "ci_95_high_bps": 50.65,
+                  "cluster_se_bps": 20.08,
+                  "active_clusters": 23
+                },
+                "block_6h": {
+                  "p_value": 0.653,
+                  "ci_95_low_bps": -25.49,
+                  "ci_95_high_bps": 51.39,
+                  "cluster_se_bps": 20.36,
+                  "active_clusters": 23
+                },
+                "block_24h": {
+                  "p_value": 0.638,
+                  "ci_95_low_bps": -27.78,
+                  "ci_95_high_bps": 50.49,
+                  "cluster_se_bps": 19.61,
+                  "active_clusters": 22
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.3595,
+                  "ci_95_low_bps": -17.85,
+                  "ci_95_high_bps": 59.02,
+                  "cluster_se_bps": 19.98,
+                  "active_clusters": 23
+                },
+                "block_6h": {
+                  "p_value": 0.358,
+                  "ci_95_low_bps": -15.63,
+                  "ci_95_high_bps": 61.82,
+                  "cluster_se_bps": 20.2,
+                  "active_clusters": 23
+                },
+                "block_24h": {
+                  "p_value": 0.352,
+                  "ci_95_low_bps": -18.85,
+                  "ci_95_high_bps": 59.03,
+                  "cluster_se_bps": 19.55,
+                  "active_clusters": 22
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.654,
+                  "ci_95_low_bps": -26.95,
+                  "ci_95_high_bps": 49.92,
+                  "cluster_se_bps": 19.98,
+                  "active_clusters": 23
+                },
+                "block_6h": {
+                  "p_value": 0.661,
+                  "ci_95_low_bps": -24.73,
+                  "ci_95_high_bps": 52.72,
+                  "cluster_se_bps": 20.2,
+                  "active_clusters": 23
+                },
+                "block_24h": {
+                  "p_value": 0.6455,
+                  "ci_95_low_bps": -27.95,
+                  "ci_95_high_bps": 49.93,
+                  "cluster_se_bps": 19.55,
+                  "active_clusters": 22
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.93286
+        }
+      },
+      "final_conformance_verdict": "INCONCLUSIVE",
+      "verdict_reason": "Failed pre-registered eligibility hurdle (N < 30 or B_active < 10) on confirmatory partition."
+    },
+    {
+      "hypothesis": "COMP_HTF_1H_SWING_SFP",
+      "splits": {
+        "TEST": {
+          "sample_size": 1298,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 289,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 4.55,
+          "net_mean_bps_9_1": -4.55,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.234,
+                  "ci_95_low_bps": -3.04,
+                  "ci_95_high_bps": 11.76,
+                  "cluster_se_bps": 3.78,
+                  "active_clusters": 550
+                },
+                "block_6h": {
+                  "p_value": 0.198,
+                  "ci_95_low_bps": -2.54,
+                  "ci_95_high_bps": 11.96,
+                  "cluster_se_bps": 3.59,
+                  "active_clusters": 289
+                },
+                "block_24h": {
+                  "p_value": 0.238,
+                  "ci_95_low_bps": -3.32,
+                  "ci_95_high_bps": 11.87,
+                  "cluster_se_bps": 3.87,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.234,
+                  "ci_95_low_bps": -12.14,
+                  "ci_95_high_bps": 2.66,
+                  "cluster_se_bps": 3.78,
+                  "active_clusters": 550
+                },
+                "block_6h": {
+                  "p_value": 0.198,
+                  "ci_95_low_bps": -11.64,
+                  "ci_95_high_bps": 2.86,
+                  "cluster_se_bps": 3.59,
+                  "active_clusters": 289
+                },
+                "block_24h": {
+                  "p_value": 0.238,
+                  "ci_95_low_bps": -12.42,
+                  "ci_95_high_bps": 2.77,
+                  "cluster_se_bps": 3.87,
+                  "active_clusters": 77
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.2325,
+                  "ci_95_low_bps": -3.06,
+                  "ci_95_high_bps": 11.87,
+                  "cluster_se_bps": 3.81,
+                  "active_clusters": 550
+                },
+                "block_6h": {
+                  "p_value": 0.2105,
+                  "ci_95_low_bps": -2.61,
+                  "ci_95_high_bps": 11.95,
+                  "cluster_se_bps": 3.68,
+                  "active_clusters": 289
+                },
+                "block_24h": {
+                  "p_value": 0.233,
+                  "ci_95_low_bps": -3.23,
+                  "ci_95_high_bps": 12.07,
+                  "cluster_se_bps": 3.86,
+                  "active_clusters": 77
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.2325,
+                  "ci_95_low_bps": -12.16,
+                  "ci_95_high_bps": 2.77,
+                  "cluster_se_bps": 3.81,
+                  "active_clusters": 550
+                },
+                "block_6h": {
+                  "p_value": 0.21,
+                  "ci_95_low_bps": -11.71,
+                  "ci_95_high_bps": 2.85,
+                  "cluster_se_bps": 3.68,
+                  "active_clusters": 289
+                },
+                "block_24h": {
+                  "p_value": 0.2325,
+                  "ci_95_low_bps": -12.33,
+                  "ci_95_high_bps": 2.97,
+                  "cluster_se_bps": 3.86,
+                  "active_clusters": 77
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.33,
+          "fdr_q_net_hurdle_6h": 0.55
+        },
+        "OUT_OF_TIME_Q1_2024": {
+          "sample_size": 1517,
+          "eligibility": {
+            "n_ge_30": true,
+            "clusters_ge_10": true,
+            "active_clusters_6h": 324,
+            "status": "PASS"
+          },
+          "gross_mean_bps": 4.11,
+          "net_mean_bps_9_1": -4.99,
+          "bootstrap_evaluations": {
+            "B_1000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.336,
+                  "ci_95_low_bps": -4.17,
+                  "ci_95_high_bps": 12.13,
+                  "cluster_se_bps": 4.25,
+                  "active_clusters": 620
+                },
+                "block_6h": {
+                  "p_value": 0.319,
+                  "ci_95_low_bps": -3.34,
+                  "ci_95_high_bps": 11.88,
+                  "cluster_se_bps": 3.96,
+                  "active_clusters": 324
+                },
+                "block_24h": {
+                  "p_value": 0.263,
+                  "ci_95_low_bps": -3.03,
+                  "ci_95_high_bps": 12.64,
+                  "cluster_se_bps": 3.81,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.244,
+                  "ci_95_low_bps": -13.27,
+                  "ci_95_high_bps": 3.03,
+                  "cluster_se_bps": 4.25,
+                  "active_clusters": 620
+                },
+                "block_6h": {
+                  "p_value": 0.214,
+                  "ci_95_low_bps": -12.44,
+                  "ci_95_high_bps": 2.78,
+                  "cluster_se_bps": 3.96,
+                  "active_clusters": 324
+                },
+                "block_24h": {
+                  "p_value": 0.174,
+                  "ci_95_low_bps": -12.13,
+                  "ci_95_high_bps": 3.54,
+                  "cluster_se_bps": 3.81,
+                  "active_clusters": 91
+                }
+              }
+            },
+            "B_2000": {
+              "gross": {
+                "block_2h": {
+                  "p_value": 0.328,
+                  "ci_95_low_bps": -4.01,
+                  "ci_95_high_bps": 12.21,
+                  "cluster_se_bps": 4.2,
+                  "active_clusters": 620
+                },
+                "block_6h": {
+                  "p_value": 0.3185,
+                  "ci_95_low_bps": -3.36,
+                  "ci_95_high_bps": 11.88,
+                  "cluster_se_bps": 4.04,
+                  "active_clusters": 324
+                },
+                "block_24h": {
+                  "p_value": 0.2705,
+                  "ci_95_low_bps": -2.9,
+                  "ci_95_high_bps": 12.12,
+                  "cluster_se_bps": 3.76,
+                  "active_clusters": 91
+                }
+              },
+              "net_hurdle": {
+                "block_2h": {
+                  "p_value": 0.2335,
+                  "ci_95_low_bps": -13.11,
+                  "ci_95_high_bps": 3.11,
+                  "cluster_se_bps": 4.2,
+                  "active_clusters": 620
+                },
+                "block_6h": {
+                  "p_value": 0.22,
+                  "ci_95_low_bps": -12.46,
+                  "ci_95_high_bps": 2.78,
+                  "cluster_se_bps": 4.04,
+                  "active_clusters": 324
+                },
+                "block_24h": {
+                  "p_value": 0.177,
+                  "ci_95_low_bps": -12.0,
+                  "ci_95_high_bps": 3.02,
+                  "cluster_se_bps": 3.76,
+                  "active_clusters": 91
+                }
+              }
+            }
+          },
+          "fdr_q_gross_6h": 0.51875,
+          "fdr_q_net_hurdle_6h": 0.35667
+        }
+      },
+      "final_conformance_verdict": "NO_EDGE_FOUND",
+      "verdict_reason": "Negative net expectancy after costs (TEST net=-4.55 bps, OOT net=-4.99 bps) or FDR q >= 0.05."
+    }
+  ],
+  "checksums": {
+    "protocol_md": "128a319b0eed5e3332d88e95dc6d3f9770517676242777d3a632494b484aaa3c",
+    "engine_py": "774a6e9617e31a40016cde9742766d989cc01f4f38141e3be9a19a30f54db936",
+    "results_json": "99aed1ee07586c0d022cd90c3cb724f71dc09cca10ba2a49fb927b7281f41c27",
+    "events_parquet": "a9f3716e84d27c2aa23ce07b8aab92577c4c1e6ded99909ce18eac0dd67ede67",
+    "outcomes_parquet": "d4efb23fe5fbafbbe5034e505ae2d4d6e56cf503cd1eb3428d44039b6eaf12ab",
+    "stop_room_parquet": "09c03d6818864c616907c0f5d772bfd8e2299e48d40698d5ac4f97e895516a2b"
+  }
+}
