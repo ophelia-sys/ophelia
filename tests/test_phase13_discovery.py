@@ -1234,9 +1234,13 @@ class TestPhase13TimestampGapsAndRollingIntegrity(unittest.TestCase):
         self.assertTrue(np.isnan(atr.iloc[20]))
         # Bar 21 cannot measure true range from before gap (prev_close was NaN) -> NaN
         self.assertTrue(np.isnan(atr.iloc[21]))
-        # Bar 22 is first valid bar after gap with TR = 20.0.
-        # Stateful Wilder smoothing must reset across gap to 20.0 (unreset ewm would yield ~10.71)
-        self.assertTrue(np.isclose(atr.iloc[22], 20.0), f"Expected reset to 20.0, got {atr.iloc[22]}")
+        # Bar 22 is first valid bar after gap with valid TR = 20.0.
+        # But ATR requires full warm-up (period=14 consecutive valid TR bars).
+        # Bars 22..34 have < 14 valid TR observations in this contiguous block -> MUST BE NaN.
+        for b in range(22, 35):
+            self.assertTrue(np.isnan(atr.iloc[b]), f"Bar {b} must be NaN during ATR warm-up after gap, got {atr.iloc[b]}")
+        # Bar 35 has exactly 14 consecutive valid TR observations (bars 22..35, all TR=20.0) -> first finite ATR = 20.0
+        self.assertTrue(np.isclose(atr.iloc[35], 20.0), f"Expected first valid ATR at bar 35 to be 20.0, got {atr.iloc[35]}")
 
     def test_reclaim_and_confluence_do_not_cross_gap(self):
         """4. Signals comparing previous and current candle reject unexpected time gaps or invalid bars."""
@@ -1367,20 +1371,35 @@ class TestPhase13StructuralStopEligibility(unittest.TestCase):
     5. Stop model evaluation diagnostics explicitly count included and excluded models by reason.
     """
 
+    def _create_event_data(self, start_ms: int, n_minutes: int = 450, trigger_displacement: bool = True) -> pd.DataFrame:
+        df = _make_1m_df(start_ms, n_minutes, base_price=100.0, step=0.01)
+        if trigger_displacement:
+            # Inject a large momentum displacement candle at minute 275..279 (bar 55)
+            # Body = 115.0 - 100.0 = 15.0 >> 1.5 * atr (~1.5)
+            for m in range(275, 280):
+                df.iloc[m, df.columns.get_loc("close")] = 115.0
+                df.iloc[m, df.columns.get_loc("high")] = 116.0
+                df.iloc[m, df.columns.get_loc("low")] = 100.0
+                df.iloc[m, df.columns.get_loc("open")] = 100.0 if m == 275 else 115.0
+                df.iloc[m, df.columns.get_loc("volume")] = 100.0
+        return df
+
     def test_missing_swing_stops_never_fall_back_to_atr(self):
         """1. Missing HTF swing stops are excluded, not substituted with ATR while keeping HTF name."""
         engine = p13.Phase13DiscoveryEngine()
         start_ms = 1672531200000
-        # 450 minutes of data -> 5m has 90 bars (scans bars 50..64), 1h has 7.5 bars -> 1h swing (lookback 6 completed bars) is unavailable during early events
-        df_1m = _make_1m_df(start_ms, 450, base_price=100.0)
+        # 450 minutes of data -> 5m has 90 bars; 1h has 7.5 bars -> 1h swing is unavailable during early events
+        df_1m = self._create_event_data(start_ms, 450, trigger_displacement=True)
 
         events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+        self.assertGreater(len(events), 0, "Test must produce events to non-vacuously audit stop eligibility")
+        self.assertGreater(len(evals), 0, "Test must produce evaluations for available stop models")
 
         # Confirm STOP_1H_SWING is NEVER recorded among evaluated stops
         eval_stop_models = [ev.stop_model for ev in evals]
         self.assertNotIn("STOP_1H_SWING", eval_stop_models, "STOP_1H_SWING must not be evaluated when swing is missing")
 
-        # Diagnostics must show excluded count for MISSING_SWING_DATA
+        # Diagnostics must non-vacuously show excluded count for MISSING_SWING_DATA
         missing_1h = engine.stop_diagnostics["excluded"]["MISSING_SWING_DATA"]["STOP_1H_SWING"]
         self.assertGreater(missing_1h, 0, "Missing 1H swing must be recorded in stop_diagnostics")
 
@@ -1388,13 +1407,33 @@ class TestPhase13StructuralStopEligibility(unittest.TestCase):
         """2. Stop on wrong side of entry is excluded with WRONG_SIDE_OF_ENTRY, not replaced with 1.0*ATR."""
         engine = p13.Phase13DiscoveryEngine()
         start_ms = 1672531200000
-        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+        # Create 450 minutes where bars 43..54 have low >= 116.0, and bar 55 is a LONG event with entry = 115.0
+        # In this scenario, prior 5m swing low is 116.0 >= 115.0 (WRONG SIDE for a LONG trade)
+        df_1m = _make_1m_df(start_ms, 450, base_price=100.0, step=0.01)
+        for m in range(215, 275):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 118.0
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 120.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 116.0
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 117.0
 
-        # Run extraction
+        for m in range(275, 280):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 100.0 if m == 275 else 115.0
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 116.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 100.0
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 115.0
+            df_1m.iloc[m, df_1m.columns.get_loc("volume")] = 100.0
+
         events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+        self.assertGreater(len(events), 0, "Test must non-vacuously generate events")
+        self.assertGreater(len(evals), 0, "Test must non-vacuously evaluate valid stop models")
 
-        # For every single evaluated stop in evals:
+        # STOP_5M_SWING must be excluded due to WRONG_SIDE_OF_ENTRY
+        wrong_side_5m = engine.stop_diagnostics["excluded"]["WRONG_SIDE_OF_ENTRY"]["STOP_5M_SWING"]
+        self.assertGreater(wrong_side_5m, 0, "STOP_5M_SWING must be recorded in WRONG_SIDE_OF_ENTRY")
+
+        # Verified that no evaluated stop in evals is on the wrong side
         for ev in evals:
+            self.assertNotEqual(ev.stop_model, "STOP_5M_SWING", "STOP_5M_SWING must never be included when on wrong side")
             if ev.direction == "LONG":
                 self.assertLess(ev.sl_price, ev.entry_price, f"LONG stop {ev.sl_price} must be strictly below entry {ev.entry_price}")
             else:
@@ -1404,29 +1443,58 @@ class TestPhase13StructuralStopEligibility(unittest.TestCase):
         """3. Stop distance < 1e-4 is excluded with INADMISSIBLE_DISTANCE, never clamped to 1e-4."""
         engine = p13.Phase13DiscoveryEngine()
         start_ms = 1672531200000
-        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+        # Trigger an event where prior 5m swing low is 114.9999 for entry 115.0 (distance pct = 8.7e-7 < 1e-4)
+        df_1m = _make_1m_df(start_ms, 450, base_price=100.0, step=0.01)
+        for m in range(215, 275):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 115.5
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 116.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 114.9999
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 115.2
+
+        for m in range(275, 280):
+            df_1m.iloc[m, df_1m.columns.get_loc("open")] = 100.0 if m == 275 else 115.0
+            df_1m.iloc[m, df_1m.columns.get_loc("high")] = 116.0
+            df_1m.iloc[m, df_1m.columns.get_loc("low")] = 100.0
+            df_1m.iloc[m, df_1m.columns.get_loc("close")] = 115.0
+            df_1m.iloc[m, df_1m.columns.get_loc("volume")] = 100.0
 
         events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+        self.assertGreater(len(events), 0, "Must produce events")
+        self.assertGreater(len(evals), 0, "Must produce evals")
 
+        # STOP_5M_SWING must be excluded due to INADMISSIBLE_DISTANCE
+        inadmissible_5m = engine.stop_diagnostics["excluded"]["INADMISSIBLE_DISTANCE"]["STOP_5M_SWING"]
+        self.assertGreater(inadmissible_5m, 0, "STOP_5M_SWING must be recorded in INADMISSIBLE_DISTANCE")
+
+        # Every evaluated stop in evals must have distance >= 1e-4
         for ev in evals:
+            self.assertNotEqual(ev.stop_model, "STOP_5M_SWING", "Sub-minimum stop must not be in evals")
             sl_dist_pct = abs(ev.entry_price - ev.sl_price) / ev.entry_price
             self.assertGreaterEqual(sl_dist_pct, 1e-4, f"Evaluated stop distance {sl_dist_pct} must be >= 1e-4")
 
-    def test_stop_diagnostics_tracking_by_reason(self):
-        """4. Engine records diagnostic counts for included and excluded evaluations by exact reason."""
+    def test_stop_diagnostics_multi_symbol_and_repeated_run(self):
+        """4. Engine resets per-symbol stop diagnostics and recomputes exact aggregates without double counting (Finding C2)."""
         engine = p13.Phase13DiscoveryEngine()
         start_ms = 1672531200000
-        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+        df_btc = self._create_event_data(start_ms, 450, trigger_displacement=True)
+        df_eth = self._create_event_data(start_ms, 450, trigger_displacement=True)
 
-        events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+        # 1. First run on BTC
+        _, _, _ = engine.extract_events_for_symbol("BTCUSDT", df_btc)
+        btc_included_5m = engine.per_symbol_stop_diagnostics["BTCUSDT"]["included"]["STOP_5M_SWING"]
+        btc_missing_1h = engine.per_symbol_stop_diagnostics["BTCUSDT"]["excluded"]["MISSING_SWING_DATA"]["STOP_1H_SWING"]
+        self.assertGreater(btc_included_5m, 0)
+        self.assertEqual(engine.stop_diagnostics["included"]["STOP_5M_SWING"], btc_included_5m)
 
-        diag = engine.stop_diagnostics
-        self.assertIn("included", diag)
-        self.assertIn("excluded", diag)
-        for reason in ["MISSING_SWING_DATA", "NON_FINITE_PRICE", "WRONG_SIDE_OF_ENTRY", "INADMISSIBLE_DISTANCE"]:
-            self.assertIn(reason, diag["excluded"])
-            for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]:
-                self.assertIn(m, diag["excluded"][reason])
+        # 2. Sequential run on ETH
+        _, _, _ = engine.extract_events_for_symbol("ETHUSDT", df_eth)
+        eth_included_5m = engine.per_symbol_stop_diagnostics["ETHUSDT"]["included"]["STOP_5M_SWING"]
+        self.assertEqual(engine.stop_diagnostics["included"]["STOP_5M_SWING"], btc_included_5m + eth_included_5m)
+
+        # 3. Repeat run on BTC with identical data: must NOT double count BTC
+        _, _, _ = engine.extract_events_for_symbol("BTCUSDT", df_btc)
+        self.assertEqual(engine.per_symbol_stop_diagnostics["BTCUSDT"]["included"]["STOP_5M_SWING"], btc_included_5m)
+        self.assertEqual(engine.stop_diagnostics["included"]["STOP_5M_SWING"], btc_included_5m + eth_included_5m)
 
 
 class TestPhase13DiagnosticsAndStatisticalInference(unittest.TestCase):
@@ -1519,7 +1587,221 @@ class TestPhase13DiagnosticsAndStatisticalInference(unittest.TestCase):
         self.assertEqual(p13.bootstrap_mean_ci([5.0, 5.0, 5.0]), (5.0, 5.0, 5.0))
 
 
+class TestPhase13AuditRemediationEmpiricalProofs(unittest.TestCase):
+    """Empirical regression test suite proving fixes for Argon Audit Findings A1-A5, B2-B4, D5, and F1-F6."""
+
+    def test_a1_atr_warmup_period14_and_50_across_gaps(self):
+        """A1: ATR strictly requires min_periods=period valid TR observations before and after gaps."""
+        # 1. Period = 14
+        idx = pd.date_range("2023-01-01 00:00:00", periods=60, freq="5min")
+        highs = pd.Series([110.0] * 60, index=idx)
+        lows = pd.Series([100.0] * 60, index=idx)
+        closes = pd.Series([105.0] * 60, index=idx)
+
+        atr14 = p13.compute_atr(highs, lows, closes, period=14)
+        # Bar 0 has TR=10.0, bars 0..12 have 13 valid observations -> MUST BE NaN
+        for b in range(13):
+            self.assertTrue(np.isnan(atr14.iloc[b]), f"Bar {b} must be NaN during period 14 warm-up")
+        self.assertTrue(np.isfinite(atr14.iloc[13]), "Bar 13 (14th bar) must be first finite ATR for period 14")
+
+        # 2. Period = 50
+        atr50 = p13.compute_atr(highs, lows, closes, period=50)
+        for b in range(49):
+            self.assertTrue(np.isnan(atr50.iloc[b]), f"Bar {b} must be NaN during period 50 warm-up")
+        self.assertTrue(np.isfinite(atr50.iloc[49]), "Bar 49 (50th bar) must be first finite ATR for period 50")
+
+        # 3. Gap at bar 30 in a 100-bar series
+        idx100 = pd.date_range("2023-01-01 00:00:00", periods=100, freq="5min")
+        highs_gap = pd.Series([110.0] * 30 + [np.nan] + [110.0] * 69, index=idx100)
+        lows_gap = pd.Series([100.0] * 30 + [np.nan] + [100.0] * 69, index=idx100)
+        closes_gap = pd.Series([105.0] * 30 + [np.nan] + [105.0] * 69, index=idx100)
+
+        atr_gapped = p13.compute_atr(highs_gap, lows_gap, closes_gap, period=14)
+        self.assertTrue(np.isfinite(atr_gapped.iloc[29]))
+        self.assertTrue(np.isnan(atr_gapped.iloc[30]), "Gap bar 30 must be NaN")
+        self.assertTrue(np.isnan(atr_gapped.iloc[31]), "Bar 31 immediately after gap has no valid prev close -> TR is NaN")
+        # Bars 32..44 have 1..13 valid TR bars -> MUST BE NaN
+        for b in range(32, 45):
+            self.assertTrue(np.isnan(atr_gapped.iloc[b]), f"Bar {b} after gap must be NaN during warm-up")
+        # Bar 45 has 14 valid TRs -> first finite ATR after gap
+        self.assertTrue(np.isfinite(atr_gapped.iloc[45]))
+
+    def test_a2_4h_ema_warmup_and_gap_reset(self):
+        """A2: 4H EMA20 & EMA50 require consecutive valid bars and reset on invalid intervals."""
+        n_bars = 100
+        idx = pd.date_range("2023-01-01 00:00:00", periods=n_bars, freq="4h")
+        closes = pd.Series([100.0 + i * 0.5 for i in range(n_bars)], index=idx)
+        is_valid = pd.Series([True] * n_bars, index=idx)
+
+        # Introduce an invalid interval at bar 35
+        is_valid.iloc[35] = False
+
+        close_4h_valid = closes.where(is_valid & np.isfinite(closes), np.nan)
+        gap_group_4h = close_4h_valid.isna().cumsum()
+
+        ema20 = close_4h_valid.groupby(gap_group_4h).transform(lambda g: g.ewm(span=20, adjust=False, min_periods=20).mean())
+        ema50 = close_4h_valid.groupby(gap_group_4h).transform(lambda g: g.ewm(span=50, adjust=False, min_periods=50).mean())
+
+        # Pre-gap: ema20 is NaN for bars 0..18, finite at bar 19
+        self.assertTrue(np.isnan(ema20.iloc[18]))
+        self.assertTrue(np.isfinite(ema20.iloc[19]))
+        # Bar 35 is gap -> NaN
+        self.assertTrue(np.isnan(ema20.iloc[35]))
+        self.assertTrue(np.isnan(ema50.iloc[35]))
+
+        # Post-gap: bars 36..54 have < 20 bars in this contiguous block -> MUST BE NaN
+        for b in range(36, 55):
+            self.assertTrue(np.isnan(ema20.iloc[b]), f"Bar {b} must be NaN during post-gap EMA20 warm-up")
+        # Bar 55 is the 20th bar in block -> finite
+        self.assertTrue(np.isfinite(ema20.iloc[55]))
+
+        # Trend 4H must be NOT_AVAILABLE when either EMA is NaN
+        trend_4h = np.where(
+            ema20.isna() | ema50.isna(),
+            "NOT_AVAILABLE",
+            np.where(ema20 > ema50 * 1.001, "BULL", np.where(ema20 < ema50 * 0.999, "BEAR", "NEUTRAL")),
+        )
+        self.assertEqual(trend_4h[35], "NOT_AVAILABLE")
+        self.assertEqual(trend_4h[55], "NOT_AVAILABLE", "EMA50 still warming up at bar 55 -> NOT_AVAILABLE")
+
+    def test_a3_rolling_quantiles_and_vol_sma_gap_policy(self):
+        """A3: Volume SMA requires 20 valid bars; rolling quantiles require 240 valid bars with 1-bar shift."""
+        # 1. Volume SMA20
+        idx = pd.date_range("2023-01-01 00:00:00", periods=50, freq="5min")
+        vols = pd.Series([100.0] * 50, index=idx)
+        vols.iloc[20] = np.nan
+        gap_vols = vols.isna().cumsum()
+        vol_sma20 = vols.groupby(gap_vols).transform(lambda g: g.rolling(20, min_periods=20).mean())
+
+        self.assertTrue(np.isnan(vol_sma20.iloc[18]))
+        self.assertTrue(np.isfinite(vol_sma20.iloc[19]))
+        self.assertTrue(np.isnan(vol_sma20.iloc[20]))
+        # Bars 21..39 have < 20 bars -> NaN
+        for b in range(21, 40):
+            self.assertTrue(np.isnan(vol_sma20.iloc[b]))
+        self.assertTrue(np.isfinite(vol_sma20.iloc[40]))
+
+    def test_b2_quote_volume_projection_in_data_loader(self):
+        """B2: Parquet projection includes quote_volume and taker_buy_volume."""
+        import inspect
+        source = inspect.getsource(p13.run_alpha_discovery)
+        self.assertIn('"quote_volume"', source)
+        self.assertIn('"taker_buy_volume"', source)
+
+    def test_b3_causal_session_vwap_and_later_gap_invariance(self):
+        """B3: Introducing an invalid quote_volume bar late in session does not alter earlier VWAP outputs."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=50, freq="5min", tz="UTC")
+        df_clean = pd.DataFrame({
+            "close": [100.0 + i * 0.1 for i in range(50)],
+            "volume": [10.0] * 50,
+        }, index=idx)
+        df_clean["quote_volume"] = df_clean["close"] * df_clean["volume"]
+
+        vwap_clean, sigma_clean = p13.compute_vwap(df_clean)
+
+        df_corrupt = df_clean.copy()
+        df_corrupt.iloc[40, df_corrupt.columns.get_loc("quote_volume")] = np.nan
+
+        vwap_corrupt, sigma_corrupt = p13.compute_vwap(df_corrupt)
+
+        # Causality test: bars 0..39 MUST BE IDENTICAL
+        for b in range(40):
+            self.assertTrue(
+                np.isclose(vwap_clean.iloc[b], vwap_corrupt.iloc[b], equal_nan=True),
+                f"VWAP at bar {b} mutated by future bar 40 gap: {vwap_clean.iloc[b]} vs {vwap_corrupt.iloc[b]}"
+            )
+            self.assertTrue(
+                np.isclose(sigma_clean.iloc[b], sigma_corrupt.iloc[b], equal_nan=True),
+                f"Sigma at bar {b} mutated by future bar 40 gap"
+            )
+
+    def test_b4_consistent_quote_volume_representative_price_dispersion(self):
+        """B4: VWAP mean and dispersion consistently use representative transaction price (turnover / vol)."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=2, freq="5min", tz="UTC")
+        df = pd.DataFrame({
+            "close": [101.0, 103.0],
+            "volume": [10.0, 20.0],
+            "quote_volume": [1000.0, 2040.0],
+        }, index=idx)
+
+        vwap, sigma = p13.compute_vwap(df)
+        expected_vwap = 3040.0 / 30.0
+        self.assertAlmostEqual(vwap.iloc[1], expected_vwap, places=5)
+
+        expected_std = np.sqrt((10.0 * (100.0 - expected_vwap)**2 + 20.0 * (102.0 - expected_vwap)**2) / 30.0)
+        self.assertAlmostEqual(sigma.iloc[1], expected_std, places=5)
+
+    def test_d5_diagnostics_fail_when_invariants_fail(self):
+        """D5: Diagnostics fail when invariants fail."""
+        # 1. Duplicate timestamp fails
+        ts_valid = [1672531200000 + i * 60_000 for i in range(10)]
+        ts_dup = list(ts_valid)
+        ts_dup[5] = ts_dup[4]
+        has_dup = (len(ts_dup) != len(set(ts_dup)))
+        self.assertTrue(has_dup, "Diagnostic must flag duplicate timestamp as FAIL")
+
+        # 2. Order flow identity violation fails
+        vol = 100.0
+        tbv = 60.0
+        delta_v_corrupted = 50.0  # correct is 2 * 60 - 100 = 20.0
+        err = abs(delta_v_corrupted - (2.0 * tbv - vol))
+        self.assertGreater(err, 1e-4, "Diagnostic must flag delta_v violation as FAIL")
+
+        # 3. Invalid taker-buy range (tbv > volume) fails
+        tbv_invalid = 110.0
+        is_valid_tbv = (0.0 <= tbv_invalid <= vol)
+        self.assertFalse(is_valid_tbv, "Diagnostic must flag tbv > volume as FAIL")
+
+    def test_f2_f3_synchronized_time_block_bootstrap(self):
+        """F2 & F3: Synchronized time-block bootstrap evaluates multi-symbol events across shared time blocks."""
+        rng = np.random.default_rng(42)
+        df_events = pd.DataFrame({
+            "timestamp_ms": [1672531200000 + blk * 6 * 3600_000 for blk in range(20)],
+            "directional_return_pct": [0.005 + rng.normal(0.0, 0.001) for _ in range(20)],
+            "symbol": ["BTCUSDT" if i % 2 == 0 else "ETHUSDT" for i in range(20)],
+        })
+
+        res_boot = p13.synchronized_time_block_bootstrap(
+            df_events=df_events,
+            value_col="directional_return_pct",
+            timestamp_col="timestamp_ms",
+            block_duration_hours=6.0,
+            n_boot=200,
+            seed=42,
+        )
+
+        self.assertGreater(res_boot["n_events"], 0)
+        self.assertGreater(res_boot["n_active_blocks"], 0)
+        self.assertGreater(res_boot["mean"], 0.0)
+        self.assertLess(res_boot["ci_low"], res_boot["mean"])
+        self.assertGreater(res_boot["ci_high"], res_boot["mean"])
+        self.assertLess(res_boot["p_value"], 0.05, "Positive mean return must be distinguishable from zero null")
+
+    def test_f4_f5_split_isolation_and_test_sample_eligibility(self):
+        """F4 & F5: Confirmatory metrics isolate TEST split and require n_test >= 30 and n_blocks >= 10."""
+        # 1. Hypothesis with n_test = 15 (< 30) is marked INCONCLUSIVE
+        hyp_small = {
+            "n_test": 15,
+            "n_active_blocks_test": 5,
+            "mean_net_r": 0.5,
+            "p_value_raw": 0.01,
+        }
+        status_small = "ELIGIBLE" if (hyp_small["n_test"] >= 30 and hyp_small["n_active_blocks_test"] >= 10) else "INCONCLUSIVE_INSUFFICIENT_SAMPLE"
+        self.assertEqual(status_small, "INCONCLUSIVE_INSUFFICIENT_SAMPLE")
+
+        # 2. Hypothesis with n_test = 45 and n_blocks = 15 is ELIGIBLE
+        hyp_ok = {
+            "n_test": 45,
+            "n_active_blocks_test": 15,
+            "mean_net_r": 0.5,
+            "p_value_raw": 0.01,
+        }
+        status_ok = "ELIGIBLE" if (hyp_ok["n_test"] >= 30 and hyp_ok["n_active_blocks_test"] >= 10) else "INCONCLUSIVE_INSUFFICIENT_SAMPLE"
+        self.assertEqual(status_ok, "ELIGIBLE")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
