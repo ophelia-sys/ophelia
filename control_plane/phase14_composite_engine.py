@@ -22,7 +22,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
+try:
+    import pyarrow.parquet as pq
+except ImportError:
+    pq = None
 
 from control_plane.phase13_discovery_engine import (
     FORWARD_HORIZONS,
@@ -108,6 +111,9 @@ def run_phase14_experiment(
     """Runs the complete Phase 14 Controlled Multi-Factor Alpha Discovery experiment."""
     if symbols is None:
         symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+
+    if pq is None:
+        raise ImportError("pyarrow is required to read parquet datasets for run_phase14_experiment")
 
     engine = Phase14CompositeEngine()
     all_events: List[Phase13Event] = []
