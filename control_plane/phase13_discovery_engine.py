@@ -1010,6 +1010,15 @@ class Phase13DiscoveryEngine:
         self.events: List[Phase13Event] = []
         self.forward_outcomes: List[ForwardOutcome] = []
         self.stop_evaluations: List[StopRoomEvaluation] = []
+        self.stop_diagnostics: Dict[str, Any] = {
+            "included": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
+            "excluded": {
+                "MISSING_SWING_DATA": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
+                "NON_FINITE_PRICE": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
+                "WRONG_SIDE_OF_ENTRY": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
+                "INADMISSIBLE_DISTANCE": {m: 0 for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]},
+            }
+        }
 
     def extract_events_for_symbol(self, symbol: str, df_1m: pd.DataFrame) -> Tuple[List[Phase13Event], List[ForwardOutcome], List[StopRoomEvaluation]]:
         """Processes a single symbol's 1m data to extract broad microstructure events,
@@ -1229,9 +1238,9 @@ class Phase13DiscoveryEngine:
             ]
 
             # Structural Invalidation Reference Levels
-            # 5m swing: lowest/highest of last 12 5m bars
-            sl_5m_long = float(lows_5m_rolling[i - 1]) if not np.isnan(lows_5m_rolling[i - 1]) else close_p - 1.5 * atr_5m
-            sl_5m_short = float(highs_5m_rolling[i - 1]) if not np.isnan(highs_5m_rolling[i - 1]) else close_p + 1.5 * atr_5m
+            # 5m swing: lowest/highest of last 12 5m bars (no fallback to ATR)
+            sl_5m_long = float(lows_5m_rolling[i - 1]) if (pd.notna(lows_5m_rolling[i - 1]) and np.isfinite(lows_5m_rolling[i - 1])) else None
+            sl_5m_short = float(highs_5m_rolling[i - 1]) if (pd.notna(highs_5m_rolling[i - 1]) and np.isfinite(highs_5m_rolling[i - 1])) else None
 
             # HTF swing stops are unavailable until enough fully closed HTF bars exist.
             sl_15m_low = swing_low_15m_arr[i - 1]
@@ -1244,9 +1253,9 @@ class Phase13DiscoveryEngine:
             sl_1h_long = float(sl_1h_low) if pd.notna(sl_1h_low) and np.isfinite(sl_1h_low) else None
             sl_1h_short = float(sl_1h_high) if pd.notna(sl_1h_high) and np.isfinite(sl_1h_high) else None
 
-            # ATR envelope
-            sl_atr_long = close_p - 1.5 * atr_5m
-            sl_atr_short = close_p + 1.5 * atr_5m
+            # ATR envelope (requires valid positive ATR)
+            sl_atr_long = close_p - 1.5 * atr_5m if (np.isfinite(atr_5m) and atr_5m > 0) else None
+            sl_atr_short = close_p + 1.5 * atr_5m if (np.isfinite(atr_5m) and atr_5m > 0) else None
 
             dt_utc_str = str(df_5m.index[i] + pd.Timedelta(minutes=5))
 
@@ -1353,21 +1362,40 @@ class Phase13DiscoveryEngine:
                 ]
 
                 for stop_model_name, sl_price in stop_candidates:
-                    # Do not substitute a lower-timeframe ATR stop for a missing HTF swing.
-                    if sl_price is None or not np.isfinite(float(sl_price)):
+                    # 1. Missing swing or ATR level -> exclude evaluation
+                    if sl_price is None or pd.isna(sl_price):
+                        self.stop_diagnostics["excluded"]["MISSING_SWING_DATA"][stop_model_name] += 1
                         continue
-                    # Enforce directional sanity
-                    if is_long and sl_price >= close_p:
-                        sl_price = close_p - 1.0 * atr_5m
-                    elif not is_long and sl_price <= close_p:
-                        sl_price = close_p + 1.0 * atr_5m
 
-                    sl_dist_price = abs(close_p - sl_price)
+                    # 2. Non-finite price
+                    try:
+                        sl_val = float(sl_price)
+                    except (ValueError, TypeError):
+                        self.stop_diagnostics["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
+                        continue
+
+                    if not np.isfinite(sl_val):
+                        self.stop_diagnostics["excluded"]["NON_FINITE_PRICE"][stop_model_name] += 1
+                        continue
+
+                    # 3. Wrong side of entry -> strictly reject without manufactured ATR replacement
+                    if is_long and sl_val >= close_p:
+                        self.stop_diagnostics["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
+                        continue
+                    elif not is_long and sl_val <= close_p:
+                        self.stop_diagnostics["excluded"]["WRONG_SIDE_OF_ENTRY"][stop_model_name] += 1
+                        continue
+
+                    # 4. Inadmissible distance -> exclude without artificial price clamping
+                    sl_dist_price = abs(close_p - sl_val)
                     sl_dist_pct = sl_dist_price / close_p
-                    if sl_dist_pct < 1e-4:
-                        sl_dist_pct = 1e-4
-                        sl_dist_price = close_p * sl_dist_pct
-                        sl_price = close_p - sl_dist_price if is_long else close_p + sl_dist_price
+                    if sl_dist_pct < 1e-4 or not np.isfinite(sl_dist_pct):
+                        self.stop_diagnostics["excluded"]["INADMISSIBLE_DISTANCE"][stop_model_name] += 1
+                        continue
+
+                    # 5. Passed all eligibility rules -> record inclusion
+                    self.stop_diagnostics["included"][stop_model_name] += 1
+                    sl_price = sl_val
 
                     tp1_price = close_p + 1.5 * sl_dist_price if is_long else close_p - 1.5 * sl_dist_price
                     stop_regime = classify_stop_regime(sl_dist_pct)

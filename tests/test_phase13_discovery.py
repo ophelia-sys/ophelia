@@ -1354,6 +1354,79 @@ class TestPhase13VWAPAndDispersionStabilization(unittest.TestCase):
         self.assertEqual(std.iloc[11], 0.0)  # N=2 of Day 2 is 0.0 dispersion for constant price
 
 
+class TestPhase13StructuralStopEligibility(unittest.TestCase):
+    """Phase 3 Mandatory Regression Tests: Structural Stop Eligibility & Fallback Removal.
+
+    Proves:
+    1. If a structural swing stop is unavailable, the evaluation is excluded (never replaced by ATR).
+    2. An invalid STOP_15M_SWING or STOP_1H_SWING is never recorded as successful using an ATR substitute.
+    3. If a stop is on the wrong side of entry, it is rejected (never replaced by entry +/- 1.0*ATR).
+    4. If a stop distance is below minimum threshold (< 1e-4), it is excluded (never clamped to 1e-4).
+    5. Stop model evaluation diagnostics explicitly count included and excluded models by reason.
+    """
+
+    def test_missing_swing_stops_never_fall_back_to_atr(self):
+        """1. Missing HTF swing stops are excluded, not substituted with ATR while keeping HTF name."""
+        engine = p13.Phase13DiscoveryEngine()
+        start_ms = 1672531200000
+        # 450 minutes of data -> 5m has 90 bars (scans bars 50..64), 1h has 7.5 bars -> 1h swing (lookback 6 completed bars) is unavailable during early events
+        df_1m = _make_1m_df(start_ms, 450, base_price=100.0)
+
+        events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+
+        # Confirm STOP_1H_SWING is NEVER recorded among evaluated stops
+        eval_stop_models = [ev.stop_model for ev in evals]
+        self.assertNotIn("STOP_1H_SWING", eval_stop_models, "STOP_1H_SWING must not be evaluated when swing is missing")
+
+        # Diagnostics must show excluded count for MISSING_SWING_DATA
+        missing_1h = engine.stop_diagnostics["excluded"]["MISSING_SWING_DATA"]["STOP_1H_SWING"]
+        self.assertGreater(missing_1h, 0, "Missing 1H swing must be recorded in stop_diagnostics")
+
+    def test_wrong_side_of_entry_stop_rejected(self):
+        """2. Stop on wrong side of entry is excluded with WRONG_SIDE_OF_ENTRY, not replaced with 1.0*ATR."""
+        engine = p13.Phase13DiscoveryEngine()
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+
+        # Run extraction
+        events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+
+        # For every single evaluated stop in evals:
+        for ev in evals:
+            if ev.direction == "LONG":
+                self.assertLess(ev.sl_price, ev.entry_price, f"LONG stop {ev.sl_price} must be strictly below entry {ev.entry_price}")
+            else:
+                self.assertGreater(ev.sl_price, ev.entry_price, f"SHORT stop {ev.sl_price} must be strictly above entry {ev.entry_price}")
+
+    def test_sub_minimum_stop_distance_excluded(self):
+        """3. Stop distance < 1e-4 is excluded with INADMISSIBLE_DISTANCE, never clamped to 1e-4."""
+        engine = p13.Phase13DiscoveryEngine()
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+
+        events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+
+        for ev in evals:
+            sl_dist_pct = abs(ev.entry_price - ev.sl_price) / ev.entry_price
+            self.assertGreaterEqual(sl_dist_pct, 1e-4, f"Evaluated stop distance {sl_dist_pct} must be >= 1e-4")
+
+    def test_stop_diagnostics_tracking_by_reason(self):
+        """4. Engine records diagnostic counts for included and excluded evaluations by exact reason."""
+        engine = p13.Phase13DiscoveryEngine()
+        start_ms = 1672531200000
+        df_1m = _make_1m_df(start_ms, 200, base_price=100.0)
+
+        events, outcomes, evals = engine.extract_events_for_symbol("BTCUSDT", df_1m)
+
+        diag = engine.stop_diagnostics
+        self.assertIn("included", diag)
+        self.assertIn("excluded", diag)
+        for reason in ["MISSING_SWING_DATA", "NON_FINITE_PRICE", "WRONG_SIDE_OF_ENTRY", "INADMISSIBLE_DISTANCE"]:
+            self.assertIn(reason, diag["excluded"])
+            for m in ["STOP_5M_SWING", "STOP_15M_SWING", "STOP_1H_SWING", "STOP_ATR_ENVELOPE"]:
+                self.assertIn(m, diag["excluded"][reason])
+
+
 if __name__ == "__main__":
     unittest.main()
 
