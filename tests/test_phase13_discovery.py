@@ -1011,10 +1011,11 @@ class TestPhase13F03OrderFlowAndVWAP(unittest.TestCase):
         """5. Undefined dispersion, insufficient warm-up history and non-finite values."""
         idx = pd.date_range("2023-01-01 00:00:00", periods=10, freq="5min")
 
-        # Flat prices -> zero variance -> NaN std_vwap (never substituted by 1e-6 epsilon)
+        # Flat prices -> zero variance -> 0.0 std_vwap for N >= 2; bar 0 is NaN (undefined single-bar dispersion)
         df_flat = pd.DataFrame({"close": [100.0] * 10, "volume": [10.0] * 10}, index=idx)
         vwap_flat, std_flat = p13.compute_vwap(df_flat)
-        self.assertTrue(std_flat.isna().all())
+        self.assertTrue(np.isnan(std_flat.iloc[0]))
+        self.assertTrue((std_flat.iloc[1:] == 0.0).all())
 
         # Zero volume -> NaN VWAP and NaN std_vwap
         df_zero_vol = pd.DataFrame({"close": [100.0] * 10, "volume": [0.0] * 10}, index=idx)
@@ -1251,6 +1252,106 @@ class TestPhase13TimestampGapsAndRollingIntegrity(unittest.TestCase):
         ts_bar_14 = start_ms + 70 * 60_000
         reclaims_at_gap_boundary = [e for e in events if e.timestamp_ms == ts_bar_14 and e.event_class == "VWAP_RECLAIM"]
         self.assertEqual(len(reclaims_at_gap_boundary), 0, "VWAP_RECLAIM must not cross an invalid gap interval")
+
+
+class TestPhase13VWAPAndDispersionStabilization(unittest.TestCase):
+    """Phase 2 Mandatory Regression Tests: Session VWAP & Welford Dispersion.
+
+    Proves:
+    1. Constant price of 85000.0001 with unequal positive volumes produces 0.0 dispersion (never a fabricated positive number).
+    2. Prices [85000.0, 85000.001] with equal volumes produce expected dispersion 0.0005 (+/- 1e-10).
+    3. Small nominal price scales (e.g. 0.00005) preserve small valid dispersions without arbitrary epsilon suppression.
+    4. Exact transaction VWAP from quote_volume vs representative-price approximation.
+    5. Session gap invalidation: unaccounted-for gap invalidates remainder of day; next session resets cleanly.
+    6. Non-finite volumes or zero volume produce NaNs.
+    """
+
+    def test_constant_price_85000_unequal_volumes_zero_dispersion(self):
+        """1. Constant price of 85000.0001 with unequal positive volumes: dispersion must be 0.0 for N>=2."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=4, freq="5min")
+        df_const = pd.DataFrame({
+            "close": [85000.0001, 85000.0001, 85000.0001, 85000.0001],
+            "volume": [10.5, 23.4, 15.2, 80.0]
+        }, index=idx)
+
+        vwap, std = p13.compute_vwap(df_const)
+
+        # Bar 0: single-bar dispersion is undefined (NaN)
+        self.assertTrue(np.isnan(std.iloc[0]))
+        # Bars 1..3: exact zero variance (0.0), never fabricated positive number
+        for i in range(1, 4):
+            self.assertEqual(std.iloc[i], 0.0, f"Bar {i} dispersion must be exactly 0.0")
+            self.assertAlmostEqual(vwap.iloc[i], 85000.0001, places=4)
+
+    def test_two_bars_85000_expected_dispersion(self):
+        """2. Prices [85000.0, 85000.001] with equal volumes: expected population dispersion is 0.0005."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=2, freq="5min")
+        df_test = pd.DataFrame({
+            "close": [85000.0, 85000.001],
+            "volume": [10.0, 10.0]
+        }, index=idx)
+
+        vwap, std = p13.compute_vwap(df_test)
+
+        self.assertAlmostEqual(vwap.iloc[1], 85000.0005, places=7)
+        self.assertAlmostEqual(std.iloc[1], 0.0005, delta=1e-10)
+
+    def test_small_nominal_price_scale_dispersion(self):
+        """3. Low-priced instrument preserves small dispersion without arbitrary epsilon suppression."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=2, freq="5min")
+        df_low = pd.DataFrame({
+            "close": [0.00005, 0.00006],
+            "volume": [100.0, 100.0]
+        }, index=idx)
+
+        vwap, std = p13.compute_vwap(df_low)
+
+        # Population mean = 0.000055, dev = 0.000005 (5e-6)
+        # Old code had a threshold std > 1e-6 which could mask smaller values; Welford retains exact value
+        self.assertAlmostEqual(std.iloc[1], 0.000005, delta=1e-12)
+
+    def test_quote_volume_turnover_provenance(self):
+        """4. quote_volume turnover calculation produces exact transaction VWAP."""
+        idx = pd.date_range("2023-01-01 00:00:00", periods=2, freq="5min")
+        # Bar 1: close = 100, vol = 10, quote_vol = 1000
+        # Bar 2: close = 105, vol = 10, quote_vol = 1020 (actual intra-bar average price was 102.0)
+        df_qv = pd.DataFrame({
+            "close": [100.0, 105.0],
+            "volume": [10.0, 10.0],
+            "quote_volume": [1000.0, 1020.0]
+        }, index=idx)
+
+        vwap, std = p13.compute_vwap(df_qv)
+
+        # Transaction exact VWAP = (1000 + 1020) / (10 + 10) = 2020 / 20 = 101.0
+        # Whereas close * volume turnover would have yielded (1000 + 1050) / 20 = 102.5
+        self.assertAlmostEqual(vwap.iloc[1], 101.0, places=4)
+        self.assertNotEqual(vwap.iloc[1], 102.5)
+
+    def test_intraday_session_boundary_reset_and_gap_invalidation(self):
+        """5. Data gap in Day 1 invalidates remainder of Day 1; Day 2 resets fresh at 00:00 UTC."""
+        idx_day1 = pd.date_range("2023-01-01 00:00:00", periods=10, freq="5min")
+        idx_day2 = pd.date_range("2023-01-02 00:00:00", periods=5, freq="5min")
+        idx = idx_day1.append(idx_day2)
+
+        prices = [100.0] * 15
+        volumes = [10.0] * 15
+        # Inject gap at bar 4 of Day 1
+        volumes[4] = np.nan
+
+        df_session = pd.DataFrame({"close": prices, "volume": volumes}, index=idx)
+        vwap, std = p13.compute_vwap(df_session)
+
+        # Day 1: Bars 0..3 valid
+        self.assertTrue(vwap.iloc[0:4].notna().all())
+        # Day 1: Bars 4..9 are invalid (gapped session)
+        self.assertTrue(vwap.iloc[4:10].isna().all(), "All bars after gap in session must be NaN")
+        self.assertTrue(std.iloc[4:10].isna().all(), "All std bars after gap in session must be NaN")
+
+        # Day 2: Starts fresh at 00:00 UTC
+        self.assertFalse(np.isnan(vwap.iloc[10]))
+        self.assertTrue(np.isnan(std.iloc[10]))  # N=1 of Day 2 is NaN dispersion
+        self.assertEqual(std.iloc[11], 0.0)  # N=2 of Day 2 is 0.0 dispersion for constant price
 
 
 if __name__ == "__main__":

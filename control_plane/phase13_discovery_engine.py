@@ -493,50 +493,101 @@ def classify_thesis_resumption(
 def compute_vwap(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     """Computes daily rolling session VWAP and volume-weighted standard deviation causally.
 
-    Formula:
-        VWAP = cumulative(volume * price) / cumulative(volume)
-        variance = cumulative(volume * price^2) / cumulative(volume) - VWAP^2
-        std_vwap = sqrt(max(0.0, variance))
-
-    Guards:
-        - If cumulative volume <= 0, returns NaN for VWAP and std_vwap.
-        - If variance <= 1e-12 or std_vwap <= 1e-6, std_vwap is marked NaN
-          (undefined dispersion; never substituted by arbitrary epsilon).
+    Formulation & Output Contract:
+    1. Session Anchoring & Provenance:
+       - Anchored strictly at 00:00:00 UTC of each calendar day.
+       - If 'quote_volume' is present and valid, cumulative session VWAP is computed as
+         cumulative(quote_volume) / cumulative(volume), which is exact transaction VWAP.
+       - If 'quote_volume' is unavailable or incomplete, representative-price turnover
+         cumulative(close * volume) / cumulative(volume) is computed as an approximation.
+    2. Session Gap Invalidation:
+       - If an unaccounted-for data gap or invalid bar occurs within a UTC session,
+         session VWAP and dispersion are marked invalid (NaN) for the remainder of that
+         UTC session because cumulative turnover can no longer be reconstructed.
+       - The calculation resets cleanly at 00:00 UTC of the subsequent day.
+    3. Numerically Stable Dispersion:
+       - Exact transaction-level price variance cannot be reconstructed from aggregate OHLCV totals alone.
+         Dispersion is defined as between-bar representative-price volume-weighted standard deviation.
+       - Uses numerically stable weighted Welford accumulation, avoiding catastrophic cancellation
+         from E[P^2] - E[P]^2.
+       - Single-bar dispersion (N=1) is undefined (NaN).
+       - Constant prices across multiple bars (N >= 2) produce exact zero variance (0.0).
+       - No arbitrary epsilon clamping is applied, preserving small valid dispersions on low-priced instruments.
     """
     if "volume" not in df.columns or "close" not in df.columns or len(df) == 0:
         empty = pd.Series(np.nan, index=df.index, dtype=float)
         return empty, empty
 
-    price = df["close"].astype(float)
-    vol = df["volume"].astype(float)
+    s_vwap = pd.Series(np.nan, index=df.index, dtype=float)
+    s_std = pd.Series(np.nan, index=df.index, dtype=float)
 
-    # Missing or non-positive volume cannot contribute to VWAP
-    valid_vol = vol.where(vol > 0, 0.0)
-    pv = price * valid_vol
-    p2v = price * price * valid_vol
+    if isinstance(df.index, pd.DatetimeIndex):
+        groups = df.groupby(df.index.floor("1D"))
+    else:
+        groups = [(None, df)]
 
-    dates = df.index.date
-    cum_v = valid_vol.groupby(dates).cumsum()
-    cum_pv = pv.groupby(dates).cumsum()
-    cum_p2v = p2v.groupby(dates).cumsum()
+    for _, group in groups:
+        n = len(group)
+        if n == 0:
+            continue
+        g_idx = group.index
+        vol = group["volume"].astype(float).values
+        close = group["close"].astype(float).values
 
-    valid_cum_v = cum_v > 0
-    vwap = pd.Series(np.nan, index=df.index, dtype=float)
-    vwap[valid_cum_v] = cum_pv[valid_cum_v] / cum_v[valid_cum_v]
+        # Determine quote turnover provenance
+        has_qv = "quote_volume" in group.columns and group["quote_volume"].notna().all()
+        if has_qv:
+            turnover = group["quote_volume"].astype(float).values
+        else:
+            turnover = close * vol
 
-    variance = pd.Series(np.nan, index=df.index, dtype=float)
-    valid_var_mask = valid_cum_v & vwap.notna()
-    var_raw = (cum_p2v[valid_var_mask] / cum_v[valid_var_mask]) - (vwap[valid_var_mask] ** 2)
-    var_clean = var_raw.clip(lower=0.0)
-    variance[valid_var_mask] = var_clean
+        # Validity mask
+        is_valid = (vol > 0) & np.isfinite(vol) & (close > 0) & np.isfinite(close)
+        if has_qv:
+            is_valid = is_valid & (turnover > 0) & np.isfinite(turnover)
+        if "is_valid_interval" in group.columns:
+            is_valid = is_valid & group["is_valid_interval"].astype(bool).values
 
-    std_vwap = pd.Series(np.nan, index=df.index, dtype=float)
-    has_dispersion = variance > 1e-12
-    std_vals = np.sqrt(variance[has_dispersion])
-    valid_std = std_vals > 1e-6
-    std_vwap[has_dispersion & valid_std] = std_vals[valid_std]
+        # Anchored session VWAP invalidation across data gaps
+        has_gap = np.logical_not(is_valid)
+        has_gap_cum = np.maximum.accumulate(has_gap)
 
-    return vwap, std_vwap
+        cum_turnover = np.cumsum(turnover)
+        cum_vol = np.cumsum(vol)
+
+        v_out = np.full(n, np.nan, dtype=float)
+        valid_vwap_mask = (cum_vol > 0) & (~has_gap_cum)
+        v_out[valid_vwap_mask] = cum_turnover[valid_vwap_mask] / cum_vol[valid_vwap_mask]
+        s_vwap.loc[g_idx] = v_out
+
+        # Weighted Welford accumulation for between-bar representative-price dispersion
+        std_out = np.full(n, np.nan, dtype=float)
+        W = 0.0
+        mean = 0.0
+        M2 = 0.0
+        for k in range(n):
+            if has_gap_cum[k]:
+                break
+            w_k = vol[k]
+            p_k = close[k]
+            if k == 0:
+                W = w_k
+                mean = p_k
+                M2 = 0.0
+                std_out[k] = np.nan
+            else:
+                W_prev = W
+                W = W_prev + w_k
+                delta = p_k - mean
+                mean = mean + (w_k / W) * delta
+                M2 = M2 + (w_k * W_prev / W) * (delta ** 2)
+                if M2 <= 0.0 or W <= 0.0:
+                    std_out[k] = 0.0
+                else:
+                    std_out[k] = np.sqrt(M2 / W)
+        s_std.loc[g_idx] = std_out
+
+    return s_vwap, s_std
 
 
 def compute_cvd(df_5m: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
